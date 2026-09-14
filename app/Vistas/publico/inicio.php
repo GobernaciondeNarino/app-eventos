@@ -16,7 +16,7 @@ $rotuloAlta = $empezado ? 'REGISTRARME' : 'Preregistrarme';
 
   <div class="split--balanced" style="align-items:center">
     <div class="stack stack--5">
-      <span class="kicker"><?= $empezado ? 'Evento en curso' : 'Fase 01 · Preregistro' ?></span>
+      <span class="kicker"><?= $empezado ? 'Evento en curso' : 'Fase 01 · Registro' ?></span>
       <h1 class="hero-title">Regístrate una vez.<br><em>Entra <?= $total > 1 ? 'los ' . e((string) $total) . ' días' : 'el día del evento' ?>.</em></h1>
       <p class="lead">
         <?= $empezado
@@ -26,7 +26,22 @@ $rotuloAlta = $empezado ? 'REGISTRARME' : 'Preregistrarme';
             . 'código de la entrada. Sin filas, sin digitación manual.' ?>
       </p>
 
-      <?php if ($persona !== null): ?>
+      <?php if ($persona !== null && !\App\Modelos\Persona::registroCompleto($persona)): ?>
+        <?php /* Creó su acceso y todavía no llenó nada: no tiene carnet que
+                 enseñar, así que la tarjeta dice lo único que falta. */ ?>
+        <div class="card" style="max-width:440px">
+          <div class="card__head"><span>Te falta un paso</span></div>
+          <div class="card__body stack stack--3">
+            <p class="help" style="margin:0">
+              Tu acceso ya está creado. Con tu nombre y tu identificación te emitimos el
+              carnet con el código QR.
+            </p>
+            <a class="btn btn--primary btn--block btn--lg" href="<?= e(u('/registro')) ?>">
+              Completar mi registro
+            </a>
+          </div>
+        </div>
+      <?php elseif ($persona !== null): ?>
         <div class="card" style="max-width:440px">
           <div class="card__head"><span>Ya estás registrado</span></div>
           <div class="card__body stack stack--3">
@@ -41,9 +56,9 @@ $rotuloAlta = $empezado ? 'REGISTRARME' : 'Preregistrarme';
         </div>
       <?php else: ?>
         <div class="card" style="max-width:440px">
-          <div class="card__head"><span><?= $empezado ? 'Registro' : 'Preregistro' ?></span></div>
+          <div class="card__head"><span>Registro</span></div>
           <div class="card__body stack stack--4">
-            <form method="get" action="<?= e(u('/preregistro')) ?>" class="stack stack--3">
+            <form method="get" action="<?= e(u('/registro')) ?>" class="stack stack--3">
               <div class="field">
                 <label class="label" for="correo">Correo electrónico</label>
                 <input class="input" type="email" id="correo" name="correo"
@@ -84,7 +99,7 @@ $rotuloAlta = $empezado ? 'REGISTRARME' : 'Preregistrarme';
       <div class="card__body--tight">
         <div class="steps">
           <?php foreach ([
-            ['01', 'Preregístrate en línea', 'Nombre e identificación son los únicos campos obligatorios; la caracterización es opcional.'],
+            ['01', 'Regístrate en línea', 'Nombre e identificación son los únicos campos obligatorios; la caracterización es opcional.'],
             ['02', 'Recibe tu carnet', 'Llega por correo con un QR personal. No hace falta imprimirlo.'],
             ['03', 'Escanea al entrar, cada día', 'El código de la entrada cambia por jornada y sella tu ingreso con fecha y hora.'],
             ['04', 'Intercambia contactos', 'El QR de tu carnet comparte nombre, entidad, correo y teléfono con quien lo escanee.'],

@@ -8,6 +8,7 @@ defined('EVENTOS_TIC') || exit;
 use App\Nucleo\Bd;
 use App\Nucleo\Bitacora;
 use App\Nucleo\Cripto;
+use App\Nucleo\Imagen;
 
 /**
  * El evento y sus jornadas.
@@ -228,60 +229,85 @@ final class Evento
         return $siguiente;
     }
 
+    /** Qué se perdería al eliminar una jornada. @return array{ingresos:int, charlas:int} */
+    public static function contenidoDeJornada(int $jornadaId): array
+    {
+        return [
+            'ingresos' => (int) Bd::valor(
+                'SELECT COUNT(*) FROM {asistencia} WHERE evento_dia_id = ?', [$jornadaId]
+            ),
+            'charlas' => (int) Bd::valor(
+                'SELECT COUNT(*) FROM {charla} WHERE evento_dia_id = ?', [$jornadaId]
+            ),
+        ];
+    }
+
     /**
      * Elimina una jornada.
      *
-     * No se borra una jornada con ingresos registrados: esos registros son la
-     * base de los reportes de asistencia del evento y borrarlos en cascada
-     * desde una pantalla de configuración sería demasiado fácil. Quien de
-     * verdad quiera hacerlo tiene que quitar antes los ingresos.
+     * Con $forzar en falso no se borra una jornada que tenga ingresos o
+     * charlas: son la base de los reportes del evento y perderlos por un clic
+     * de más sería demasiado fácil.
+     *
+     * Con $forzar en verdadero sí se borra, y con ella sus ingresos y sus
+     * charlas. Hace falta: los días de prueba se llenan de escaneos justamente
+     * probando, y sin esta salida la única forma de limpiar era entrar a la
+     * base a mano. Quien llama tiene que haber confirmado explícitamente y la
+     * bitácora anota cuánto se llevó por delante.
      *
      * Los números NO se renumeran. El número está impreso en el pliego de la
      * puerta y sale en el historial de cada asistente; corrigiéndolo, el «día
      * 3» de un carnet pasaría a señalar otra fecha.
      */
-    public static function eliminarJornada(int $eventoId, int $numero): void
+    public static function eliminarJornada(int $eventoId, int $numero, bool $forzar = false): void
     {
         $jornada = self::jornada($eventoId, $numero);
         if (!$jornada) {
             throw new \DomainException('Esa jornada no existe.');
         }
 
-        $ingresos = (int) Bd::valor(
-            'SELECT COUNT(*) FROM {asistencia} WHERE evento_dia_id = ?',
-            [(int) $jornada['id']]
-        );
-        if ($ingresos > 0) {
-            throw new \DomainException(
-                'El día ' . $numero . ' ya tiene ' . $ingresos . ' ingreso' . ($ingresos === 1 ? '' : 's')
-                . ' registrado' . ($ingresos === 1 ? '' : 's') . '. No se puede eliminar sin perder esos datos.'
-            );
-        }
-
-        $charlas = (int) Bd::valor(
-            'SELECT COUNT(*) FROM {charla} WHERE evento_dia_id = ?',
-            [(int) $jornada['id']]
-        );
-        if ($charlas > 0) {
-            throw new \DomainException(
-                'El día ' . $numero . ' tiene ' . $charlas . ' charla' . ($charlas === 1 ? '' : 's')
-                . ' en la agenda. Muévelas de día antes de eliminarlo.'
-            );
-        }
-
+        // Este sí es un límite duro: un evento sin jornadas no tiene dónde
+        // registrar un ingreso. Para deshacerse de un evento de prueba entero
+        // está la eliminación del evento, que es lo que corresponde.
         if (count(self::jornadas($eventoId)) <= 1) {
-            throw new \DomainException('Un evento tiene que quedarse con al menos una jornada.');
+            throw new \DomainException(
+                'Es la única jornada del evento y un evento necesita al menos una. '
+                . 'Si el evento sobra, elimínalo desde Eventos.'
+            );
         }
 
-        Bd::ejecutar('DELETE FROM {evento_dia} WHERE id = ?', [(int) $jornada['id']]);
-        Bd::ejecutar(
-            'UPDATE {evento} SET jornadas = (SELECT COUNT(*) FROM {evento_dia} WHERE evento_id = ?) WHERE id = ?',
-            [$eventoId, $eventoId]
-        );
+        $contenido = self::contenidoDeJornada((int) $jornada['id']);
+
+        if (!$forzar && ($contenido['ingresos'] > 0 || $contenido['charlas'] > 0)) {
+            $partes = [];
+            if ($contenido['ingresos'] > 0) {
+                $partes[] = $contenido['ingresos'] . ' ingreso' . ($contenido['ingresos'] === 1 ? '' : 's');
+            }
+            if ($contenido['charlas'] > 0) {
+                $partes[] = $contenido['charlas'] . ' charla' . ($contenido['charlas'] === 1 ? '' : 's');
+            }
+            throw new \DomainException(
+                'El día ' . $numero . ' tiene ' . implode(' y ', $partes)
+                . '. Confirma que quieres perderlos para poder eliminarlo.'
+            );
+        }
+
+        Bd::transaccion(static function () use ($eventoId, $jornada): void {
+            // Las asistencias y las charlas se van en cascada por su clave
+            // foránea; la propuesta del expositor NO, y así tiene que ser:
+            // sigue aprobada y se le puede asignar otro día.
+            Bd::ejecutar('DELETE FROM {evento_dia} WHERE id = ?', [(int) $jornada['id']]);
+            Bd::ejecutar(
+                'UPDATE {evento} SET jornadas = (SELECT COUNT(*) FROM {evento_dia} WHERE evento_id = ?) WHERE id = ?',
+                [$eventoId, $eventoId]
+            );
+        });
 
         Bitacora::registrar('jornada_eliminada', 'evento_dia', $numero, [
-            'evento' => $eventoId,
-            'fecha'  => (string) $jornada['fecha'],
+            'evento'   => $eventoId,
+            'fecha'    => (string) $jornada['fecha'],
+            'ingresos' => $contenido['ingresos'],
+            'charlas'  => $contenido['charlas'],
         ]);
     }
 
@@ -331,6 +357,158 @@ final class Evento
         );
         Bitacora::registrar('token_dia_rotado', 'evento_dia', $numero, ['evento' => $eventoId]);
         return $nuevo;
+    }
+
+    /* =====================================================================
+       Editar, desactivar y eliminar
+       -------------------------------------------------------------------------
+       Un evento se creaba y ya: no había forma de corregirle el nombre, ni de
+       apagarlo, ni de deshacerse de los de prueba. Con la plataforma en
+       producción eso significa arrastrar para siempre tres «Evento de prueba»
+       en la lista y no poder arreglar una fecha mal tecleada.
+       ===================================================================== */
+
+    public const ESTADOS = ['borrador', 'abierto', 'en_curso', 'cerrado'];
+
+    /**
+     * Cambia los datos del evento.
+     *
+     * Si cambia la fecha de inicio y $moverJornadas es cierto, todas las
+     * jornadas se desplazan el mismo número de días. Se conserva la separación
+     * entre ellas a propósito: un evento puede tener dos días seguidos y uno de
+     * cierre la semana siguiente, y recolocarlas una detrás de otra le
+     * destrozaría el calendario a quien solo quería mover el arranque.
+     */
+    public static function actualizar(int $id, array $datos, bool $moverJornadas = false): void
+    {
+        $evento = self::porId($id);
+        if (!$evento) {
+            throw new \DomainException('Ese evento no existe.');
+        }
+
+        $nombre = mb_substr(trim((string) ($datos['nombre'] ?? '')), 0, 160);
+        if (mb_strlen($nombre) < 3) {
+            throw new \DomainException('El nombre del evento es demasiado corto.');
+        }
+
+        $fecha = (string) ($datos['fecha_inicio'] ?? $evento['fecha_inicio']);
+        if (!self::fechaValida($fecha)) {
+            throw new \DomainException('La fecha de inicio no es válida.');
+        }
+
+        $estado = in_array($datos['estado'] ?? '', self::ESTADOS, true)
+            ? (string) $datos['estado']
+            : (string) $evento['estado'];
+
+        $anterior = (string) $evento['fecha_inicio'];
+        $dias = (int) round((strtotime($fecha) - strtotime($anterior)) / 86400);
+
+        Bd::transaccion(static function () use ($id, $nombre, $datos, $fecha, $estado, $moverJornadas, $dias): void {
+            Bd::actualizar('evento', [
+                'nombre'       => $nombre,
+                'dependencia'  => mb_substr(trim((string) ($datos['dependencia'] ?? '')), 0, 160),
+                'sede'         => mb_substr(trim((string) ($datos['sede'] ?? '')), 0, 160),
+                'fecha_inicio' => $fecha,
+                'estado'       => $estado,
+            ], 'id = :id', ['id' => $id]);
+
+            if ($moverJornadas && $dias !== 0) {
+                Bd::ejecutar(
+                    'UPDATE {evento_dia} SET fecha = DATE_ADD(fecha, INTERVAL ? DAY) WHERE evento_id = ?',
+                    [$dias, $id]
+                );
+            }
+        });
+
+        Bitacora::registrar('evento_actualizado', 'evento', $id, [
+            'estado'   => $estado,
+            'jornadas' => $moverJornadas && $dias !== 0 ? 'movidas ' . $dias . ' días' : 'sin mover',
+        ]);
+    }
+
+    /**
+     * Apaga el evento: deja de ser el que ven los asistentes.
+     *
+     * No se borra nada. La plataforma sabe funcionar sin ningún evento activo
+     * —enseña la pantalla de «todavía no hay nada» y al equipo le ofrece
+     * crearlo—, así que esto es reversible con un clic.
+     */
+    public static function desactivar(int $id): void
+    {
+        Bd::ejecutar('UPDATE {evento} SET activo = 0 WHERE id = ?', [$id]);
+        Bitacora::registrar('evento_desactivado', 'evento', $id);
+    }
+
+    /**
+     * Qué se llevaría por delante eliminar este evento.
+     *
+     * Se calcula antes de preguntar, no después: «¿seguro?» sin un número al
+     * lado no es una confirmación, es un trámite que se pulsa sin leer.
+     *
+     * @return array{personas:int, ingresos:int, propuestas:int, contactos:int, jornadas:int}
+     */
+    public static function contenido(int $id): array
+    {
+        $contar = static fn(string $sql): int => (int) Bd::valor($sql, [$id]);
+
+        return [
+            'jornadas'  => $contar('SELECT COUNT(*) FROM {evento_dia} WHERE evento_id = ?'),
+            'personas'  => $contar('SELECT COUNT(*) FROM {persona} WHERE evento_id = ?'),
+            'ingresos'  => $contar(
+                'SELECT COUNT(*) FROM {asistencia} a
+                   JOIN {evento_dia} d ON d.id = a.evento_dia_id WHERE d.evento_id = ?'
+            ),
+            'propuestas' => $contar(
+                'SELECT COUNT(*) FROM {propuesta} pr
+                   JOIN {persona} p ON p.id = pr.persona_id WHERE p.evento_id = ?'
+            ),
+            'contactos' => $contar(
+                'SELECT COUNT(*) FROM {contacto} c
+                   JOIN {persona} p ON p.id = c.persona_id WHERE p.evento_id = ?'
+            ),
+        ];
+    }
+
+    /**
+     * Elimina el evento y todo lo suyo.
+     *
+     * No tiene vuelta atrás: las claves foráneas se llevan en cascada las
+     * jornadas, las personas, sus asistencias, sus contactos y sus propuestas.
+     * Los archivos del disco no tienen clave foránea, así que se borran aquí a
+     * mano; si no, cada evento de prueba dejaba sus fotos ocupando espacio para
+     * siempre.
+     *
+     * @return array la cuenta de lo que se eliminó
+     */
+    public static function eliminar(int $id): array
+    {
+        $evento = self::porId($id);
+        if (!$evento) {
+            throw new \DomainException('Ese evento no existe.');
+        }
+
+        $contenido = self::contenido($id);
+
+        // Los archivos primero: si la eliminación falla, sobran unas fotos;
+        // al revés, quedarían huérfanas sin nadie que supiera de quién eran.
+        $fotos = Bd::filas('SELECT foto FROM {persona} WHERE evento_id = ? AND foto <> \'\'', [$id]);
+        $tema = Bd::fila('SELECT logo_archivo FROM {evento_tema} WHERE evento_id = ?', [$id]);
+
+        Bd::ejecutar('DELETE FROM {evento} WHERE id = ?', [$id]);
+
+        foreach ($fotos as $f) {
+            Imagen::borrarFoto((string) $f['foto']);
+        }
+        $logo = (string) ($tema['logo_archivo'] ?? '');
+        if ($logo !== '') {
+            @unlink(RAIZ . '/almacen/logos/' . basename($logo));
+        }
+
+        Bitacora::registrar('evento_eliminado', 'evento', $id, [
+            'nombre' => (string) $evento['nombre'],
+        ] + $contenido);
+
+        return $contenido;
     }
 
     public static function activar(int $id): void

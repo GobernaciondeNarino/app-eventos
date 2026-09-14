@@ -120,6 +120,92 @@ final class Acceso
             'metodo'  => $metodo,
             'metodos' => Autenticacion::activos(),
             'catalogo' => Autenticacion::METODOS,
+            'puedeCrearCuenta' => Autenticacion::activo('clave'),
+        ]);
+    }
+
+    /* =====================================================================
+       Asistente · crear el acceso con correo y contraseña
+       -------------------------------------------------------------------------
+       Quien llega a la pantalla de ingreso sin estar inscrito se encontraba con
+       que la única salida era un formulario de tres secciones. Ahí se pierde la
+       mitad de la gente, y más en la fila de la puerta con el teléfono en una
+       mano. Con esto entra en quince segundos y termina sus datos ya dentro,
+       que es donde tiene sentido pedirlos.
+
+       El formulario completo sigue abierto al público y sin cambios: esto es
+       otra puerta, no un reemplazo.
+       ===================================================================== */
+
+    public function crearCuenta(Peticion $peticion): void
+    {
+        $destino = Url::destinoSeguro($peticion->query('destino') ?: $peticion->campo('destino'), '/registro');
+
+        if (\App\Nucleo\Guardia::personaActual() !== null) {
+            Respuesta::redirigir($destino);
+        }
+
+        // Sin el método de contraseña encendido, la que se elija aquí no
+        // serviría para volver a entrar. Se manda al formulario completo, que
+        // es lo que sí funciona en esa configuración.
+        if (!Autenticacion::activo('clave')) {
+            Respuesta::redirigir('/registro',
+                'La organización no tiene encendido el acceso por contraseña. Regístrate aquí.', 'warn');
+        }
+
+        $evento = App::eventoExigido();
+        $correo = mb_strtolower($peticion->campo('correo'));
+        $errores = [];
+        $minima = Autenticacion::claveMinima();
+
+        if ($peticion->esPost()) {
+            $clave = $peticion->campoCrudo('clave');
+
+            if (!filter_var($correo, FILTER_VALIDATE_EMAIL)) {
+                $errores['correo'] = 'Escribe un correo válido, por ejemplo nombre@entidad.gov.co';
+            }
+            if (mb_strlen($clave) < $minima) {
+                $errores['clave'] = 'La contraseña debe tener al menos ' . $minima . ' caracteres.';
+            } elseif (mb_strlen($clave) > 200) {
+                $errores['clave'] = 'La contraseña es demasiado larga.';
+            } elseif ($clave !== $peticion->campoCrudo('clave2')) {
+                $errores['clave2'] = 'Las dos contraseñas no coinciden.';
+            }
+            if (!$peticion->marcado('habeas')) {
+                $errores['habeas'] = 'Debes autorizar el tratamiento de datos para continuar.';
+            }
+
+            if (!$errores) {
+                // El mismo límite que el registro completo: aquí el abuso es
+                // crear muchas cuentas con éxito, no fallar al intentarlo.
+                Limite::exigir('preregistro_ip', $peticion->ip());
+                Limite::registrar('preregistro_ip', $peticion->ip());
+
+                try {
+                    $resultado = Persona::crearAcceso((int) $evento['id'], $correo, $clave);
+
+                    Sesion::limpiar();
+                    Sesion::abrir('asistente', (int) $resultado['id']);
+
+                    Respuesta::redirigir('/registro',
+                        'Tu acceso quedó creado. Completa estos datos y te emitimos el carnet.');
+                } catch (\DomainException $e) {
+                    $errores['correo'] = $e->getMessage();
+                    $errores['ofrecer_acceso'] = '1';
+                } catch (\Throwable $e) {
+                    \App\Nucleo\Registro::excepcion($e);
+                    $errores['general'] = 'No se pudo crear el acceso. Inténtalo de nuevo en un momento.';
+                }
+            }
+        }
+
+        Respuesta::vista('publico/crear-acceso', [
+            'titulo'      => 'Crear mi acceso',
+            'pantalla'    => 'entrar',
+            'correo'      => $correo,
+            'destino'     => $destino,
+            'errores'     => $errores,
+            'claveMinima' => $minima,
         ]);
     }
 

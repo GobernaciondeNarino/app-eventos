@@ -57,7 +57,7 @@ $marca = require __DIR__ . '/../parciales/marca.php';
 
       <p class="help">
         ¿Todavía no te has registrado en el evento?
-        <a href="<?= e(u('/preregistro')) ?>">Haz tu preregistro</a> y obtén tu propio carnet.
+        <a href="<?= e(u('/registro')) ?>">Regístrate</a> y obtén tu propio carnet.
       </p>
     </div>
   </div>

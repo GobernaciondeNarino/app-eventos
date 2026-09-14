@@ -43,10 +43,24 @@ final class Guardia
 
     private static function asistente(Peticion $peticion): void
     {
-        if (self::personaActual() !== null) {
-            return;
+        $persona = self::personaActual();
+
+        if ($persona === null) {
+            self::pedirIdentificacion($peticion, '/entrar');
         }
-        self::pedirIdentificacion($peticion, '/entrar');
+
+        // Tiene acceso pero no ha llenado el formulario: creó su cuenta con
+        // correo y contraseña desde la pantalla de ingreso. Todo lo que hay
+        // detrás de este guardia necesita al menos su nombre y su documento
+        // —el carnet, la ficha de acreditación, el intercambio de contacto—,
+        // así que se le lleva a terminar en vez de enseñarle pantallas vacías.
+        if (!\App\Modelos\Persona::registroCompleto($persona)) {
+            if ($peticion->esAjax()) {
+                Respuesta::json(['error' => 'registro', 'ir' => Url::a('/registro')], 409);
+            }
+            Respuesta::redirigir('/registro',
+                'Completa tu nombre y tu identificación y te emitimos el carnet.', 'warn');
+        }
     }
 
     /** Devuelve la persona con sesión abierta, o null. */

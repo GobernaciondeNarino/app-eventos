@@ -212,6 +212,60 @@ function titulo(t) {
   }
 
   /* =====================================================================
+     El formulario de registro
+     ===================================================================== */
+  titulo('Formulario de registro');
+
+  // Contexto limpio: las páginas anteriores dejaron abierta la sesión de María
+  // y con sesión estas dos pantallas son otra cosa —«/entrar» lleva al carnet y
+  // el registro enseña sus datos—. Lo que se está probando aquí es lo que ve
+  // alguien de fuera.
+  const anonimo = await navegador.newContext({
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+  });
+  const p4 = await anonimo.newPage();
+  const erroresRegistro = [];
+  p4.on('console', m => { if (m.type() === 'error') erroresRegistro.push(m.text()); });
+  await p4.goto(BASE + '/registro', { waitUntil: 'networkidle' });
+
+  comprobar('la caracterización no se ve al abrir',
+    await p4.locator('#bloque-opcional').isHidden());
+
+  const rotulo = (await p4.locator('[data-plegar="bloque-opcional"]').innerText()).trim();
+  comprobar('y su botón invita a mostrarla', /mostrar/i.test(rotulo), rotulo);
+
+  await p4.locator('[data-plegar="bloque-opcional"]').click();
+  comprobar('al pulsarlo se abre', await p4.locator('#bloque-opcional').isVisible());
+  comprobar('y el botón pasa a decir «Ocultar»',
+    /ocultar/i.test((await p4.locator('[data-plegar="bloque-opcional"]').innerText()).trim()));
+
+  comprobar('el formulario completo está abierto al público sin sesión',
+    (await p4.locator('#documento').count()) === 1
+    && (await p4.locator('button[type=submit]').count()) >= 1);
+
+  comprobar('sin errores de consola en el registro', erroresRegistro.length === 0,
+    erroresRegistro.slice(0, 2).join(' | '));
+
+  /* =====================================================================
+     Crear el acceso con correo y contraseña
+     ===================================================================== */
+  titulo('Crear el acceso');
+
+  await p4.goto(BASE + '/entrar', { waitUntil: 'networkidle' });
+  comprobar('la pantalla de ingreso ofrece crear el acceso como botón',
+    (await p4.locator('a.btn[href*="/entrar/crear"]').count()) === 1);
+
+  await p4.locator('a.btn[href*="/entrar/crear"]').first().click();
+  await p4.waitForLoadState('networkidle');
+  comprobar('el formulario corto tiene tres campos y la autorización',
+    (await p4.locator('#correo').count()) === 1
+    && (await p4.locator('#clave').count()) === 1
+    && (await p4.locator('#clave2').count()) === 1
+    && (await p4.locator('#habeas').count()) === 1);
+
+  /* =====================================================================
      Panel: pestañas y ficha
      ===================================================================== */
   titulo('Panel');
@@ -235,13 +289,25 @@ function titulo(t) {
      está bien que no los admita.                                          */
   titulo('Lector de QR en el navegador');
 
+  // Qué jornada existe. No se da por hecho que sea la 1: las pruebas de
+  // eliminación de jornadas corren antes y el evento puede haber quedado con
+  // otros números, que es justamente lo que pasa en un evento real al que se
+  // le quita un día.
+  await p3.goto(BASE + '/admin/qr-dias', { waitUntil: 'networkidle' });
+  const jornada = await p3.evaluate(() => {
+    const a = document.querySelector('a[href*="/qr-dias/"][href$="/imprimir"]');
+    const m = a && a.getAttribute('href').match(/qr-dias\/(\d+)\/imprimir/);
+    return m ? m[1] : '';
+  });
+  comprobar('el panel tiene al menos una jornada con código', jornada !== '', jornada);
+
   await p3.goto(BASE + '/admin/escaner', { waitUntil: 'networkidle' });
 
-  const leido = await p3.evaluate(async (base) => {
+  const leido = await p3.evaluate(async ([base, dia]) => {
     const salida = { hayLector: !!window.LectorQr, svg: '', leido: null };
     if (!window.LectorQr) return salida;
 
-    const svg = await (await fetch(base + '/medios/qr/dia/1.svg', {
+    const svg = await (await fetch(base + '/medios/qr/dia/' + dia + '.svg', {
       credentials: 'same-origin'
     })).text().catch(() => '');
     salida.svg = svg.slice(0, 4);
@@ -270,7 +336,7 @@ function titulo(t) {
     try { salida.leido = window.LectorQr.desdeImagen(imagen); }
     catch (e) { salida.leido = 'ERROR: ' + e.message; }
     return salida;
-  }, BASE);
+  }, [BASE, jornada]);
 
   comprobar('el escáner carga el lector propio', leido.hayLector === true);
   comprobar('el servidor entrega el SVG del código del día', leido.svg === '<svg', leido.svg);
@@ -331,6 +397,38 @@ function titulo(t) {
 
   comprobar('sin errores de consola en el panel', erroresPanel.length === 0,
     erroresPanel.slice(0, 2).join(' | '));
+
+  /* =====================================================================
+     Eventos: editar, desactivar y eliminar
+     ===================================================================== */
+  titulo('Eventos');
+
+  await p3.goto(BASE + '/admin/eventos', { waitUntil: 'networkidle' });
+
+  comprobar('cada evento tiene botón de editar',
+    (await p3.locator('[data-abrir-modal^="modal-editar-"]').count()) >= 1);
+  comprobar('y de eliminar',
+    (await p3.locator('[data-abrir-modal^="modal-borrar-"]').count()) >= 1);
+
+  await p3.locator('[data-abrir-modal^="modal-editar-"]').first().click();
+  await p3.waitForTimeout(200);
+  comprobar('el diálogo de editar se abre con los datos puestos',
+    (await p3.locator('.modal:not([hidden]) input[name=nombre]').inputValue()).length > 3);
+  comprobar('y ofrece mover las jornadas con la fecha',
+    await p3.locator('.modal:not([hidden]) input[name=mover_jornadas]').isVisible());
+  await p3.keyboard.press('Escape');
+
+  await p3.locator('[data-abrir-modal^="modal-borrar-"]').first().click();
+  await p3.waitForTimeout(200);
+  // innerText devuelve el texto como se ve, y la hoja de estilos pone los
+  // rótulos en mayúsculas: la comprobación no puede depender de eso.
+  const textoBorrar = (await p3.locator('.modal:not([hidden])').innerText()).toLowerCase();
+  comprobar('el de eliminar dice qué se pierde',
+    textoBorrar.includes('personas registradas') && textoBorrar.includes('ingresos sellados'),
+    textoBorrar.slice(0, 90).replace(/\n/g, ' | '));
+  comprobar('y exige escribir ELIMINAR',
+    await p3.locator('.modal:not([hidden]) input[name=confirmacion]').isVisible());
+  await p3.keyboard.press('Escape');
 
   /* =====================================================================
      QR por día: agregar y eliminar

@@ -21,7 +21,8 @@ defined('EVENTOS_TIC') || exit;
  *   qr        · un QR personal que identifica a su dueño al escanearlo. Se
  *               imprime en la escarapela; en la puerta no hace falta ni red del
  *               asistente ni que recuerde nada.
- *   clave     · una contraseña que la persona elige al preregistrarse.
+ *   clave     · una contraseña que la persona elige al registrarse, o al crear
+ *               su acceso desde la pantalla de ingreso.
  *   whatsapp  · el mismo código de seis dígitos, por WhatsApp.
  *   sms       · el mismo código, por mensaje de texto.
  *
@@ -52,7 +53,8 @@ final class Autenticacion
         ],
         'clave' => [
             'nombre'      => 'Contraseña simple',
-            'resumen'     => 'La persona elige una contraseña al preregistrarse y entra con correo y contraseña.',
+            'resumen'     => 'La persona elige una contraseña al registrarse y entra con correo y contraseña. '
+                . 'También permite crear el acceso en la pantalla de ingreso, sin llenar el formulario.',
             'necesita'    => 'Nada más.',
             'sinTerceros' => true,
         ],
@@ -81,14 +83,18 @@ final class Autenticacion
      */
     public static function activos(): array
     {
-        // Por omisión, correo **y** QR. El QR no necesita nada —ni red del
-        // asistente, ni terceros, ni que el correo salga— y va impreso en su
-        // propio carnet, así que una instalación recién hecha ya tiene dos
-        // puertas en vez de una. Que la instalación por omisión dependiera de
-        // que el correo funcionara es justo lo que dejó un evento sin acceso.
-        $guardados = Config::obtener('auth_metodos', ['correo', 'qr']);
+        // Por omisión, los tres que no dependen de nadie: correo, QR y
+        // contraseña. Ninguno necesita un tercero ni cuesta dinero, así que una
+        // instalación recién hecha ya tiene tres puertas en vez de una. Que la
+        // instalación por omisión dependiera de que el correo funcionara es
+        // justo lo que dejó un evento sin acceso.
+        //
+        // La contraseña está entre ellos porque es la que permite crear el
+        // acceso en quince segundos desde la pantalla de ingreso: sin ella, la
+        // única puerta para quien no está inscrito es el formulario largo.
+        $guardados = Config::obtener('auth_metodos', ['correo', 'qr', 'clave']);
         if (!is_array($guardados)) {
-            $guardados = ['correo', 'qr'];
+            $guardados = ['correo', 'qr', 'clave'];
         }
 
         $validos = array_values(array_filter(
@@ -96,10 +102,10 @@ final class Autenticacion
             static fn($m): bool => is_string($m) && isset(self::METODOS[$m])
         ));
 
-        // El último cortafuegos: pase lo que pase, quedan dos puertas. Una sola
-        // —y encima la que depende de que el correo salga— es el punto único de
-        // fallo que costó un evento entero.
-        return $validos !== [] ? $validos : ['correo', 'qr'];
+        // El último cortafuegos: pase lo que pase, quedan varias puertas. Una
+        // sola —y encima la que depende de que el correo salga— es el punto
+        // único de fallo que costó un evento entero.
+        return $validos !== [] ? $validos : ['correo', 'qr', 'clave'];
     }
 
     public static function activo(string $metodo): bool
@@ -173,7 +179,7 @@ final class Autenticacion
 
         if (self::activo('clave')) {
             $anotar('ok', 'Acceso por contraseña',
-                'Mínimo ' . self::claveMinima() . ' caracteres. Quien se preregistró antes de '
+                'Mínimo ' . self::claveMinima() . ' caracteres. Quien se registró antes de '
                 . 'encender esto no tiene contraseña todavía: podrá ponerla con un código, o '
                 . 'entrar por otro método.');
         }

@@ -1,6 +1,6 @@
 # Esquema de datos
 
-Plataforma de Eventos TIC · versión del esquema **1.3.0**
+Plataforma de Eventos TIC · versión del esquema **1.4.0**
 
 > Documento generado con `php herramientas/generar-doc-esquema.php` a partir de
 > `app/Esquema.php`, la misma definición que el instalador usa para crear y actualizar
@@ -139,8 +139,8 @@ Quien se preregistra. El documento va cifrado, con una huella aparte para detect
 | `nombre` | `VARCHAR(160) NOT NULL` |
 | `correo` | `VARCHAR(190) NOT NULL` |
 | `tipo_documento` | `ENUM('CC','CE','TI','PP') NOT NULL DEFAULT 'CC'` |
-| `documento_cifrado` | `VARBINARY(255) NOT NULL` |
-| `documento_huella` | `CHAR(64) NOT NULL` |
+| `documento_cifrado` | `VARBINARY(255) NULL DEFAULT NULL` |
+| `documento_huella` | `CHAR(64) NULL DEFAULT NULL` |
 | `telefono` | `VARCHAR(32) NOT NULL DEFAULT ''` |
 | `entidad` | `VARCHAR(160) NOT NULL DEFAULT ''` |
 | `departamento` | `VARCHAR(80) NOT NULL DEFAULT ''` |

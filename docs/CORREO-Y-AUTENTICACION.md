@@ -36,9 +36,10 @@ Se configura en **Administración → Autenticación**, que está organizada por
 método, con su configuración y sus instrucciones juntas. Cada pestaña guarda lo suyo, así que
 tocar WhatsApp no altera lo que tengas puesto en SMS.
 
-Desde la versión 3.1 una instalación nueva viene con **correo y QR encendidos**, no solo
-correo. Es deliberado: que la instalación por omisión dependiera de que el correo saliera es
-justo lo que dejó un evento sin acceso.
+Desde la versión 3.2 una instalación nueva viene con **correo, QR y contraseña encendidos**.
+Es deliberado: ninguno de los tres depende de un tercero ni cuesta dinero, y que la
+instalación por omisión dependiera de que el correo saliera es justo lo que dejó un evento sin
+acceso.
 
 ---
 
@@ -72,6 +73,19 @@ desde el teléfono entra directo, sin pedir nada.
 La persona la elige en el preregistro; se guarda con Argon2id. Quien se preregistró **antes** de
 encender el método no tiene contraseña: entrará por otro y podrá ponerla después desde
 *Mis datos*.
+
+**Se puede crear el acceso con solo la contraseña.** Quien llega a la pantalla de ingreso sin
+estar inscrito encuentra **«Crear mi acceso en un minuto»**: correo, contraseña y la
+autorización de tratamiento de datos, y ya está dentro. El resto del formulario lo completa
+después, sin la fila detrás.
+
+El carnet **no** se emite hasta que el registro esté completo —hace falta al menos el nombre y
+la identificación—, y mientras tanto la plataforma lo lleva al formulario en vez de enseñarle
+pantallas vacías. En *Registros* esas personas salen marcadas como **«Sin completar»**, para
+verlo antes de la puerta y no en ella.
+
+Este método tiene que estar encendido para que aparezca esa opción: sin él, la contraseña que
+se eligiera no serviría para volver a entrar, así que la pantalla manda al formulario completo.
 
 **Su contraseña no se puede consultar.** En la base hay un hash Argon2id, que es de un solo
 sentido; si se pudiera leer, quien copiara la tabla tendría en claro las de todos. Cuando

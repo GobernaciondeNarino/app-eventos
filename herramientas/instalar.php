@@ -53,7 +53,7 @@ if (PHP_SAPI !== 'cli') {
 
 define('EVENTOS_TIC', true);
 define('RAIZ', dirname(__DIR__));
-define('APP_VERSION', '3.1.0');
+define('APP_VERSION', '3.2.0');
 
 spl_autoload_register(static function (string $clase): void {
     if (!str_starts_with($clase, 'App\\')) {

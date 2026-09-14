@@ -537,10 +537,29 @@ $pdo->exec("ALTER TABLE {$BD['prefijo']}usuario DROP COLUMN totp_ultimo");
 $columnas = $pdo->query("SHOW COLUMNS FROM {$BD['prefijo']}usuario LIKE 'totp_ultimo'")->fetchAll();
 comprobar('se quitó una columna para probar la actualización', $columnas === []);
 
+// Y una columna se devuelve a como era antes —NOT NULL— para probar el otro
+// camino: el de las que ya existen pero cambiaron de tipo. Agregar lo que falta
+// no alcanza ahí, porque la columna está; hace falta un ALTER ... MODIFY. Es
+// exactamente lo que se encuentra una instalación vieja al subir a la 1.4.0.
+$pdo->exec("UPDATE {$BD['prefijo']}persona SET documento_huella = REPEAT('0', 64)
+             WHERE documento_huella IS NULL");
+$pdo->exec("UPDATE {$BD['prefijo']}persona SET documento_cifrado = 'x'
+             WHERE documento_cifrado IS NULL");
+$pdo->exec("ALTER TABLE {$BD['prefijo']}persona MODIFY COLUMN documento_huella CHAR(64) NOT NULL");
+$nulable = static fn(string $columna): string => (string) $pdo->query(
+    "SELECT IS_NULLABLE FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{$BD['prefijo']}persona'
+        AND COLUMN_NAME = '$columna'"
+)->fetchColumn();
+comprobar('se devolvió una columna a NOT NULL para probar el ajuste',
+    $nulable('documento_huella') === 'NO');
+
 // Aunque se envíe a mano, «limpio» no se aplica en una reparación.
 $html = $perdido->post('/instalar', ['accion' => 'paso3', 'modo' => 'limpio']);
 $columnas = $pdo->query("SHOW COLUMNS FROM {$BD['prefijo']}usuario LIKE 'totp_ultimo'")->fetchAll();
 comprobar('el modo actualizar devuelve la columna que faltaba', count($columnas) === 1);
+comprobar('y vuelve nulable la que había cambiado de tipo',
+    $nulable('documento_huella') === 'YES', $nulable('documento_huella'));
 comprobar('paso 3 de la reparación', str_contains($html, 'Cuenta administradora'));
 comprobar('no borró nada de lo que ya había',
     $anotaciones() >= $antesDeReparar, $anotaciones() . ' de ' . $antesDeReparar);
@@ -841,7 +860,7 @@ $html = $admin->post('/admin/entrar', [
     'clave' => 'una frase larga y facil de recordar',
 ]);
 comprobar('entra con las credenciales correctas', str_contains($html, 'Panel del evento'));
-comprobar('el panel cuenta los preregistrados', str_contains($html, 'Preregistrados'));
+comprobar('el panel cuenta los registrados', str_contains($html, 'Registrados'));
 
 $html = $admin->get('/admin/registros');
 comprobar('ve el listado de registros', str_contains($html, 'María Fernanda Zambrano'));
@@ -1527,6 +1546,296 @@ comprobar('y los métodos activos siguen ahí',
 $admin->post('/admin/autenticacion', ['seccion' => 'metodos', 'metodos' => []]);
 comprobar('no se pueden apagar todos los métodos',
     !empty(leerConfig($RAIZ)['auth_metodos']));
+
+/* =========================================================================
+   El registro: nombre, fase plegada y siempre abierto
+   ========================================================================= */
+titulo('Formulario de registro');
+
+$visitante = new Cliente($BASE);
+$html = $visitante->get('/registro');
+comprobar('/registro responde', $visitante->codigo === 200, (string) $visitante->codigo);
+comprobar('se llama «Registro», no «preregistro»',
+    str_contains($html, 'Formulario de registro') && !str_contains($html, 'Formulario de preregistro'));
+
+$viejo = new Cliente($BASE);
+$viejo->get('/preregistro');
+comprobar('la dirección anterior sigue funcionando: hay correos con ella',
+    $viejo->codigo === 200, (string) $viejo->codigo);
+
+// La fase 02 arranca plegada. Lo que se comprueba es el HTML que manda el
+// servidor, que es lo que decide: el guion solo alterna a partir de ahí.
+comprobar('la caracterización arranca plegada',
+    (bool) preg_match('/id="bloque-opcional"[^>]*class="[^"]*hidden/', $html)
+    || (bool) preg_match('/class="[^"]*hidden[^"]*"[^>]*id="bloque-opcional"/', $html),
+    'no se encontró la clase hidden en el bloque');
+comprobar('y su botón dice «Mostrar»',
+    (bool) preg_match('/data-plegar="bloque-opcional"[^>]*aria-expanded="false"/s', $html)
+    && str_contains($html, 'Mostrar'));
+
+// Un error dentro de esa fase la abre sola: si no, nadie encuentra por qué no
+// se guardó.
+$conError = new Cliente($BASE);
+$conError->get('/registro');
+$html = $conError->post('/registro', [
+    'correo' => 'municipio.malo@narino.gov.co', 'nombre' => 'Persona De Prueba',
+    'tipo_documento' => 'CC', 'documento' => '98765432',
+    'departamento' => 'Nariño', 'municipio' => 'Ciudad Que No Existe',
+    'habeas' => '1',
+]);
+comprobar('un error en la caracterización la deja abierta',
+    (bool) preg_match('/data-plegar="bloque-opcional"[^>]*aria-expanded="true"/s', $html));
+
+/* =========================================================================
+   Crear el acceso con correo y contraseña
+   ========================================================================= */
+titulo('Acceso con correo y contraseña');
+
+$html = $visitante->get('/entrar');
+comprobar('la pantalla de ingreso ofrece crear el acceso',
+    str_contains($html, '/entrar/crear'));
+
+$nuevo = new Cliente($BASE);
+$html = $nuevo->get('/entrar/crear');
+comprobar('la pantalla de crear acceso responde', $nuevo->codigo === 200, (string) $nuevo->codigo);
+
+$html = $nuevo->post('/entrar/crear', [
+    'correo' => 'rapida@narino.gov.co', 'clave' => 'corta', 'clave2' => 'corta', 'habeas' => '1',
+]);
+comprobar('exige el largo mínimo de la contraseña', str_contains($html, 'al menos'));
+
+$html = $nuevo->post('/entrar/crear', [
+    'correo' => 'rapida@narino.gov.co', 'clave' => 'clave-de-prueba', 'clave2' => 'otra-distinta',
+    'habeas' => '1',
+]);
+comprobar('exige que las dos contraseñas coincidan', str_contains($html, 'no coinciden'));
+
+$html = $nuevo->post('/entrar/crear', [
+    'correo' => 'rapida@narino.gov.co', 'clave' => 'clave-de-prueba', 'clave2' => 'clave-de-prueba',
+]);
+comprobar('exige la autorización de tratamiento de datos',
+    str_contains($html, 'autorizar el tratamiento'));
+
+$html = $nuevo->post('/entrar/crear', [
+    'correo' => 'rapida@narino.gov.co', 'clave' => 'clave-de-prueba', 'clave2' => 'clave-de-prueba',
+    'habeas' => '1',
+]);
+comprobar('con todo correcto queda dentro y se le pide completar',
+    str_contains($html, 'Completa tu registro'), substr(strip_tags($html), 0, 120));
+
+$rapida = $pdo->query("SELECT * FROM {$BD['prefijo']}persona
+                        WHERE correo = 'rapida@narino.gov.co'")->fetch(PDO::FETCH_ASSOC);
+comprobar('la persona existe con el correo', is_array($rapida));
+comprobar('sin documento, que es lo que permite el registro a medias',
+    $rapida['documento_huella'] === null && $rapida['documento_cifrado'] === null,
+    json_encode([$rapida['documento_huella'], $rapida['documento_cifrado']]));
+comprobar('con la contraseña guardada como hash, nunca en claro',
+    $rapida['clave_hash'] !== '' && !str_contains((string) $rapida['clave_hash'], 'clave-de-prueba'));
+comprobar('y quedó la autorización de datos con su fecha', !empty($rapida['autorizo_datos_en']));
+
+comprobar('todavía no tiene carnet: no hay nada que poner en él',
+    (int) $pdo->query("SELECT COUNT(*) FROM {$BD['prefijo']}credencial
+                        WHERE persona_id = {$rapida['id']}")->fetchColumn() === 0);
+
+// Lo que hay detrás del guardia de asistente lleva a completar, no a una
+// pantalla vacía.
+$nuevo->get('/carnet', false);
+comprobar('el carnet redirige a completar el registro',
+    $nuevo->codigo === 303 && str_contains($nuevo->cabecera('Location'), '/registro'),
+    $nuevo->codigo . ' → ' . $nuevo->cabecera('Location'));
+
+$nuevo->get('/checkin', false);
+comprobar('el check-in también', $nuevo->codigo === 303);
+
+// El mismo correo no se puede crear dos veces.
+$otroMas = new Cliente($BASE);
+$otroMas->get('/entrar/crear');
+$html = $otroMas->post('/entrar/crear', [
+    'correo' => 'rapida@narino.gov.co', 'clave' => 'clave-de-prueba', 'clave2' => 'clave-de-prueba',
+    'habeas' => '1',
+]);
+comprobar('un correo ya usado no crea otra cuenta', str_contains($html, 'ya tiene acceso'));
+
+// Y al completar el formulario sí se emite el carnet.
+$nuevo->get('/registro');
+$html = $nuevo->post('/registro', [
+    'nombre' => 'Registro Rápido Nariño', 'tipo_documento' => 'CC', 'documento' => '77712345',
+    'rol' => 'participante', 'habeas' => '1',
+]);
+comprobar('al completar los datos sale el carnet', str_contains($html, 'Tu carnet digital'),
+    substr(strip_tags($html), 0, 120));
+comprobar('y ahora sí tiene credencial',
+    (int) $pdo->query("SELECT COUNT(*) FROM {$BD['prefijo']}credencial
+                        WHERE persona_id = {$rapida['id']}")->fetchColumn() === 1);
+
+// Entrar con esa contraseña funciona de verdad.
+$pdo->exec("UPDATE {$BD['prefijo']}intento SET creado_en = DATE_SUB(NOW(), INTERVAL 2 DAY)");
+$vuelve = new Cliente($BASE);
+$vuelve->get('/entrar?metodo=clave');
+$html = $vuelve->post('/entrar', [
+    'metodo' => 'clave', 'correo' => 'rapida@narino.gov.co', 'clave' => 'clave-de-prueba',
+]);
+comprobar('la contraseña elegida sirve para entrar',
+    str_contains($html, 'Registro Rápido Nariño'), substr(strip_tags($html), 0, 110));
+
+$html = $admin->get('/admin/registros');
+comprobar('el panel lista al que entró por la puerta corta',
+    str_contains($html, 'Registro Rápido Nariño'));
+
+/* =========================================================================
+   Eventos: editar, desactivar y eliminar
+   ========================================================================= */
+titulo('Eventos');
+
+$idEvento = (int) $pdo->query("SELECT id FROM {$BD['prefijo']}evento WHERE activo = 1")->fetchColumn();
+
+$html = $admin->get('/admin/eventos');
+comprobar('la pantalla ofrece editar', str_contains($html, '/admin/eventos/editar'));
+comprobar('y eliminar', str_contains($html, '/admin/eventos/eliminar'));
+comprobar('y dice cuántos registros se perderían',
+    str_contains($html, 'Personas registradas'));
+
+$fechaVieja = (string) $pdo->query("SELECT fecha_inicio FROM {$BD['prefijo']}evento
+                                     WHERE id = $idEvento")->fetchColumn();
+$diaUnoViejo = (string) $pdo->query("SELECT fecha FROM {$BD['prefijo']}evento_dia
+                                      WHERE evento_id = $idEvento ORDER BY numero LIMIT 1")->fetchColumn();
+
+$admin->post('/admin/eventos/editar', [
+    'evento' => (string) $idEvento,
+    'nombre' => 'Cumbre Tecnológica CIOS Nariño · corregida',
+    'dependencia' => 'Secretaría TIC', 'sede' => 'Centro de Convenciones',
+    'fecha_inicio' => $fechaVieja, 'estado' => 'en_curso',
+]);
+$ev = $pdo->query("SELECT * FROM {$BD['prefijo']}evento WHERE id = $idEvento")->fetch(PDO::FETCH_ASSOC);
+comprobar('el nombre se corrige', str_contains((string) $ev['nombre'], 'corregida'), (string) $ev['nombre']);
+comprobar('y el estado también', $ev['estado'] === 'en_curso', (string) $ev['estado']);
+comprobar('sin mover las jornadas si no se pidió',
+    (string) $pdo->query("SELECT fecha FROM {$BD['prefijo']}evento_dia
+                           WHERE evento_id = $idEvento ORDER BY numero LIMIT 1")->fetchColumn() === $diaUnoViejo);
+
+// Ahora sí, moviendo las jornadas con la fecha.
+$nuevaFecha = date('Y-m-d', strtotime($fechaVieja . ' +7 day'));
+$admin->post('/admin/eventos/editar', [
+    'evento' => (string) $idEvento,
+    'nombre' => 'Cumbre Tecnológica CIOS Nariño',
+    'dependencia' => 'Secretaría TIC', 'sede' => 'Centro de Convenciones',
+    'fecha_inicio' => $nuevaFecha, 'estado' => 'en_curso', 'mover_jornadas' => '1',
+]);
+comprobar('con la casilla marcada, las jornadas se mueven los mismos días',
+    (string) $pdo->query("SELECT fecha FROM {$BD['prefijo']}evento_dia
+                           WHERE evento_id = $idEvento ORDER BY numero LIMIT 1")->fetchColumn()
+    === date('Y-m-d', strtotime($diaUnoViejo . ' +7 day')));
+
+// Desactivar y volver a activar.
+$admin->post('/admin/eventos/desactivar', ['evento' => (string) $idEvento]);
+comprobar('desactivar apaga el evento',
+    (int) $pdo->query("SELECT activo FROM {$BD['prefijo']}evento WHERE id = $idEvento")->fetchColumn() === 0);
+
+$sinEvento = new Cliente($BASE);
+$sinEvento->get('/');
+comprobar('sin evento activo la portada no se rompe',
+    in_array($sinEvento->codigo, [200, 503], true), (string) $sinEvento->codigo);
+
+$admin->post('/admin/eventos/activar', ['evento' => (string) $idEvento]);
+comprobar('y se vuelve a activar',
+    (int) $pdo->query("SELECT activo FROM {$BD['prefijo']}evento WHERE id = $idEvento")->fetchColumn() === 1);
+
+// Eliminar: primero uno de prueba, con datos dentro.
+$admin->get('/admin/eventos');
+$admin->post('/admin/eventos/crear', [
+    'nombre' => 'Evento de prueba para borrar', 'dependencia' => 'TIC', 'sede' => 'Ninguna',
+    'fecha_inicio' => date('Y-m-d', strtotime('+90 day')), 'jornadas' => '2',
+]);
+$idPrueba = (int) $pdo->query("SELECT id FROM {$BD['prefijo']}evento
+                                WHERE nombre = 'Evento de prueba para borrar'")->fetchColumn();
+comprobar('se crea el evento de prueba', $idPrueba > 0);
+
+$pdo->exec("INSERT INTO {$BD['prefijo']}persona
+              (evento_id, nombre, correo, documento_cifrado, documento_huella, autorizo_datos_en)
+            VALUES ($idPrueba, 'Alguien De Prueba', 'prueba.borrar@narino.gov.co',
+                    " . $pdo->quote('cifrado-falso') . ", " . $pdo->quote(str_repeat('a', 64)) . ", NOW())");
+
+$admin->post('/admin/eventos/eliminar', ['evento' => (string) $idPrueba, 'confirmacion' => 'quizá']);
+comprobar('sin escribir ELIMINAR no se borra nada',
+    (int) $pdo->query("SELECT COUNT(*) FROM {$BD['prefijo']}evento WHERE id = $idPrueba")->fetchColumn() === 1);
+
+$admin->post('/admin/eventos/eliminar', ['evento' => (string) $idPrueba, 'confirmacion' => 'ELIMINAR']);
+comprobar('escribiéndolo sí se borra',
+    (int) $pdo->query("SELECT COUNT(*) FROM {$BD['prefijo']}evento WHERE id = $idPrueba")->fetchColumn() === 0);
+comprobar('y se lleva sus jornadas',
+    (int) $pdo->query("SELECT COUNT(*) FROM {$BD['prefijo']}evento_dia
+                        WHERE evento_id = $idPrueba")->fetchColumn() === 0);
+comprobar('y sus personas',
+    (int) $pdo->query("SELECT COUNT(*) FROM {$BD['prefijo']}persona
+                        WHERE evento_id = $idPrueba")->fetchColumn() === 0);
+comprobar('el evento activo sigue intacto',
+    (int) $pdo->query("SELECT COUNT(*) FROM {$BD['prefijo']}evento WHERE id = $idEvento")->fetchColumn() === 1);
+
+/* =========================================================================
+   Jornadas con ingresos: ahora se pueden eliminar
+   ========================================================================= */
+titulo('Eliminar una jornada con ingresos');
+
+$conIngresos = $pdo->query(
+    "SELECT d.numero, d.id, COUNT(a.id) AS n
+       FROM {$BD['prefijo']}evento_dia d
+       JOIN {$BD['prefijo']}asistencia a ON a.evento_dia_id = d.id
+      WHERE d.evento_id = $idEvento
+   GROUP BY d.id ORDER BY n DESC LIMIT 1"
+)->fetch(PDO::FETCH_ASSOC);
+
+if (!$conIngresos) {
+    comprobar('hay una jornada con ingresos para la prueba', false, 'ninguna tiene');
+} else {
+    $numero = (int) $conIngresos['numero'];
+    $antes = (int) $pdo->query("SELECT COUNT(*) FROM {$BD['prefijo']}evento_dia
+                                 WHERE evento_id = $idEvento")->fetchColumn();
+
+    $admin->get('/admin/qr-dias');
+    $admin->post('/admin/qr-dias/eliminar', ['numero' => (string) $numero]);
+    comprobar('sin confirmar, una jornada con ingresos no se elimina',
+        (int) $pdo->query("SELECT COUNT(*) FROM {$BD['prefijo']}evento_dia
+                            WHERE evento_id = $idEvento")->fetchColumn() === $antes);
+
+    $admin->post('/admin/qr-dias/eliminar', ['numero' => (string) $numero, 'forzar' => '1']);
+    comprobar('confirmando sí, y con sus ingresos',
+        (int) $pdo->query("SELECT COUNT(*) FROM {$BD['prefijo']}evento_dia
+                            WHERE evento_id = $idEvento")->fetchColumn() === $antes - 1);
+    comprobar('las asistencias de ese día se fueron con él',
+        (int) $pdo->query("SELECT COUNT(*) FROM {$BD['prefijo']}asistencia
+                            WHERE evento_dia_id = {$conIngresos['id']}")->fetchColumn() === 0);
+    comprobar('el contador de jornadas del evento queda cuadrado',
+        (int) $pdo->query("SELECT jornadas FROM {$BD['prefijo']}evento
+                            WHERE id = $idEvento")->fetchColumn() === $antes - 1);
+}
+
+// La última jornada no se puede quitar ni forzando: un evento sin días no
+// tiene dónde registrar un ingreso.
+$pdo->exec("DELETE FROM {$BD['prefijo']}evento_dia
+             WHERE evento_id = $idEvento AND numero <> (
+               SELECT n FROM (SELECT MIN(numero) AS n FROM {$BD['prefijo']}evento_dia
+                               WHERE evento_id = $idEvento) t)");
+$ultima = (int) $pdo->query("SELECT numero FROM {$BD['prefijo']}evento_dia
+                              WHERE evento_id = $idEvento LIMIT 1")->fetchColumn();
+$admin->get('/admin/qr-dias');
+$admin->post('/admin/qr-dias/eliminar', ['numero' => (string) $ultima, 'forzar' => '1']);
+comprobar('la única jornada que queda no se puede eliminar',
+    (int) $pdo->query("SELECT COUNT(*) FROM {$BD['prefijo']}evento_dia
+                        WHERE evento_id = $idEvento")->fetchColumn() === 1);
+
+// Se devuelve el evento a tres jornadas. Este bloque es destructivo por
+// definición, y lo que deja montado lo usan después la prueba de navegador y
+// quien mire la instalación a mano: dejarla con un solo día sería dejarla
+// distinta de como se encuentra un evento de verdad.
+$admin->get('/admin/qr-dias');
+foreach ([1, 2] as $mas) {
+    $admin->post('/admin/qr-dias/agregar', [
+        'fecha' => date('Y-m-d', strtotime('+' . $mas . ' day')),
+    ]);
+}
+comprobar('el evento vuelve a tener tres jornadas para lo que sigue',
+    (int) $pdo->query("SELECT COUNT(*) FROM {$BD['prefijo']}evento_dia
+                        WHERE evento_id = $idEvento")->fetchColumn() === 3);
 
 /* =========================================================================
    10 · Cierre de sesión

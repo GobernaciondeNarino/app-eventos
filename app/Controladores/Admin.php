@@ -247,7 +247,7 @@ final class Admin
         $esAdministrador = Guardia::puede('administrador');
 
         $datos = [
-            'titulo'    => $persona['nombre'],
+            'titulo'    => $persona['nombre'] !== '' ? $persona['nombre'] : (string) $persona['correo'],
             'pantalla'  => 'admin-registros',
             'persona'   => $persona,
             'documento' => Guardia::puede('operador') ? Persona::documento($persona) : '',
@@ -530,19 +530,29 @@ final class Admin
             'Día ' . $numero . ' agregado, con su propio código QR. Imprímelo para la entrada.');
     }
 
+    /**
+     * Elimina una jornada.
+     *
+     * Con «forzar» se lleva también sus ingresos y sus charlas. Hace falta:
+     * los días de prueba se llenan de escaneos justamente probando, y sin esta
+     * salida la única forma de limpiar era entrar a la base a mano.
+     */
     public function eliminarJornada(Peticion $peticion): void
     {
         $evento = App::eventoExigido();
         $numero = $peticion->entero('numero');
+        $forzar = $peticion->marcado('forzar');
 
         try {
-            Evento::eliminarJornada((int) $evento['id'], $numero);
+            Evento::eliminarJornada((int) $evento['id'], $numero, $forzar);
         } catch (\DomainException $e) {
             Respuesta::redirigir('/admin/qr-dias', $e->getMessage(), 'warn');
         }
 
         App::olvidarEvento();
-        Respuesta::redirigir('/admin/qr-dias', 'Día ' . $numero . ' eliminado.');
+        Respuesta::redirigir('/admin/qr-dias', $forzar
+            ? 'Día ' . $numero . ' eliminado, con los ingresos y las charlas que tenía.'
+            : 'Día ' . $numero . ' eliminado.', $forzar ? 'warn' : 'ok');
     }
 
     public function ajustarJornada(Peticion $peticion): void
@@ -829,11 +839,91 @@ final class Admin
 
     public function eventos(Peticion $peticion): void
     {
+        // Lo que se perdería al eliminar cada uno. Se calcula aquí y se enseña
+        // en el diálogo: un «¿seguro?» sin un número al lado no es una
+        // confirmación, es un trámite que se pulsa sin leer.
+        $eventos = Evento::todos();
+        foreach ($eventos as &$ev) {
+            $ev['contenido'] = Evento::contenido((int) $ev['id']);
+        }
+        unset($ev);
+
         Respuesta::vista('admin/eventos', [
             'titulo'   => 'Eventos',
             'pantalla' => 'admin-eventos',
-            'eventos'  => Evento::todos(),
+            'eventos'  => $eventos,
+            'estados'  => Evento::ESTADOS,
         ]);
+    }
+
+    /** Corrige los datos de un evento. Lo que más se usa: un nombre mal escrito. */
+    public function editarEvento(Peticion $peticion): void
+    {
+        $id = $peticion->entero('evento');
+
+        try {
+            Evento::actualizar($id, [
+                'nombre'       => $peticion->campo('nombre'),
+                'dependencia'  => $peticion->campo('dependencia'),
+                'sede'         => $peticion->campo('sede'),
+                'fecha_inicio' => $peticion->campo('fecha_inicio'),
+                'estado'       => $peticion->campo('estado'),
+            ], $peticion->marcado('mover_jornadas'));
+        } catch (\DomainException $e) {
+            Respuesta::redirigir('/admin/eventos', $e->getMessage(), 'warn');
+        }
+
+        App::olvidarEvento();
+        Respuesta::redirigir('/admin/eventos', 'Evento actualizado.');
+    }
+
+    /**
+     * Apaga el evento activo.
+     *
+     * No borra nada y se deshace activándolo otra vez. Mientras no haya
+     * ninguno activo, los asistentes ven la pantalla de «todavía no hay nada»
+     * y el equipo, la invitación a crearlo.
+     */
+    public function desactivarEvento(Peticion $peticion): void
+    {
+        $id = $peticion->entero('evento');
+        if (!Evento::porId($id)) {
+            Respuesta::redirigir('/admin/eventos', 'Ese evento no existe.', 'warn');
+        }
+
+        Evento::desactivar($id);
+        App::olvidarEvento();
+
+        Respuesta::redirigir('/admin/eventos',
+            'Evento desactivado. Los asistentes ya no lo ven; actívalo de nuevo cuando quieras.', 'warn');
+    }
+
+    /**
+     * Elimina un evento con todo lo suyo.
+     *
+     * Hace falta escribir ELIMINAR. No es capricho: esto se lleva por delante
+     * los registros de las personas, sus asistencias y sus contactos, y no hay
+     * deshacer. Un botón suelto en una fila de tabla se pulsa por error.
+     */
+    public function eliminarEvento(Peticion $peticion): void
+    {
+        $id = $peticion->entero('evento');
+
+        if (mb_strtoupper(trim($peticion->campo('confirmacion'))) !== 'ELIMINAR') {
+            Respuesta::redirigir('/admin/eventos',
+                'Para eliminar un evento hay que escribir ELIMINAR en la confirmación.', 'warn');
+        }
+
+        try {
+            $contenido = Evento::eliminar($id);
+        } catch (\DomainException $e) {
+            Respuesta::redirigir('/admin/eventos', $e->getMessage(), 'warn');
+        }
+
+        App::olvidarEvento();
+
+        Respuesta::redirigir('/admin/eventos', 'Evento eliminado, con sus '
+            . $contenido['jornadas'] . ' jornadas y ' . $contenido['personas'] . ' registros.', 'warn');
     }
 
     public function crearEvento(Peticion $peticion): void

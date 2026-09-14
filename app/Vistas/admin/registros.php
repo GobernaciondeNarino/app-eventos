@@ -31,8 +31,12 @@ guiones('registros.js');
     <?php
     $conIngreso = 0;
     $completos = 0;
+    $aMedias = 0;
     $entidades = [];
     foreach ($personas as $p) {
+        if (!Persona::registroCompleto($p)) {
+            $aMedias++;
+        }
         $dias = Persona::diasDe($p['dias'] ?? null);
         if ($dias) {
             $conIngreso++;
@@ -48,7 +52,11 @@ guiones('registros.js');
       ['En el filtro', numero(count($personas)), 'de ' . numero($total) . ' registros'],
       ['Con al menos un ingreso', numero($conIngreso), $personas ? round($conIngreso / count($personas) * 100) . '%' : '—'],
       ['Asistencia completa', numero($completos), 'los ' . count($jornadas) . ' días'],
-      ['Entidades', numero(count($entidades)), 'representadas'],
+      // El cuarto cambia según haga falta: mientras haya registros a medias eso
+      // es lo accionable hoy; cuando no los hay, vuelve el dato de reporte.
+      $aMedias > 0
+        ? ['Sin completar', numero($aMedias), 'crearon acceso, falta el formulario']
+        : ['Entidades', numero(count($entidades)), 'representadas'],
     ];
     foreach ($kpis as [$etiqueta, $valor, $sub]): ?>
       <div class="kpi">
@@ -103,10 +111,28 @@ guiones('registros.js');
           $dias = Persona::diasDe($p['dias'] ?? null); ?>
           <div class="table__row" style="<?= $columnas ?>">
             <div class="stack" style="gap:2px;min-width:0">
-              <strong style="font-weight:500;color:var(--c-title)"><?= e($p['nombre']) ?></strong>
-              <span class="mono muted" style="font-size:11px"><?= e($p['correo']) ?></span>
+              <?php /* Quien creó su acceso con correo y contraseña y todavía no
+                       llenó el formulario aparece aquí igual: existe, tiene
+                       sesión y va a llegar al evento. Pero no tiene carnet, y
+                       eso hay que verlo antes de la puerta y no en ella. */ ?>
+              <strong style="font-weight:500;color:var(--c-title)">
+                <?= $p['nombre'] !== '' ? e($p['nombre']) : '—' ?>
+              </strong>
+              <span class="row" style="gap:6px">
+                <span class="mono muted" style="font-size:11px"><?= e($p['correo']) ?></span>
+                <?php if (!Persona::registroCompleto($p)): ?>
+                  <span class="tag tag--warn" title="Creó su acceso pero no ha completado el formulario">Sin completar</span>
+                <?php endif; ?>
+              </span>
             </div>
-            <span class="mono" style="font-size:12.5px;color:var(--c-text)"><?= ($puedeVerDocumento ?? false) ? e(documento(Persona::documento($p))) : '· · ·' ?></span>
+            <span class="mono" style="font-size:12.5px;color:var(--c-text)"><?php
+              if (!($puedeVerDocumento ?? false)) {
+                  echo '· · ·';
+              } else {
+                  $doc = Persona::documento($p);
+                  echo $doc === '' ? '<span class="muted">sin dar</span>' : e(documento($doc));
+              }
+            ?></span>
             <span style="color:var(--c-text)"><?= e($p['municipio'] ?: '—') ?></span>
             <span style="color:var(--c-text)"><?= e($p['entidad'] ?: '—') ?></span>
             <span><span class="tag <?= e(claseRol((string) $p['rol'])) ?>"><?= e(etiquetaRol((string) $p['rol'])) ?></span></span>
@@ -124,8 +150,8 @@ guiones('registros.js');
                  tabla. -->
             <a class="btn btn--icono" href="<?= e(u('/admin/registros/' . (int) $p['id'])) ?>"
                data-ficha="<?= e(u('/admin/registros/' . (int) $p['id'])) ?>"
-               title="Ver la ficha de <?= e($p['nombre']) ?>"
-               aria-label="Ver la ficha de <?= e($p['nombre']) ?>">
+               title="Ver la ficha de <?= e($p['nombre'] !== '' ? $p['nombre'] : $p['correo']) ?>"
+               aria-label="Ver la ficha de <?= e($p['nombre'] !== '' ? $p['nombre'] : $p['correo']) ?>">
               <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
                    stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M12 12.5a4 4 0 1 0 0-8 4 4 0 0 0 0 8M5 20.5a7 7 0 0 1 14 0"></path>

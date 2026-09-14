@@ -98,10 +98,23 @@ $hoy = date('Y-m-d');
                   <button class="btn btn--sm btn--danger btn--block" type="submit">Eliminar este día</button>
                 </form>
               <?php else: ?>
-                <p class="help" style="margin:0">
-                  No se puede eliminar: ya tiene <?= e(numero($j['ingresos'])) ?> ingreso<?= (int) $j['ingresos'] === 1 ? '' : 's' ?>
-                  registrado<?= (int) $j['ingresos'] === 1 ? '' : 's' ?>, y borrarlo se llevaría esos datos.
-                </p>
+                <?php /* Con ingresos sí se puede, pero diciendo cuántos se van
+                         con él. Los días de prueba se llenan de escaneos
+                         justamente probando, y sin esta salida la única forma
+                         de limpiar era entrar a la base a mano. */ ?>
+                <form method="post" action="<?= e(u('/admin/qr-dias/eliminar')) ?>"
+                      data-confirmar="El día <?= e((string) $j['numero']) ?> tiene <?= e(numero($j['ingresos'])) ?> ingreso(s) registrado(s). Se eliminarán con él y no hay deshacer. ¿Continuar?">
+                  <?= testigo() ?>
+                  <input type="hidden" name="numero" value="<?= e((string) $j['numero']) ?>">
+                  <input type="hidden" name="forzar" value="1">
+                  <p class="help" style="margin:0 0 8px">
+                    Tiene <?= e(numero($j['ingresos'])) ?> ingreso<?= (int) $j['ingresos'] === 1 ? '' : 's' ?>
+                    registrado<?= (int) $j['ingresos'] === 1 ? '' : 's' ?>. Se irán con el día.
+                  </p>
+                  <button class="btn btn--sm btn--danger btn--block" type="submit">
+                    Eliminar el día y sus ingresos
+                  </button>
+                </form>
               <?php endif; ?>
             </details>
           <?php endif; ?>

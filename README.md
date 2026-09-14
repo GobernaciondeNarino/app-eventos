@@ -22,9 +22,9 @@ registra gente, se sella asistencia, se aprueban exposiciones y se exportan repo
 | **Interfaz** | 20 pantallas, diseño configurable por evento, responsive |
 | **Backend** | PHP 8.1+ con PDO y MySQL/MariaDB, sin framework ni Composer |
 | **Instalación** | Asistente de seis pasos que crea, actualiza o anexa las tablas |
-| **Autenticación** | Cinco formas de entrar: correo, QR personal, contraseña, WhatsApp y SMS. El equipo, con contraseña y segundo factor |
+| **Autenticación** | Cinco formas de entrar: correo, QR personal, contraseña, WhatsApp y SMS. Se puede crear el acceso con solo correo y contraseña. El equipo, con contraseña y segundo factor |
 | **Códigos QR** | Generador **y lector** propios, verificados uno contra otro y contra una librería de referencia |
-| **Pruebas** | 278 comprobaciones de extremo a extremo, 32 en navegador, y 139 más de QR, foto, correo, TOTP, SVG y proxy |
+| **Pruebas** | 326 comprobaciones de extremo a extremo, 47 en navegador, y 141 más de QR, foto, correo, TOTP, SVG y proxy |
 
 ---
 
@@ -84,7 +84,14 @@ hay que regenerarlos.
 
 ### El asistente
 
-1. **Preregistro** — nombre y documento; el resto es opcional. Si va a exponer, adjunta su
+Hay dos puertas, y las dos llevan al mismo sitio:
+
+- **El formulario completo** (`/registro`, siempre abierto al público) — nombre y documento;
+  el resto es opcional y la caracterización viene plegada.
+- **El acceso corto** (`/entrar/crear`) — correo y contraseña, y ya está dentro. Completa sus
+  datos después, sin la fila detrás. El carnet se emite cuando el registro está completo.
+
+1. **Registro** — nombre y documento; el resto es opcional. Si va a exponer, adjunta su
    propuesta en el mismo formulario.
 2. **Carnet** — se emite al instante y llega por correo. No hace falta imprimirlo.
 3. **Cada mañana** — apunta la cámara al pliego de la entrada. El código abre la plataforma,
@@ -286,12 +293,12 @@ node pruebas/interacciones.js
 el enrutado, las cookies, los testigos y los guardias, que es donde suelen estar los errores.
 Incluye 25 comprobaciones de seguridad.
 
-Estado actual: **278 de 278** de extremo a extremo, **77** del asistente de instalación,
+Estado actual: **326 de 326** de extremo a extremo, **77** del asistente de instalación,
 **28** del segundo factor contra los vectores del RFC 6238, **22** del hash de contraseñas,
 **19** del correo saliente, **19** de la dirección del visitante detrás del proxy, **21** de la
 fotografía del carnet, **17** del saneado de logos SVG, **198** casos de QR idénticos entre PHP
-y JavaScript, **161** entre JavaScript y la referencia, **13** del lector de QR, **32** de
-interacción en navegador, y las 14 pantallas limpias en escritorio, tableta y móvil.
+y JavaScript, **161** entre JavaScript y la referencia, **13** del lector de QR, **47** de
+interacción en navegador, y las 16 pantallas limpias en escritorio, tableta y móvil.
 
 Las pruebas nacieron de errores reales, y por eso cubren lo que cubren: una instalación que se
 interrumpe a mitad, un administrador atrapado en el bucle del segundo factor, un asistente
@@ -309,6 +316,8 @@ viendo fallar la prueba.
   controles hay, hallazgos abiertos y cumplimiento de la Ley 1581 de 2012.
 - [`docs/ESQUEMA-DATOS.md`](docs/ESQUEMA-DATOS.md) — las 17 tablas con sus columnas y llaves,
   generado desde `app/Esquema.php`.
+- [`docs/ADMINISTRAR-EVENTOS.md`](docs/ADMINISTRAR-EVENTOS.md) — crear, corregir, desactivar y
+  eliminar eventos y jornadas, y qué se lleva por delante cada cosa.
 - [`docs/CORREO-Y-AUTENTICACION.md`](docs/CORREO-Y-AUTENTICACION.md) — las cinco formas de
   entrar, cómo se configura cada una, y el envío de correo de punta a punta.
 

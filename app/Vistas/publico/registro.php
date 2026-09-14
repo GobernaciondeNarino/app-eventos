@@ -1,9 +1,11 @@
 <?php
 /**
- * Formulario de preregistro.
+ * Formulario de registro. Abierto al público, siempre.
+ *
  * @var array $valores @var array $errores @var array $departamentos
  * @var array $municipios @var array $categorias @var array $jornadas @var bool $yaRegistrado
- * @var bool $pideClave @var int $claveMinima @var bool $tieneClave @var string $foto
+ * @var bool $completo @var bool $pideClave @var int $claveMinima
+ * @var bool $tieneClave @var string $foto
  */
 defined('EVENTOS_TIC') || exit;
 
@@ -19,23 +21,45 @@ if (($valores['correo'] ?? '') === '' && isset($_GET['correo'])) {
 $v = static fn(string $clave, string $porDefecto = ''): string => (string) ($valores[$clave] ?? $porDefecto);
 $err = static fn(string $clave): string => (string) ($errores[$clave] ?? '');
 $hayPropuesta = $v('tema') !== '' || !empty($valores['expositor']);
+
+// La caracterización arranca plegada: es opcional, son ocho campos, y puesta
+// por delante hace que el formulario parezca el triple de largo de lo que es.
+// Se abre sola si algo de dentro quedó con error, para que nadie tenga que
+// buscar a ciegas por qué no se guardó.
+$erroresOpcionales = ['municipio', 'departamento', 'rango_edad', 'genero', 'etnia', 'discapacidad'];
+$abrirOpcional = (bool) array_intersect($erroresOpcionales, array_keys($errores));
+
 guiones('foto.js', 'preregistro.js');
 ?>
 <!-- enctype: sin esto el navegador manda solo los nombres de los archivos y
      $_FILES llega vacío, así que la foto se perdía sin ningún error visible. -->
-<form class="view view--narrow stack stack--4" method="post" action="<?= e(u('/preregistro')) ?>"
+<form class="view view--narrow stack stack--4" method="post" action="<?= e(u('/registro')) ?>"
       enctype="multipart/form-data" novalidate>
   <?= testigo() ?>
 
   <div class="stack stack--2">
     <span class="kicker">Fase 01 · Datos del participante</span>
-    <h1><?= $yaRegistrado ? 'Mis datos' : 'Formulario de preregistro' ?></h1>
+    <h1><?= $yaRegistrado ? ($completo ? 'Mis datos' : 'Completa tu registro') : 'Formulario de registro' ?></h1>
     <p class="help">
-      <?= $yaRegistrado
-        ? 'Puedes corregir lo que haga falta; el carnet se actualiza solo.'
-        : 'Solo nombre e identificación son obligatorios.' ?>
+      <?php if (!$yaRegistrado): ?>
+        Solo nombre e identificación son obligatorios.
+      <?php elseif ($completo): ?>
+        Puedes corregir lo que haga falta; el carnet se actualiza solo.
+      <?php else: ?>
+        Ya tienes acceso. Con el nombre y la identificación te emitimos el carnet.
+      <?php endif; ?>
     </p>
   </div>
+
+  <?php if ($yaRegistrado && !$completo): ?>
+    <div class="notice">
+      <span class="notice__icon" aria-hidden="true">◆</span>
+      <span>
+        Tu acceso ya está creado: puedes volver cuando quieras con tu correo y tu contraseña.
+        El carnet con el código QR se emite en cuanto guardes estos datos.
+      </span>
+    </div>
+  <?php endif; ?>
 
   <?php if ($err('general')): ?>
     <div class="notice notice--danger"><span class="notice__icon">▲</span><span><?= e($err('general')) ?></span></div>
@@ -50,7 +74,7 @@ guiones('foto.js', 'preregistro.js');
           Te enviaremos un código de seis dígitos a ese buzón. Es la forma de comprobar que la
           cuenta es tuya antes de dejar cambiar nada.
         </span>
-        <span><a href="<?= e(u('/entrar', ['destino' => '/preregistro'])) ?>">Entrar con mi código ›</a></span>
+        <span><a href="<?= e(u('/entrar', ['destino' => '/registro'])) ?>">Entrar con mi código ›</a></span>
       </span>
     </div>
   <?php endif; ?>
@@ -245,9 +269,12 @@ guiones('foto.js', 'preregistro.js');
   <section class="card">
     <div class="card__head">
       <span>Fase 02 · Caracterización (opcional)</span>
-      <button class="btn btn--sm" type="button" data-plegar="bloque-opcional" aria-expanded="true">Ocultar</button>
+      <button class="btn btn--sm" type="button" data-plegar="bloque-opcional"
+              aria-expanded="<?= $abrirOpcional ? 'true' : 'false' ?>">
+        <?= $abrirOpcional ? 'Ocultar' : 'Mostrar' ?>
+      </button>
     </div>
-    <div class="card__body stack stack--5" id="bloque-opcional">
+    <div class="card__body stack stack--5<?= $abrirOpcional ? '' : ' hidden' ?>" id="bloque-opcional">
       <p class="help">Nos permite reportar cobertura territorial y enfoque diferencial. Puedes omitirla por completo.</p>
 
       <div class="grid-2">
@@ -420,7 +447,7 @@ guiones('foto.js', 'preregistro.js');
     <span class="help mono">Los campos con <span class="req">*</span> son obligatorios.</span>
     <div class="row">
       <a class="btn" href="<?= e(u($yaRegistrado ? '/carnet' : '/')) ?>">Cancelar</a>
-      <button class="btn btn--primary" type="submit"><?= $yaRegistrado ? 'Guardar cambios' : 'Completar preregistro' ?></button>
+      <button class="btn btn--primary" type="submit"><?= $yaRegistrado ? 'Guardar cambios' : 'Completar registro' ?></button>
     </div>
   </div>
 </form>

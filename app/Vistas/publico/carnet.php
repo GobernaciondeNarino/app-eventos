@@ -235,7 +235,7 @@ guiones('carnet.js');
     <div class="row no-print">
       <a class="btn btn--primary" href="<?= e(u('/checkin')) ?>">Registrar mi ingreso</a>
       <a class="btn" href="<?= e(u('/contactos')) ?>">Mis contactos</a>
-      <a class="btn" href="<?= e(u('/preregistro')) ?>">Mis datos</a>
+      <a class="btn" href="<?= e(u('/registro')) ?>">Mis datos</a>
     </div>
   </div>
 

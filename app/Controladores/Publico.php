@@ -23,7 +23,7 @@ use App\Nucleo\Sesion;
 use App\Nucleo\Url;
 
 /**
- * Pantallas abiertas: portada, preregistro y agenda.
+ * Pantallas abiertas: portada, registro y agenda.
  */
 final class Publico
 {
@@ -56,10 +56,15 @@ final class Publico
     }
 
     /* =====================================================================
-       Preregistro
+       Registro
+       -------------------------------------------------------------------------
+       El formulario completo, siempre abierto al público. Se llamaba
+       «preregistro» y sigue respondiendo en esa dirección, pero en pantalla es
+       «Registro»: la palabra describe lo mismo antes y durante el evento, y
+       «preregistro» dejaba de tener sentido justo el día que más gente llega.
        ===================================================================== */
 
-    public function preregistro(Peticion $peticion): void
+    public function registro(Peticion $peticion): void
     {
         $evento = App::eventoExigido();
 
@@ -91,7 +96,7 @@ final class Publico
                 $valores['correo'] = (string) $yo['correo'];
             }
 
-            $errores = $this->validarPreregistro($valores, $peticion, $yo !== null);
+            $errores = $this->validarRegistro($valores, $peticion, $yo !== null);
 
             // Un correo ya registrado no se puede tocar desde aquí.
             //
@@ -152,7 +157,7 @@ final class Publico
                     }
 
                     Respuesta::redirigir('/carnet', $resultado['nueva']
-                        ? 'Preregistro completo. Este es tu carnet.'
+                        ? 'Registro completo. Este es tu carnet.'
                         : 'Actualizamos tus datos.');
                 } catch (\DomainException $e) {
                     $errores['documento'] = $e->getMessage();
@@ -163,9 +168,16 @@ final class Publico
             }
         }
 
-        Respuesta::vista('publico/preregistro', [
-            'titulo'        => 'Preregistro',
-            'pantalla'      => 'preregistro',
+        // Tres situaciones distintas y la pantalla las dice: alguien de fuera,
+        // alguien que creó su acceso y todavía no llenó nada, y alguien que ya
+        // está registrado y viene a corregir.
+        $completo = $yo !== null && Persona::registroCompleto($yo);
+
+        Respuesta::vista('publico/registro', [
+            'titulo'        => $yo === null
+                ? 'Registro'
+                : ($completo ? 'Mis datos' : 'Completa tu registro'),
+            'pantalla'      => 'registro',
             'valores'       => $valores,
             'errores'       => $errores,
             'departamentos' => Datos::departamentos(),
@@ -173,6 +185,7 @@ final class Publico
             'categorias'    => Datos::CATEGORIAS,
             'jornadas'      => Evento::jornadas((int) $evento['id']),
             'yaRegistrado'  => $yo !== null,
+            'completo'      => $completo,
             'pideClave'     => Autenticacion::activo('clave'),
             'claveMinima'   => Autenticacion::claveMinima(),
             'tieneClave'    => $yo !== null && Persona::tieneClave($yo),
@@ -265,7 +278,7 @@ final class Publico
      * para quien diligencia; esto es lo que de verdad protege la base de datos,
      * porque un envío puede llegar sin pasar por ninguna pantalla.
      */
-    private function validarPreregistro(array $v, Peticion $peticion, bool $identificado): array
+    private function validarRegistro(array $v, Peticion $peticion, bool $identificado): array
     {
         $errores = [];
 

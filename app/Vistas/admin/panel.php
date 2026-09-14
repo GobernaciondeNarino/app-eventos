@@ -52,12 +52,12 @@ $maxMunicipio = max(1, max(array_map(static fn($m) => (int) $m['n'], $municipios
     <?php
     $jornada = $resumen['jornada_hoy'];
     $kpis = [
-      ['Preregistrados', numero($resumen['registros']), 'Total del evento'],
+      ['Registrados', numero($resumen['registros']), 'Total del evento'],
       [
         $jornada ? 'Ingresos día ' . $jornada['numero'] : 'Ingresos hoy',
         numero($resumen['ingresos_hoy']),
         $resumen['registros'] > 0 && $jornada
-          ? round($resumen['ingresos_hoy'] / $resumen['registros'] * 100) . '% de preregistrados'
+          ? round($resumen['ingresos_hoy'] / $resumen['registros'] * 100) . '% de los registrados'
           : 'Sin jornada hoy',
       ],
       ['Expositores', numero($resumen['expositores']), $resumen['por_aprobar'] . ' propuestas por aprobar'],

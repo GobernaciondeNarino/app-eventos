@@ -48,7 +48,10 @@ $enrutador->get('/instalar/diagnostico', [Instalador::class, 'diagnostico']);
    Público — no exige identificarse
    ========================================================================= */
 $enrutador->get('/', [Publico::class, 'inicio']);
-$enrutador->ambos('/preregistro', [Publico::class, 'preregistro']);
+// El formulario completo, siempre abierto al público. «/preregistro» se
+// conserva porque está en correos ya enviados y en enlaces compartidos.
+$enrutador->ambos('/registro', [Publico::class, 'registro']);
+$enrutador->ambos('/preregistro', [Publico::class, 'registro']);
 $enrutador->get('/agenda', [Publico::class, 'agenda']);
 $enrutador->get('/agenda/{id:num}', [Publico::class, 'charla']);
 $enrutador->get('/municipios/{departamento:texto}', [Publico::class, 'municipios']);
@@ -58,6 +61,11 @@ $enrutador->get('/municipios/{departamento:texto}', [Publico::class, 'municipios
    ========================================================================= */
 $enrutador->ambos('/entrar', [Acceso::class, 'asistente']);
 $enrutador->ambos('/entrar/codigo', [Acceso::class, 'codigo']);
+
+// Crear el acceso con solo correo y contraseña. El resto del formulario se
+// llena después, ya dentro: es la puerta corta para quien llega a «entrar»
+// sin estar inscrito.
+$enrutador->ambos('/entrar/crear', [Acceso::class, 'crearCuenta']);
 
 // Acceso por QR personal. Sin guardia: identificarse es justamente lo que hace.
 // El token es de 128 bits y hay límite por IP contra la enumeración.
@@ -141,6 +149,12 @@ $enrutador->post('/admin/organizadores/rol', [Admin::class, 'cambiarRolUsuario']
 $enrutador->get('/admin/eventos', [Admin::class, 'eventos'], 'admin:administrador');
 $enrutador->post('/admin/eventos/crear', [Admin::class, 'crearEvento'], 'admin:administrador');
 $enrutador->post('/admin/eventos/activar', [Admin::class, 'activarEvento'], 'admin:administrador');
+$enrutador->post('/admin/eventos/editar', [Admin::class, 'editarEvento'], 'admin:administrador');
+$enrutador->post('/admin/eventos/desactivar', [Admin::class, 'desactivarEvento'], 'admin:administrador');
+
+// Eliminar se lleva por delante los registros de las personas y no hay
+// deshacer: el propio método exige que se escriba ELIMINAR.
+$enrutador->post('/admin/eventos/eliminar', [Admin::class, 'eliminarEvento'], 'admin:administrador');
 
 $enrutador->get('/admin/identidad', [Admin::class, 'identidad'], 'admin:administrador');
 $enrutador->post('/admin/identidad', [Admin::class, 'guardarIdentidad'], 'admin:administrador');

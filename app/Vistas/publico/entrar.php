@@ -4,6 +4,7 @@
  *
  * @var string $correo @var string $destino @var array $errores
  * @var string $metodo @var array $metodos @var array $catalogo
+ * @var bool $puedeCrearCuenta
  */
 defined('EVENTOS_TIC') || exit;
 
@@ -14,8 +15,8 @@ $varios = count($metodos) > 1;
 
 // Qué dice el botón y la explicación, según por dónde va a llegar.
 $titulos = [
-    'correo'   => ['Entra con tu correo', 'Te enviamos un código de seis dígitos al buzón con el que te preregistraste.'],
-    'clave'    => ['Entra con tu contraseña', 'La que elegiste al preregistrarte.'],
+    'correo'   => ['Entra con tu correo', 'Te enviamos un código de seis dígitos al buzón con el que te registraste.'],
+    'clave'    => ['Entra con tu contraseña', 'La que elegiste al registrarte.'],
     'whatsapp' => ['Entra por WhatsApp', 'Te enviamos un código de seis dígitos al WhatsApp del teléfono que registraste.'],
     'sms'      => ['Entra por mensaje de texto', 'Te enviamos un código de seis dígitos al teléfono que registraste.'],
     'qr'       => ['Entra con tu QR', 'Escanea el código de tu escarapela con la cámara del teléfono.'],
@@ -75,7 +76,7 @@ $rotuloBoton = match ($metodo) {
       <div class="card__head"><span>Identifícate</span></div>
       <div class="card__body stack stack--4">
         <div class="field">
-          <label class="label" for="correo">Correo con el que te preregistraste</label>
+          <label class="label" for="correo">Correo con el que te registraste</label>
           <input class="input<?= isset($errores['correo']) ? ' is-invalid' : '' ?>" type="email"
                  id="correo" name="correo" value="<?= e($correo) ?>" autocomplete="email"
                  inputmode="email" placeholder="nombre@entidad.gov.co" autofocus required>
@@ -100,10 +101,26 @@ $rotuloBoton = match ($metodo) {
 
         <button class="btn btn--primary btn--block btn--lg" type="submit"><?= e($rotuloBoton) ?></button>
 
-        <p class="help">
-          ¿Todavía no te has registrado?
-          <a href="<?= e(u('/preregistro')) ?>">Haz tu preregistro</a>, toma dos minutos.
-        </p>
+        <hr class="divider">
+
+        <?php /* La salida de quien todavía no está inscrito. Va como botón y no
+                 como enlace en un párrafo: es la mitad de la gente que llega a
+                 esta pantalla, y antes se topaba con un formulario de tres
+                 secciones como única puerta. */ ?>
+        <div class="stack stack--2">
+          <p class="help" style="margin:0">¿Todavía no te has registrado?</p>
+          <?php if ($puedeCrearCuenta): ?>
+            <a class="btn btn--block" href="<?= e(u('/entrar/crear', ['destino' => $destino])) ?>">
+              Crear mi acceso en un minuto
+            </a>
+            <p class="help" style="margin:0">
+              Correo y contraseña, nada más. El resto de los datos los completas ya dentro, o
+              llena ahora el <a href="<?= e(u('/registro')) ?>">formulario completo</a>.
+            </p>
+          <?php else: ?>
+            <a class="btn btn--block" href="<?= e(u('/registro')) ?>">Abrir el formulario de registro</a>
+          <?php endif; ?>
+        </div>
       </div>
     </form>
 

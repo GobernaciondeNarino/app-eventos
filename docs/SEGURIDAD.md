@@ -205,6 +205,26 @@ convertiría cada foto de una escarapela en una llave.
 El token de acceso son 128 bits al azar, con límite por dirección contra la enumeración, y se
 puede anular desde *Registros* —lo que además olvida todos los dispositivos de esa persona.
 
+### 2.8.3 El registro a medias
+
+Desde la 3.2 se puede crear el acceso con solo correo y contraseña y llenar el formulario
+después. Eso obligó a que el documento sea nulable, y de ahí salen tres cosas que conviene
+dejar dichas:
+
+- **La llave única del documento sigue valiendo.** En MySQL los nulos no chocan entre sí, así
+  que puede haber muchos registros a medias y ninguno impide que otro se registre. En cuanto
+  el documento se escribe, la unicidad vuelve a aplicarse como siempre.
+- **La autorización de tratamiento de datos se pide al crear el acceso**, no al completar el
+  formulario. Es cuando se crea el registro, y la Ley 1581 no admite diferirla.
+- **El guardia de asistente lo comprueba.** Todo lo que hay detrás —el carnet, el sellado de
+  ingreso, el intercambio de contacto, la ficha de acreditación— necesita al menos el nombre y
+  el documento, así que a quien no los tiene se le lleva a completarlos en vez de enseñarle
+  pantallas vacías o emitirle un carnet sin nombre.
+
+El carnet no se emite hasta que el registro está completo. No es cosmético: la ficha de
+acreditación existe para comparar contra el documento físico en la puerta, y una credencial
+sin identificación no sirve para eso.
+
 ### 2.9 Autorización comprobada en el servidor, en cada petición
 
 Los guardias están declarados junto a cada ruta en `app/rutas.php`, en un solo archivo, para
@@ -361,6 +381,27 @@ equipo de un funcionario.
 
 La exportación con caracterización exige rol administrador —comprobado en el servidor, no
 solo escondiendo el botón— y queda en la bitácora.
+
+### Eliminar un evento borra datos personales de verdad
+
+Desde la 3.2 un administrador puede eliminar un evento entero. Se lleva en cascada las
+personas registradas, sus asistencias, sus contactos, sus propuestas y sus carnets, y borra
+del disco sus fotografías. No hay deshacer.
+
+Los controles, en `Admin::eliminarEvento()` y `Evento::eliminar()`:
+
+1. Rol **administrador**, comprobado por el guardia de la ruta.
+2. El diálogo dice **cuántos registros de cada tipo se van a perder**, calculados antes de
+   preguntar. Un «¿seguro?» sin un número al lado no es una confirmación.
+3. Hay que **escribir ELIMINAR**. Un botón suelto en una fila de tabla se pulsa por error.
+4. Queda en la **bitácora** con el nombre del evento y las cuentas de lo eliminado.
+
+Para dejar de mostrar un evento sin borrar nada está **desactivar**, que es reversible con un
+clic y es lo que corresponde en casi todos los casos.
+
+Lo mismo con las jornadas: una que tenga ingresos se puede eliminar, pero el botón dice
+cuántos se van con ella. Existe porque los días de prueba se llenan de escaneos justamente
+probando, y la alternativa era entrar a la base de datos a mano, que es peor.
 
 ### Las contraseñas de los asistentes no se pueden mostrar
 

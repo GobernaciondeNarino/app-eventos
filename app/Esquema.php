@@ -15,7 +15,36 @@ use App\Nucleo\Bd;
  */
 final class Esquema
 {
-    public const VERSION = '1.3.0';
+    public const VERSION = '1.4.0';
+
+    /**
+     * Columnas que ya existen pero cambiaron de tipo.
+     *
+     * «actualizar» solo agrega lo que falta, y eso no alcanza cuando una
+     * columna pasa de NOT NULL a nulable: la tabla ya la tiene, así que nadie
+     * la toca y la instalación vieja se queda con la definición antigua.
+     *
+     * Cada ajuste dice qué tiene que ser cierto para aplicarse, y se comprueba
+     * contra information_schema antes de ejecutar el ALTER. Así se puede correr
+     * muchas veces sin que pase nada: es el requisito para que el botón de
+     * actualizar del panel sea seguro con el evento en curso.
+     *
+     * @var array<int, array{tabla:string, columna:string, tipo:string, si:string}>
+     */
+    private const AJUSTES = [
+        [
+            'tabla'   => 'persona',
+            'columna' => 'documento_cifrado',
+            'tipo'    => 'VARBINARY(255) NULL DEFAULT NULL',
+            'si'      => 'no_nulable',
+        ],
+        [
+            'tabla'   => 'persona',
+            'columna' => 'documento_huella',
+            'tipo'    => 'CHAR(64) NULL DEFAULT NULL',
+            'si'      => 'no_nulable',
+        ],
+    ];
 
     /**
      * @return array<string, array{nota: string, columnas: array<string,string>, llaves: array<int,string>}>
@@ -85,8 +114,12 @@ final class Esquema
                     'nombre'             => 'VARCHAR(160) NOT NULL',
                     'correo'             => 'VARCHAR(190) NOT NULL',
                     'tipo_documento'     => "ENUM('CC','CE','TI','PP') NOT NULL DEFAULT 'CC'",
-                    'documento_cifrado'  => 'VARBINARY(255) NOT NULL',
-                    'documento_huella'   => 'CHAR(64) NOT NULL',
+                    // Nulables desde la 1.4.0: se puede crear el acceso con
+                    // solo correo y contraseña y completar el resto después.
+                    // En MySQL los nulos no chocan entre sí, así que la llave
+                    // única sigue valiendo con varios registros a medias.
+                    'documento_cifrado'  => 'VARBINARY(255) NULL DEFAULT NULL',
+                    'documento_huella'   => 'CHAR(64) NULL DEFAULT NULL',
                     'telefono'           => "VARCHAR(32) NOT NULL DEFAULT ''",
                     'entidad'            => "VARCHAR(160) NOT NULL DEFAULT ''",
                     'departamento'       => "VARCHAR(80) NOT NULL DEFAULT ''",
@@ -500,12 +533,16 @@ final class Esquema
                     continue;
                 }
 
-                // Modo actualizar: se agregan solo las columnas que falten.
+                // Modo actualizar: se agregan solo las columnas que falten, y
+                // se corrigen las que cambiaron de tipo.
                 $agregadas = self::agregarColumnasFaltantes($nombre, $definicion, $prefijo);
+                $ajustadas = $modo === 'actualizar' ? self::ajustarColumnas($nombre, $prefijo) : [];
+                $cambios = array_merge($agregadas, $ajustadas);
+
                 $hechas[] = [
                     'tabla'   => $prefijo . $nombre,
-                    'accion'  => $agregadas ? 'actualizada' : 'sin cambios',
-                    'detalle' => $agregadas ? implode(', ', $agregadas) : 'ya estaba al día',
+                    'accion'  => $cambios ? 'actualizada' : 'sin cambios',
+                    'detalle' => $cambios ? implode(', ', $cambios) : 'ya estaba al día',
                 ];
             }
         } finally {
@@ -550,6 +587,53 @@ final class Esquema
             $previa = $columna;
         }
         return $agregadas;
+    }
+
+    /**
+     * ALTER TABLE ... MODIFY para las columnas que cambiaron de tipo.
+     *
+     * Solo se toca lo que de verdad hace falta: se pregunta a
+     * information_schema por el estado actual y, si ya está como debe, no se
+     * ejecuta nada. Ejecutarlo dos veces tiene que ser inofensivo, porque el
+     * botón de actualizar del panel se puede pulsar con el evento abierto.
+     *
+     * @return array<int, string> nombres de las columnas modificadas
+     */
+    private static function ajustarColumnas(string $nombre, string $prefijo): array
+    {
+        $pendientes = array_values(array_filter(
+            self::AJUSTES,
+            static fn(array $a): bool => $a['tabla'] === $nombre
+        ));
+        if ($pendientes === []) {
+            return [];
+        }
+
+        $estado = [];
+        foreach (Bd::filasDirecto(
+            'SELECT COLUMN_NAME, IS_NULLABLE FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
+            [$prefijo . $nombre]
+        ) as $fila) {
+            $estado[(string) $fila['COLUMN_NAME']] = (string) $fila['IS_NULLABLE'];
+        }
+
+        $hechas = [];
+        foreach ($pendientes as $ajuste) {
+            $actual = $estado[$ajuste['columna']] ?? null;
+            if ($actual === null) {
+                continue;   // la columna no existe todavía; ya la agregó el paso anterior
+            }
+            if ($ajuste['si'] === 'no_nulable' && $actual !== 'NO') {
+                continue;   // ya es nulable: nada que hacer
+            }
+
+            Bd::ejecutarBruto(
+                "ALTER TABLE `$prefijo$nombre` MODIFY COLUMN `{$ajuste['columna']}` {$ajuste['tipo']}"
+            );
+            $hechas[] = $ajuste['columna'] . ' (nulable)';
+        }
+        return $hechas;
     }
 
     /** Qué tablas del esquema ya están en la base. */

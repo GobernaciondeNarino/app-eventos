@@ -63,6 +63,11 @@ final class Persona
 
     public static function documento(array $persona): string
     {
+        // Nulo: la persona creó su acceso con correo y contraseña y todavía no
+        // ha llenado el formulario. No es un error, es un registro a medias.
+        if (($persona['documento_cifrado'] ?? null) === null) {
+            return '';
+        }
         try {
             return Cripto::descifrar((string) $persona['documento_cifrado']);
         } catch (\Throwable) {
@@ -70,6 +75,57 @@ final class Persona
             // mostrar basura en un carnet.
             return '';
         }
+    }
+
+    /**
+     * ¿Terminó de registrarse, o solo creó su acceso?
+     *
+     * Desde la 3.2 se puede entrar con correo y contraseña sin llenar nada
+     * más, y completar el formulario después. Mientras falten el nombre o la
+     * identificación no se emite carnet: un carnet sin nombre no sirve en la
+     * puerta, y la ficha de acreditación existe para comparar contra el
+     * documento físico.
+     */
+    public static function registroCompleto(array $persona): bool
+    {
+        return trim((string) ($persona['nombre'] ?? '')) !== ''
+            && ($persona['documento_huella'] ?? null) !== null;
+    }
+
+    /**
+     * Crea el acceso de alguien que todavía no se ha registrado.
+     *
+     * Correo y contraseña, y nada más. Es la puerta que faltaba: quien llega a
+     * la pantalla de ingreso sin estar inscrito se encontraba con que la única
+     * salida era un formulario de tres pantallas, y ahí se pierde la mitad de
+     * la gente. Con esto entra en quince segundos y termina sus datos dentro.
+     *
+     * La autorización de tratamiento de datos SÍ se pide aquí: es el momento
+     * en que se crea el registro, y la Ley 1581 no admite diferirla.
+     */
+    public static function crearAcceso(int $eventoId, string $correo, string $clave): array
+    {
+        $correo = mb_strtolower(trim($correo));
+
+        return Bd::transaccion(static function () use ($eventoId, $correo, $clave): array {
+            if (self::porCorreo($eventoId, $correo) !== null) {
+                throw new \DomainException(
+                    'Ese correo ya tiene acceso en este evento. Entra con él en vez de crearlo otra vez.'
+                );
+            }
+
+            $id = Bd::insertar('persona', [
+                'evento_id'         => $eventoId,
+                'nombre'            => '',
+                'correo'            => $correo,
+                'clave_hash'        => Cripto::hashClave($clave),
+                'autorizo_datos_en' => date('Y-m-d H:i:s'),
+            ]);
+
+            Bitacora::registrar('acceso_creado', 'persona', $id);
+
+            return ['id' => $id, 'nueva' => true, 'credencial' => null];
+        });
     }
 
     /**
@@ -82,15 +138,15 @@ final class Persona
     public static function registrar(int $eventoId, array $datos): array
     {
         $correo = mb_strtolower(trim((string) $datos['correo']));
-        $documento = self::normalizarDocumento((string) $datos['documento']);
-        $huella = Cripto::huella($documento);
+        $documento = self::normalizarDocumento((string) ($datos['documento'] ?? ''));
+        $huella = $documento === '' ? null : Cripto::huella($documento);
 
         return Bd::transaccion(static function () use ($eventoId, $datos, $correo, $documento, $huella): array {
             $existente = self::porCorreo($eventoId, $correo);
 
             // El documento pertenece a otro correo del mismo evento: son dos
             // personas distintas diciendo tener la misma cédula.
-            $porDocumento = Bd::fila(
+            $porDocumento = $huella === null ? null : Bd::fila(
                 'SELECT id, correo FROM {persona} WHERE evento_id = ? AND documento_huella = ?',
                 [$eventoId, $huella]
             );
@@ -105,7 +161,7 @@ final class Persona
                 'nombre'            => mb_substr(trim((string) $datos['nombre']), 0, 160),
                 'tipo_documento'    => in_array($datos['tipo_documento'] ?? 'CC', ['CC', 'CE', 'TI', 'PP'], true)
                                         ? $datos['tipo_documento'] : 'CC',
-                'documento_cifrado' => Cripto::cifrar($documento),
+                'documento_cifrado' => $documento === '' ? null : Cripto::cifrar($documento),
                 'documento_huella'  => $huella,
                 'telefono'          => mb_substr(trim((string) ($datos['telefono'] ?? '')), 0, 32),
                 'entidad'           => mb_substr(trim((string) ($datos['entidad'] ?? '')), 0, 160),
@@ -129,9 +185,13 @@ final class Persona
 
             self::guardarCaracterizacion($id, $datos);
 
-            $credencial = Credencial::asegurar($id);
+            // El carnet solo se emite cuando el registro está completo. Uno sin
+            // nombre ni identificación no sirve de nada en la puerta, y
+            // emitirlo antes deja credenciales huérfanas de quien creó su
+            // acceso y no volvió.
+            $credencial = self::registroCompleto($campos) ? Credencial::asegurar($id) : null;
 
-            Bitacora::registrar($nueva ? 'preregistro' : 'preregistro_actualizado', 'persona', $id, [
+            Bitacora::registrar($nueva ? 'registro' : 'registro_actualizado', 'persona', $id, [
                 'rol' => $campos['rol'],
                 'municipio' => $campos['municipio'],
             ]);

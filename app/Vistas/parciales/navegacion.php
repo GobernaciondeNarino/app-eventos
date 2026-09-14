@@ -46,18 +46,18 @@ $icono = static function (string $clave, int $tam = 17, float $grosor = 1.5) use
 // --- Participante ---------------------------------------------------------
 $grupoParticipante = [
     ['clave' => 'ingreso', 'etiqueta' => 'Ingreso', 'icono' => 'home', 'ruta' => '/'],
-    ['clave' => 'preregistro', 'etiqueta' => 'Preregistro', 'icono' => 'form', 'ruta' => '/preregistro'],
+    ['clave' => 'registro', 'etiqueta' => 'Registro', 'icono' => 'form', 'ruta' => '/registro'],
     ['clave' => 'agenda', 'etiqueta' => 'Agenda', 'icono' => 'cal', 'ruta' => '/agenda'],
 ];
 
 if ($persona !== null) {
-    // Con sesión, el preregistro pasa a ser «mis datos» y aparecen las suyas.
+    // Con sesión, el registro pasa a ser «mis datos» y aparecen las suyas.
     $grupoParticipante = [
         ['clave' => 'carnet', 'etiqueta' => 'Mi carnet', 'icono' => 'card', 'ruta' => '/carnet'],
         ['clave' => 'checkin', 'etiqueta' => 'Mi ingreso', 'icono' => 'qr', 'ruta' => '/checkin'],
         ['clave' => 'contactos', 'etiqueta' => 'Contactos', 'icono' => 'users', 'ruta' => '/contactos'],
         ['clave' => 'agenda', 'etiqueta' => 'Agenda', 'icono' => 'cal', 'ruta' => '/agenda'],
-        ['clave' => 'preregistro', 'etiqueta' => 'Mis datos', 'icono' => 'form', 'ruta' => '/preregistro'],
+        ['clave' => 'registro', 'etiqueta' => 'Mis datos', 'icono' => 'form', 'ruta' => '/registro'],
     ];
 }
 

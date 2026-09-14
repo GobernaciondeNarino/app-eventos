@@ -29,8 +29,13 @@ $qrAcceso = $qrAcceso ?? '';
     </div>
 
     <div class="stack stack--2" style="min-width:0">
-      <h2 style="font-size:23px;margin:0;line-height:1.15"><?= e($persona['nombre']) ?></h2>
+      <h2 style="font-size:23px;margin:0;line-height:1.15">
+        <?= $persona['nombre'] !== '' ? e($persona['nombre']) : 'Registro sin completar' ?>
+      </h2>
       <div class="row">
+        <?php if (!\App\Modelos\Persona::registroCompleto($persona)): ?>
+          <span class="tag tag--warn">Creó su acceso, falta el formulario</span>
+        <?php endif; ?>
         <span class="tag <?= e(claseRol((string) $persona['rol'])) ?>"><?= e(etiquetaRol((string) $persona['rol'])) ?></span>
         <?php if ($credencial): ?>
           <span class="tag tag--mute"><?= e((string) $credencial['codigo']) ?></span>
@@ -65,7 +70,9 @@ $qrAcceso = $qrAcceso ?? '';
     <div class="card__body--tight">
       <?php
       $filas = [
-        ['Identificación', $documento !== '' ? $persona['tipo_documento'] . ' ' . documento($documento) : 'Reservada'],
+        ['Identificación', $documento !== ''
+            ? $persona['tipo_documento'] . ' ' . documento($documento)
+            : (\App\Modelos\Persona::registroCompleto($persona) ? 'Reservada' : 'Todavía no la ha dado')],
         ['Teléfono', ((int) $persona['comparte_telefono'] === 1 || $esAdministrador)
             ? ($persona['telefono'] ?: 'Sin registrar') : 'No lo comparte'],
         ['Entidad', $persona['entidad'] ?: 'Independiente'],

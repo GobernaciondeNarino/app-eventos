@@ -5,11 +5,12 @@
  * @var array $valores @var array $errores @var array $departamentos
  * @var array $municipios @var array $categorias @var array $jornadas @var bool $yaRegistrado
  * @var bool $completo @var bool $pideClave @var int $claveMinima
- * @var bool $tieneClave @var string $foto
+ * @var bool $tieneClave @var string $foto @var array $documentos @var bool $agendada
  */
 defined('EVENTOS_TIC') || exit;
 
 use App\Datos;
+use App\Nucleo\Documento;
 
 // Si el correo vino por la portada, se precarga. Esto va ANTES de definir $v:
 // una función flecha captura las variables por valor, así que $v se quedaba con
@@ -365,6 +366,21 @@ guiones('foto.js', 'preregistro.js');
     <div class="card__body stack stack--4">
       <p class="help">Actívalo si vas a presentar una charla, stand o demostración. La Secretaría revisa cada propuesta y confirma horario y espacio.</p>
 
+      <?php if ($agendada): ?>
+        <!-- Con la propuesta ya aprobada, el tema y el día están publicados en
+             la agenda y el formulario deja de poder cambiarlos. Decirlo importa:
+             si no, se edita el detalle, se guarda, y no pasa nada visible. -->
+        <div class="notice">
+          <span class="notice__icon" aria-hidden="true">◆</span>
+          <span>
+            Tu propuesta ya está aprobada y publicada en la agenda, así que el tema, la
+            categoría y el día ya no se cambian desde aquí: escríbele a la Secretaría si
+            necesitas mover algo. Los <strong>documentos sí</strong> puedes reemplazarlos
+            cuando quieras.
+          </span>
+        </div>
+      <?php endif; ?>
+
       <div class="stack stack--4<?= $hayPropuesta ? '' : ' hidden' ?>" id="bloque-expositor">
         <div class="grid-2" style="grid-template-columns:1.4fr 1fr">
           <div class="field">
@@ -420,6 +436,67 @@ guiones('foto.js', 'preregistro.js');
             <input class="input" id="requerimientos" name="requerimientos"
                    value="<?= e($v('requerimientos')) ?>" maxlength="255" placeholder="HDMI, internet…">
           </div>
+        </div>
+
+        <!-- ---------- Los dos adjuntos ----------
+             Van al final del bloque a propósito: son lo más pesado de
+             diligenciar y lo único que puede obligar a buscar un archivo en
+             otro lado. Quien llena esto desde el celular en la fila de la
+             puerta puede dejarlos para después sin que se le trabe el registro.
+
+             Son campos de archivo normales: sin JavaScript funcionan igual. -->
+        <div class="stack stack--3" style="border-top:1px solid var(--hair-soft);padding-top:18px">
+          <p class="help" style="margin:0">
+            <strong>Documentos de respaldo.</strong> Son opcionales para registrarte, pero la
+            Secretaría los usa para evaluar la propuesta: sin ellos la revisión se demora.
+            Puedes volver a este formulario y subirlos cuando los tengas.
+          </p>
+
+          <?php
+          $ayudas = [
+            'hoja_vida'  => 'Tu perfil profesional. Es lo que sustenta que eres quien puede dar esta charla.',
+            'exposicion' => 'La presentación que vas a proyectar. Puedes subir un borrador y reemplazarlo después.',
+          ];
+          foreach (Documento::CLASES as $clase => $regla):
+            $ya = $documentos[$clase] ?? null;
+            $formatos = Documento::formatosLegibles($clase);
+          ?>
+            <div class="field">
+              <label class="label" for="<?= e($clase) ?>">
+                <?= e($regla['etiqueta']) ?>
+                <span class="muted" style="text-transform:none;letter-spacing:normal">
+                  (<?= e($formatos) ?>, máximo <?= e(Documento::pesoLegible($clase)) ?>)
+                </span>
+              </label>
+
+              <?php if ($ya !== null): ?>
+                <div class="row" style="gap:10px;margin-bottom:8px">
+                  <span class="tag tag--ok">Ya la subiste</span>
+                  <a href="<?= e($ya['url']) ?>">Descargar<?= $ya['peso'] !== '' ? ' (' . e($ya['peso']) . ')' : '' ?></a>
+                </div>
+              <?php endif; ?>
+
+              <input class="input" type="file" id="<?= e($clase) ?>" name="<?= e($clase) ?>"
+                     accept="<?= e(Documento::aceptados($clase)) ?>">
+              <span class="help">
+                <?= e($ayudas[$clase]) ?>
+                <?= $ya !== null ? ' Si eliges otro archivo, reemplaza al anterior.' : '' ?>
+              </span>
+
+              <?php if ($ya !== null): ?>
+                <label class="row" style="gap:10px;cursor:pointer;flex-wrap:nowrap;align-items:flex-start;margin-top:8px">
+                  <input type="checkbox" name="quitar_<?= e($clase) ?>" value="1"
+                         style="width:18px;height:18px;margin-top:2px;flex:none;accent-color:var(--c-accent)">
+                  <span class="help">Quitar el archivo que tengo subido</span>
+                </label>
+              <?php endif; ?>
+            </div>
+          <?php endforeach; ?>
+
+          <p class="help" style="margin:0">
+            Los dos archivos los ve solo el equipo que revisa las propuestas. No se publican
+            en la agenda ni se comparten con los demás asistentes.
+          </p>
         </div>
       </div>
     </div>

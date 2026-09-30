@@ -35,12 +35,22 @@ plataforma de sitio es copiar la carpeta y actualizar `url_base` en `config/conf
 | PHP | 8.1 | 8.2 o superior |
 | Base de datos | MySQL 5.7 / MariaDB 10.3 | MariaDB 10.6+ |
 | Extensiones obligatorias | `pdo_mysql`, `mbstring`, `openssl`, `json`, `fileinfo` | |
-| Extensiones recomendadas | `gd` (reduce logos), `sodium` (cifrado moderno) | |
+| Extensiones recomendadas | `gd` (reduce logos), `zip` (valida los PPTX), `sodium` (cifrado moderno) | |
+| Tamaño de subida | `upload_max_filesize` y `post_max_size` en **32M** | |
 | Apache | con `mod_rewrite` | además `mod_headers` |
 
 En Plesk: **Dominio → Configuración de PHP**. Ahí se elige la versión y se revisan las
 extensiones. La plataforma comprueba todo esto en el primer paso del instalador y no deja
 continuar si falta algo obligatorio.
+
+**Los dos valores de tamaño hay que subirlos casi siempre**, porque Plesk los deja en 2 MB de
+fábrica y con eso no entra ni la foto de un carnet. Lo que más pesa es la exposición de un
+expositor, que admite hasta 25 MB. Se cambian en esa misma pantalla —están en la lista de
+ajustes de `php.ini`— y `post_max_size` tiene que ser igual o mayor que `upload_max_filesize`.
+
+Si se quedan cortos el fallo es desconcertante: PHP descarta el envío completo y el formulario
+responde «el envío pesaba demasiado» con el límite que encontró. El instalador avisa antes, en
+la fila **Tamaño máximo de subida** del diagnóstico.
 
 ---
 
@@ -87,8 +97,13 @@ El instalador necesita escribir en dos sitios:
 
 ```
 config/     0750   (aquí se escribe config.php)
-almacen/    0750   (logos, fotos, respaldos y registro de errores)
+almacen/    0750   (logos, fotos, documentos de expositores, respaldos y
+                    registro de errores)
 ```
+
+Las subcarpetas de `almacen/` las crea el instalador si faltan. Ninguna se sirve por web: el
+`.htaccess` de la raíz bloquea la carpeta entera y cada archivo sale por PHP, que es quien
+comprueba antes si quien lo pide tiene derecho a verlo.
 
 En Plesk se ajustan desde **Archivos → (menú del directorio) → Cambiar permisos**. El
 propietario debe ser el usuario del sistema del dominio.
@@ -355,9 +370,12 @@ restauró no es una copia.
    Hay tres caminos, y el primero es el normal:
 
    - **Desde el panel.** Entra en `/admin`. Si la base está atrasada, arriba del todo aparece
-     un aviso con el motivo y un botón **«Actualizar la base de datos»**. Solo agrega tablas
-     y columnas; no borra ni cambia nada de lo que ya hay, así que se puede hacer con el
-     evento en curso. Queda en la bitácora.
+     un aviso con el motivo y un botón **«Actualizar la base de datos»**. Agrega las tablas y
+     columnas que falten, y ensancha las que cambiaron de tipo —por ejemplo una que pasó a
+     admitir vacíos—; nunca borra una columna ni estrecha una que ya tenía datos, así que se
+     puede hacer con el evento en curso. Se puede pulsar dos veces sin consecuencias: cada
+     cambio se comprueba contra el catálogo de la base antes de aplicarse. Queda en la
+     bitácora.
    - **Desde la consola**, si prefieres no tocar el navegador:
 
      ```bash

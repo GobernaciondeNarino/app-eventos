@@ -110,8 +110,52 @@ final class Cliente
         return $this->pedir('POST', $ruta, $datos, $seguirRedireccion);
     }
 
-    private function pedir(string $metodo, string $ruta, ?array $datos, bool $seguir, int $saltos = 0): string
+    /**
+     * POST multipart, que es la única forma de probar un campo de archivo.
+     *
+     * Con http_build_query el servidor recibe los nombres de los campos pero
+     * $_FILES llega vacío, así que toda la validación de la subida —incluido
+     * is_uploaded_file(), que es la barrera que de verdad importa— se quedaba
+     * sin probar. Aquí el cuerpo se arma a mano, tal como lo manda un navegador.
+     *
+     * @param array<string, array{nombre:string, tipo:string, contenido:string}> $archivos
+     */
+    public function subir(string $ruta, array $datos, array $archivos, bool $seguirRedireccion = true): string
     {
+        if (!isset($datos['_testigo'])) {
+            $datos['_testigo'] = $this->testigo !== ''
+                ? $this->testigo
+                : ($this->cookies['evtic_csrf'] ?? '');
+        }
+
+        $limite = '----evtic' . bin2hex(random_bytes(8));
+        $cuerpo = '';
+        foreach ($datos as $nombre => $valor) {
+            $cuerpo .= "--$limite\r\n"
+                . 'Content-Disposition: form-data; name="' . $nombre . "\"\r\n\r\n"
+                . $valor . "\r\n";
+        }
+        foreach ($archivos as $nombre => $a) {
+            $cuerpo .= "--$limite\r\n"
+                . 'Content-Disposition: form-data; name="' . $nombre . '"; filename="'
+                . $a['nombre'] . "\"\r\n"
+                . 'Content-Type: ' . $a['tipo'] . "\r\n\r\n"
+                . $a['contenido'] . "\r\n";
+        }
+        $cuerpo .= "--$limite--\r\n";
+
+        return $this->pedir('POST', $ruta, null, $seguirRedireccion, 0,
+            ['tipo' => 'multipart/form-data; boundary=' . $limite, 'cuerpo' => $cuerpo]);
+    }
+
+    private function pedir(
+        string $metodo,
+        string $ruta,
+        ?array $datos,
+        bool $seguir,
+        int $saltos = 0,
+        ?array $crudo = null
+    ): string {
         $url = $this->urlDe($ruta);
 
         $opciones = [
@@ -123,7 +167,11 @@ final class Cliente
                 'timeout'       => 20,
             ],
         ];
-        if ($datos !== null) {
+        if ($crudo !== null) {
+            $opciones['http']['header'] .= 'Content-Type: ' . $crudo['tipo'] . "\r\n"
+                . 'Content-Length: ' . strlen($crudo['cuerpo']) . "\r\n";
+            $opciones['http']['content'] = $crudo['cuerpo'];
+        } elseif ($datos !== null) {
             $cuerpo = http_build_query($datos);
             $opciones['http']['header'] .= "Content-Type: application/x-www-form-urlencoded\r\n"
                 . 'Content-Length: ' . strlen($cuerpo) . "\r\n";
@@ -537,6 +585,14 @@ $pdo->exec("ALTER TABLE {$BD['prefijo']}usuario DROP COLUMN totp_ultimo");
 $columnas = $pdo->query("SHOW COLUMNS FROM {$BD['prefijo']}usuario LIKE 'totp_ultimo'")->fetchAll();
 comprobar('se quitó una columna para probar la actualización', $columnas === []);
 
+// Las cuatro de los adjuntos del expositor, que es lo que se encuentra una
+// instalación anterior a la 1.5.0 al pulsar «Actualizar la base de datos».
+foreach (['hoja_vida', 'hoja_vida_tipo', 'exposicion', 'exposicion_tipo'] as $sinEllas) {
+    $pdo->exec("ALTER TABLE {$BD['prefijo']}propuesta DROP COLUMN $sinEllas");
+}
+comprobar('se quitaron las columnas de los adjuntos',
+    $pdo->query("SHOW COLUMNS FROM {$BD['prefijo']}propuesta LIKE 'hoja_vida'")->fetchAll() === []);
+
 // Y una columna se devuelve a como era antes —NOT NULL— para probar el otro
 // camino: el de las que ya existen pero cambiaron de tipo. Agregar lo que falta
 // no alcanza ahí, porque la columna está; hace falta un ALTER ... MODIFY. Es
@@ -560,6 +616,20 @@ $columnas = $pdo->query("SHOW COLUMNS FROM {$BD['prefijo']}usuario LIKE 'totp_ul
 comprobar('el modo actualizar devuelve la columna que faltaba', count($columnas) === 1);
 comprobar('y vuelve nulable la que había cambiado de tipo',
     $nulable('documento_huella') === 'YES', $nulable('documento_huella'));
+
+$adjuntas = $pdo->query("SHOW COLUMNS FROM {$BD['prefijo']}propuesta")->fetchAll(PDO::FETCH_COLUMN);
+comprobar('y devuelve las cuatro columnas de los adjuntos',
+    count(array_intersect(['hoja_vida', 'hoja_vida_tipo', 'exposicion', 'exposicion_tipo'],
+        $adjuntas)) === 4, implode(', ', $adjuntas));
+// MySQL devuelve la cadena vacía y MariaDB devuelve «''» con comillas: las dos
+// dicen lo mismo, que las propuestas que ya estaban no se quedan con un NULL
+// que nadie sabría pintar.
+$porOmision = (string) $pdo->query("SELECT COLUMN_DEFAULT FROM information_schema.COLUMNS
+                                     WHERE TABLE_SCHEMA = DATABASE()
+                                       AND TABLE_NAME = '{$BD['prefijo']}propuesta'
+                                       AND COLUMN_NAME = 'hoja_vida'")->fetchColumn();
+comprobar('vacías por omisión, para las propuestas que ya estaban',
+    trim($porOmision, "'") === '', $porOmision);
 comprobar('paso 3 de la reparación', str_contains($html, 'Cuenta administradora'));
 comprobar('no borró nada de lo que ya había',
     $anotaciones() >= $antesDeReparar, $anotaciones() . ' de ' . $antesDeReparar);
@@ -1754,6 +1824,19 @@ $pdo->exec("INSERT INTO {$BD['prefijo']}persona
               (evento_id, nombre, correo, documento_cifrado, documento_huella, autorizo_datos_en)
             VALUES ($idPrueba, 'Alguien De Prueba', 'prueba.borrar@narino.gov.co',
                     " . $pdo->quote('cifrado-falso') . ", " . $pdo->quote(str_repeat('a', 64)) . ", NOW())");
+$idPersonaPrueba = (int) $pdo->lastInsertId();
+
+// Con una propuesta y un archivo en el disco: una hoja de vida trae teléfono,
+// dirección y trayectoria laboral, así que no puede quedarse ahí cuando se
+// borra el evento al que pertenecía.
+$carpetaBorrado = dirname(__DIR__) . '/almacen/documentos';
+@mkdir($carpetaBorrado, 0750, true);
+$archivoHuerfano = 'pr0-hv-' . bin2hex(random_bytes(8)) . '.pdf';
+file_put_contents($carpetaBorrado . '/' . $archivoHuerfano, "%PDF-1.4\n%%EOF\n");
+$pdo->exec("INSERT INTO {$BD['prefijo']}propuesta
+              (persona_id, titulo, categoria, detalle, hoja_vida, hoja_vida_tipo)
+            VALUES ($idPersonaPrueba, 'Propuesta de prueba', 'Gobierno digital', 'Detalle',
+                    " . $pdo->quote($archivoHuerfano) . ", 'application/pdf')");
 
 $admin->post('/admin/eventos/eliminar', ['evento' => (string) $idPrueba, 'confirmacion' => 'quizá']);
 comprobar('sin escribir ELIMINAR no se borra nada',
@@ -1768,6 +1851,11 @@ comprobar('y se lleva sus jornadas',
 comprobar('y sus personas',
     (int) $pdo->query("SELECT COUNT(*) FROM {$BD['prefijo']}persona
                         WHERE evento_id = $idPrueba")->fetchColumn() === 0);
+comprobar('y sus propuestas',
+    (int) $pdo->query("SELECT COUNT(*) FROM {$BD['prefijo']}propuesta
+                        WHERE persona_id = $idPersonaPrueba")->fetchColumn() === 0);
+comprobar('los adjuntos de sus expositores no se quedan en el disco',
+    !is_file($carpetaBorrado . '/' . $archivoHuerfano));
 comprobar('el evento activo sigue intacto',
     (int) $pdo->query("SELECT COUNT(*) FROM {$BD['prefijo']}evento WHERE id = $idEvento")->fetchColumn() === 1);
 
@@ -1836,6 +1924,264 @@ foreach ([1, 2] as $mas) {
 comprobar('el evento vuelve a tener tres jornadas para lo que sigue',
     (int) $pdo->query("SELECT COUNT(*) FROM {$BD['prefijo']}evento_dia
                         WHERE evento_id = $idEvento")->fetchColumn() === 3);
+
+/* =========================================================================
+   Los adjuntos del expositor
+   -------------------------------------------------------------------------
+   Se prueba con subidas multipart de verdad y no llamando a las clases: lo que
+   importa aquí es justamente el camino completo —$_FILES, is_uploaded_file(),
+   el guardia de la descarga y las cabeceras— y eso no aparece de otra forma.
+   ========================================================================= */
+titulo('Adjuntos del expositor');
+
+/** Un PDF mínimo pero con la cabecera que mira el servidor. */
+$pdfDePrueba = static fn(string $marca): string => "%PDF-1.4\n"
+    . "1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+    . "2 0 obj<</Type/Pages/Count 0>>endobj\n% $marca\ntrailer<</Root 1 0 R>>\n%%EOF\n";
+
+/** Un PPTX de verdad: un ZIP con el índice que declara la presentación. */
+$pptxDePrueba = static function (string $marca): string {
+    $ruta = tempnam(sys_get_temp_dir(), 'e2e') . '.pptx';
+    @unlink($ruta);
+    $z = new ZipArchive();
+    $z->open($ruta, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+    $z->addFromString('[Content_Types].xml',
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        . '<Override PartName="/ppt/presentation.xml" ContentType='
+        . '"application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/></Types>');
+    $z->addFromString('ppt/presentation.xml', '<p:presentation><!-- ' . $marca . ' --></p:presentation>');
+    $z->close();
+    $bytes = (string) file_get_contents($ruta);
+    @unlink($ruta);
+    return $bytes;
+};
+
+$carpetaDocs = dirname(__DIR__) . '/almacen/documentos';
+
+$html = (new Cliente($BASE))->get('/registro');
+comprobar('el formulario ofrece subir la hoja de vida',
+    str_contains($html, 'name="hoja_vida"'));
+comprobar('y la exposición', str_contains($html, 'name="exposicion"'));
+comprobar('la hoja de vida se pide en PDF',
+    (bool) preg_match('/Hoja de vida.{0,200}\(PDF, máximo 8 MB\)/su', $html));
+comprobar('la exposición admite PDF o PPTX',
+    (bool) preg_match('/Exposición.{0,200}\(PDF o PPTX, máximo 25 MB\)/su', $html));
+comprobar('el campo de exposición acepta .pptx',
+    str_contains($html, 'presentationml.presentation'));
+comprobar('se avisa de que son opcionales',
+    str_contains($html, 'opcionales para registrarte'));
+
+/* ---- Una expositora nueva, con los dos archivos ---- */
+$lucia = new Cliente($BASE);
+$lucia->get('/registro');
+$lucia->subir('/registro', [
+    'correo' => 'lvillota@narino.gov.co', 'nombre' => 'Lucía Villota Erazo',
+    'tipo_documento' => 'CC', 'documento' => '27998144',
+    'rol' => 'expositor', 'entidad' => 'Universidad de Nariño',
+    'expositor' => '1', 'tema' => 'Inteligencia artificial en el aula rural',
+    'categoria' => 'Emprendimiento y startups TIC',
+    'detalle' => 'Resultados de dos años enseñando programación en sedes rurales de Nariño.',
+    'dia_preferido' => '1', 'duracion' => '40', 'habeas' => '1',
+], [
+    'hoja_vida'  => ['nombre' => 'hv.pdf', 'tipo' => 'application/pdf',
+                     'contenido' => $pdfDePrueba('HOJA-DE-VIDA-DE-LUCIA')],
+    'exposicion' => ['nombre' => 'charla.pptx',
+                     'tipo' => 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                     'contenido' => $pptxDePrueba('CHARLA-DE-LUCIA')],
+]);
+
+$pr = $pdo->query("SELECT pr.* FROM {$BD['prefijo']}propuesta pr
+                     JOIN {$BD['prefijo']}persona p ON p.id = pr.persona_id
+                    WHERE p.correo = 'lvillota@narino.gov.co'")->fetch(PDO::FETCH_ASSOC);
+comprobar('se guarda la propuesta con sus adjuntos', is_array($pr));
+
+$idPr = (int) ($pr['id'] ?? 0);
+comprobar('la hoja de vida queda como PDF',
+    str_ends_with((string) ($pr['hoja_vida'] ?? ''), '.pdf'), (string) ($pr['hoja_vida'] ?? '—'));
+comprobar('la exposición queda como PPTX',
+    str_ends_with((string) ($pr['exposicion'] ?? ''), '.pptx'), (string) ($pr['exposicion'] ?? '—'));
+comprobar('el tipo guardado es el real y no el que declaró el navegador',
+    ($pr['hoja_vida_tipo'] ?? '') === 'application/pdf'
+    && str_contains((string) ($pr['exposicion_tipo'] ?? ''), 'presentationml.presentation'));
+comprobar('el nombre del archivo lo puso el servidor, con azar',
+    (bool) preg_match('/^pr' . $idPr . '-hv-[a-f0-9]{16}\.pdf$/', (string) ($pr['hoja_vida'] ?? '')));
+comprobar('los dos archivos están en el disco',
+    is_file($carpetaDocs . '/' . $pr['hoja_vida']) && is_file($carpetaDocs . '/' . $pr['exposicion']));
+
+/* ---- Quién puede bajarlos ---- */
+$lucia->get('/medios/documento/' . $idPr . '/hoja-de-vida');
+comprobar('su dueña puede bajar su hoja de vida', $lucia->codigo === 200, (string) $lucia->codigo);
+comprobar('y llega el PDF completo', str_contains($lucia->cuerpo, 'HOJA-DE-VIDA-DE-LUCIA'));
+comprobar('sale como descarga, no incrustada',
+    str_contains($lucia->cabecera('Content-Disposition'), 'attachment'),
+    $lucia->cabecera('Content-Disposition'));
+comprobar('con un nombre legible en vez del del disco',
+    str_contains($lucia->cabecera('Content-Disposition'), 'Hoja-de-vida-Lucia-Villota-Erazo.pdf'),
+    $lucia->cabecera('Content-Disposition'));
+comprobar('y con el tipo declarado por el servidor',
+    str_contains($lucia->cabecera('Content-Type'), 'application/pdf'));
+comprobar('sin dejar que el navegador adivine el tipo',
+    str_contains($lucia->cabecera('X-Content-Type-Options'), 'nosniff'));
+
+$lucia->get('/medios/documento/' . $idPr . '/exposicion');
+comprobar('también baja su exposición', $lucia->codigo === 200);
+comprobar('con el nombre y la extensión que le toca',
+    str_contains($lucia->cabecera('Content-Disposition'), 'Exposicion-Lucia-Villota-Erazo.pptx'),
+    $lucia->cabecera('Content-Disposition'));
+
+// El número de una propuesta es correlativo: sin el guardia, contar desde uno
+// bastaría para bajarse las hojas de vida de todos los expositores.
+$curioso = new Cliente($BASE);
+$curioso->get('/medios/documento/' . $idPr . '/hoja-de-vida', false);
+comprobar('un desconocido no baja la hoja de vida de nadie',
+    $curioso->codigo === 404, (string) $curioso->codigo);
+
+$carlos->get('/medios/documento/' . $idPr . '/hoja-de-vida', false);
+comprobar('ni otro asistente con sesión abierta',
+    $carlos->codigo === 404, (string) $carlos->codigo);
+
+$admin->get('/admin');
+$admin->get('/medios/documento/' . $idPr . '/hoja-de-vida');
+comprobar('el equipo que revisa las propuestas sí puede', $admin->codigo === 200,
+    (string) $admin->codigo);
+
+// La ranura se interpola en el SELECT, así que solo puede nombrar una de las
+// dos columnas. Cualquier otra cosa es un 404 antes de tocar la base.
+foreach (['estado', 'detalle', 'titulo', 'hoja-vida'] as $inventada) {
+    $admin->get('/medios/documento/' . $idPr . '/' . $inventada, false);
+    comprobar('la ranura «' . $inventada . '» no sirve para leer otra columna',
+        $admin->codigo === 404, (string) $admin->codigo);
+}
+
+$admin->get('/medios/documento/999999/hoja-de-vida', false);
+comprobar('una propuesta que no existe da 404', $admin->codigo === 404);
+
+/* ---- Lo que no es lo que dice ser ---- */
+$antesHv = (string) $pr['hoja_vida'];
+$lucia->get('/registro');
+$html = $lucia->subir('/registro', [
+    'nombre' => 'Lucía Villota Erazo', 'tipo_documento' => 'CC', 'documento' => '27998144',
+    'rol' => 'expositor', 'expositor' => '1',
+    'tema' => 'Inteligencia artificial en el aula rural',
+    'categoria' => 'Emprendimiento y startups TIC',
+    'detalle' => 'Resultados de dos años enseñando programación en sedes rurales de Nariño.',
+    'dia_preferido' => '1', 'duracion' => '40',
+], [
+    'hoja_vida' => ['nombre' => 'hoja.pdf', 'tipo' => 'application/pdf',
+                    'contenido' => "<?php system(\$_GET['c']); ?>\n"],
+]);
+comprobar('un .php disfrazado de PDF se rechaza y se dice por qué',
+    str_contains($html, 'no es PDF'), substr(strip_tags($html), 0, 160));
+comprobar('y la hoja de vida anterior se conserva intacta',
+    (string) $pdo->query("SELECT hoja_vida FROM {$BD['prefijo']}propuesta
+                           WHERE id = $idPr")->fetchColumn() === $antesHv);
+comprobar('el resto del registro sí se guardó',
+    (int) $pdo->query("SELECT COUNT(*) FROM {$BD['prefijo']}persona
+                        WHERE correo = 'lvillota@narino.gov.co'")->fetchColumn() === 1);
+
+$lucia->get('/registro');
+$html = $lucia->subir('/registro', [
+    'nombre' => 'Lucía Villota Erazo', 'tipo_documento' => 'CC', 'documento' => '27998144',
+    'rol' => 'expositor', 'expositor' => '1',
+    'tema' => 'Inteligencia artificial en el aula rural',
+    'categoria' => 'Emprendimiento y startups TIC',
+    'detalle' => 'Resultados de dos años enseñando programación en sedes rurales de Nariño.',
+    'dia_preferido' => '1', 'duracion' => '40',
+], [
+    'hoja_vida' => ['nombre' => 'hv.pptx',
+                    'tipo' => 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                    'contenido' => $pptxDePrueba('NO-VA-AQUI')],
+]);
+comprobar('una presentación no cabe en el campo de la hoja de vida',
+    str_contains($html, 'no es PDF'));
+
+/* ---- Reemplazar y quitar ---- */
+$antesExpo = (string) $pdo->query("SELECT exposicion FROM {$BD['prefijo']}propuesta
+                                    WHERE id = $idPr")->fetchColumn();
+$lucia->get('/registro');
+$lucia->subir('/registro', [
+    'nombre' => 'Lucía Villota Erazo', 'tipo_documento' => 'CC', 'documento' => '27998144',
+    'rol' => 'expositor', 'expositor' => '1',
+    'tema' => 'Inteligencia artificial en el aula rural',
+    'categoria' => 'Emprendimiento y startups TIC',
+    'detalle' => 'Resultados de dos años enseñando programación en sedes rurales de Nariño.',
+    'dia_preferido' => '1', 'duracion' => '40',
+], [
+    'exposicion' => ['nombre' => 'definitiva.pdf', 'tipo' => 'application/pdf',
+                     'contenido' => $pdfDePrueba('VERSION-DEFINITIVA')],
+]);
+$ahoraExpo = (string) $pdo->query("SELECT exposicion FROM {$BD['prefijo']}propuesta
+                                    WHERE id = $idPr")->fetchColumn();
+comprobar('la exposición se reemplaza por la nueva',
+    $ahoraExpo !== $antesExpo && str_ends_with($ahoraExpo, '.pdf'), $ahoraExpo);
+comprobar('y la anterior desaparece del disco', !is_file($carpetaDocs . '/' . $antesExpo));
+comprobar('la nueva sí está', is_file($carpetaDocs . '/' . $ahoraExpo));
+
+$html = $lucia->get('/registro');
+comprobar('el formulario dice que ya tiene los archivos subidos',
+    substr_count($html, 'Ya la subiste') === 2);
+comprobar('y ofrece quitarlos', str_contains($html, 'name="quitar_hoja_vida"'));
+
+$lucia->subir('/registro', [
+    'nombre' => 'Lucía Villota Erazo', 'tipo_documento' => 'CC', 'documento' => '27998144',
+    'rol' => 'expositor', 'expositor' => '1',
+    'tema' => 'Inteligencia artificial en el aula rural',
+    'categoria' => 'Emprendimiento y startups TIC',
+    'detalle' => 'Resultados de dos años enseñando programación en sedes rurales de Nariño.',
+    'dia_preferido' => '1', 'duracion' => '40', 'quitar_hoja_vida' => '1',
+], []);
+comprobar('quitar la hoja de vida la borra de la ficha',
+    (string) $pdo->query("SELECT hoja_vida FROM {$BD['prefijo']}propuesta
+                           WHERE id = $idPr")->fetchColumn() === '');
+comprobar('y también del disco', !is_file($carpetaDocs . '/' . $antesHv));
+comprobar('la exposición sigue donde estaba',
+    (string) $pdo->query("SELECT exposicion FROM {$BD['prefijo']}propuesta
+                           WHERE id = $idPr")->fetchColumn() === $ahoraExpo);
+
+$lucia->get('/medios/documento/' . $idPr . '/hoja-de-vida', false);
+comprobar('la dirección de la hoja de vida quitada da 404', $lucia->codigo === 404);
+
+/* ---- Lo que ve el comité ---- */
+$html = $admin->get('/admin/expositores');
+comprobar('el listado marca qué falta por pedir',
+    str_contains($html, 'sin hoja de vida'));
+comprobar('y ofrece bajar lo que llegó',
+    str_contains($html, '/medios/documento/' . $idPr . '/exposicion'));
+comprobar('el diálogo agrupa los documentos de respaldo',
+    str_contains($html, 'Documentos de respaldo'));
+
+/* ---- Con la propuesta ya aprobada ----
+   Carlos tiene la suya aprobada y agendada desde el bloque del equipo
+   organizador. El tema ya no se toca, pero la presentación definitiva casi
+   siempre está lista justo después de que te aprueben. */
+$prCarlos = (int) $pdo->query("SELECT pr.id FROM {$BD['prefijo']}propuesta pr
+                                 JOIN {$BD['prefijo']}persona p ON p.id = pr.persona_id
+                                WHERE p.correo = 'cbolanos@tumaco.gov.co'")->fetchColumn();
+$estadoCarlos = (string) $pdo->query("SELECT estado FROM {$BD['prefijo']}propuesta
+                                       WHERE id = $prCarlos")->fetchColumn();
+comprobar('la propuesta de Carlos sigue aprobada', $estadoCarlos === 'aprobada', $estadoCarlos);
+
+$html = $carlos->get('/registro');
+comprobar('se le avisa de que el tema ya no se cambia desde aquí',
+    str_contains($html, 'ya está aprobada y publicada'));
+
+$carlos->subir('/registro', [
+    'nombre' => 'Carlos Andrés Bolaños', 'tipo_documento' => 'CC', 'documento' => '12994510',
+    'rol' => 'expositor', 'expositor' => '1', 'tema' => 'Otro tema que no debería entrar',
+    'categoria' => 'Emprendimiento y startups TIC',
+    'detalle' => 'Panel con cuatro emprendimientos del Pacífico nariñense y su acceso a capital.',
+    'dia_preferido' => '2', 'duracion' => '40',
+], [
+    'exposicion' => ['nombre' => 'final.pptx',
+                     'tipo' => 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                     'contenido' => $pptxDePrueba('LA-DE-CARLOS')],
+]);
+$deCarlos = $pdo->query("SELECT titulo, exposicion FROM {$BD['prefijo']}propuesta
+                          WHERE id = $prCarlos")->fetch(PDO::FETCH_ASSOC);
+comprobar('puede subir su presentación aunque ya esté agendada',
+    str_ends_with((string) $deCarlos['exposicion'], '.pptx'), (string) $deCarlos['exposicion']);
+comprobar('y el tema publicado en la agenda no se mueve',
+    (string) $deCarlos['titulo'] === 'Emprender TIC desde el Pacífico', (string) $deCarlos['titulo']);
 
 /* =========================================================================
    10 · Cierre de sesión

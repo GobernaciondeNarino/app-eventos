@@ -5,6 +5,29 @@
  */
 defined('EVENTOS_TIC') || exit;
 
+use App\Nucleo\Documento;
+
+/**
+ * Los dos adjuntos de una propuesta, listos para pintar.
+ *
+ * Se devuelven siempre los dos, con o sin archivo: lo que el comité necesita
+ * ver de un vistazo no es solo lo que llegó, es lo que falta por pedir.
+ */
+$adjuntos = static function (array $p): array {
+    $lista = [];
+    foreach (Documento::CLASES as $clase => $regla) {
+        $archivo = (string) ($p[$clase] ?? '');
+        $lista[] = [
+            'etiqueta' => $regla['etiqueta'],
+            'hay'      => $archivo !== '',
+            'peso'     => $archivo !== '' ? Documento::peso($archivo) : '',
+            'formato'  => $archivo !== '' ? strtoupper(pathinfo($archivo, PATHINFO_EXTENSION)) : '',
+            'url'      => u('/medios/documento/' . (int) $p['id'] . '/' . $regla['ranura']),
+        ];
+    }
+    return $lista;
+};
+
 $estados = [
     'pendiente' => ['Pendiente', 'tag--warn'],
     'observada' => ['Con observaciones', ''],
@@ -54,10 +77,20 @@ $columnas = 'grid-template-columns:1.7fr 1.1fr 1fr .8fr .9fr';
           [$etiqueta, $clase] = $estados[$p['estado']] ?? ['—', '']; ?>
           <button class="table__row" style="<?= $columnas ?>;cursor:pointer;text-align:left;border:0;border-bottom:1px solid var(--hair-soft);background:none;width:100%;color:inherit;font:inherit"
                   type="button" data-abrir-modal="modal-propuesta-<?= (int) $p['id'] ?>">
-            <div class="stack" style="gap:2px;min-width:0">
+            <div class="stack" style="gap:4px;min-width:0">
               <strong style="font-weight:500;color:var(--c-title)"><?= e($p['titulo']) ?></strong>
               <span class="mono muted" style="font-size:11px">
                 <?= e((string) $p['duracion_min']) ?> min · <?= e($p['requerimientos'] ?: 'sin requerimientos') ?>
+              </span>
+              <!-- Qué llegó y qué falta. Va en el listado y no solo dentro del
+                   diálogo porque revisar propuestas empieza por apartar las que
+                   todavía no se pueden evaluar. -->
+              <span class="row" style="gap:5px">
+                <?php foreach ($adjuntos($p) as $d): ?>
+                  <span class="tag <?= $d['hay'] ? 'tag--ok' : 'tag--mute' ?>" style="font-size:10px">
+                    <?= $d['hay'] ? '' : 'sin ' ?><?= e($d['hay'] ? $d['etiqueta'] : mb_strtolower($d['etiqueta'])) ?>
+                  </span>
+                <?php endforeach; ?>
               </span>
             </div>
             <div class="stack" style="gap:2px;min-width:0">
@@ -105,6 +138,33 @@ $columnas = 'grid-template-columns:1.7fr 1.1fr 1fr .8fr .9fr';
         </div>
 
         <p style="font-size:14.5px;line-height:1.7;color:var(--c-text)"><?= nl2br(e($p['detalle'])) ?></p>
+
+        <!-- Los adjuntos. Se bajan al disco en vez de abrirse dentro de la
+             página: un PDF incrustado es un documento que puede traer sus
+             propios guiones, y estos los subió alguien de fuera. -->
+        <div class="stack stack--2">
+          <span class="kicker">Documentos de respaldo</span>
+          <div class="row" style="gap:10px">
+            <?php foreach ($adjuntos($p) as $d): ?>
+              <?php if ($d['hay']): ?>
+                <a class="btn btn--sm" href="<?= e($d['url']) ?>" download>
+                  <?= e($d['etiqueta']) ?>
+                  <span class="muted" style="font-weight:400">
+                    <?= e(trim($d['formato'] . ($d['peso'] !== '' ? ' · ' . $d['peso'] : ''))) ?>
+                  </span>
+                </a>
+              <?php else: ?>
+                <span class="tag tag--mute">Sin <?= e(mb_strtolower($d['etiqueta'])) ?></span>
+              <?php endif; ?>
+            <?php endforeach; ?>
+          </div>
+          <?php if (!$p['hoja_vida'] || !$p['exposicion']): ?>
+            <span class="help">
+              Son opcionales al registrarse. Si los necesitas para decidir, devuelve la propuesta
+              con observaciones: el expositor puede volver al formulario y subirlos.
+            </span>
+          <?php endif; ?>
+        </div>
 
         <?php if ($p['observacion']): ?>
           <div class="notice notice--warn">

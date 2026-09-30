@@ -8,6 +8,7 @@ defined('EVENTOS_TIC') || exit;
 use App\Nucleo\Bd;
 use App\Nucleo\Bitacora;
 use App\Nucleo\Cripto;
+use App\Nucleo\Documento;
 use App\Nucleo\Imagen;
 
 /**
@@ -494,10 +495,24 @@ final class Evento
         $fotos = Bd::filas('SELECT foto FROM {persona} WHERE evento_id = ? AND foto <> \'\'', [$id]);
         $tema = Bd::fila('SELECT logo_archivo FROM {evento_tema} WHERE evento_id = ?', [$id]);
 
+        // Y lo mismo con los adjuntos de los expositores, que además son datos
+        // personales de los de verdad: una hoja de vida trae teléfono,
+        // dirección y trayectoria laboral.
+        $adjuntos = Bd::filas(
+            "SELECT pr.hoja_vida, pr.exposicion
+               FROM {propuesta} pr JOIN {persona} p ON p.id = pr.persona_id
+              WHERE p.evento_id = ?",
+            [$id]
+        );
+
         Bd::ejecutar('DELETE FROM {evento} WHERE id = ?', [$id]);
 
         foreach ($fotos as $f) {
             Imagen::borrarFoto((string) $f['foto']);
+        }
+        foreach ($adjuntos as $a) {
+            Documento::borrar((string) $a['hoja_vida']);
+            Documento::borrar((string) $a['exposicion']);
         }
         $logo = (string) ($tema['logo_archivo'] ?? '');
         if ($logo !== '') {

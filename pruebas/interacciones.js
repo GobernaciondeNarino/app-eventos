@@ -245,6 +245,42 @@ function titulo(t) {
     (await p4.locator('#documento').count()) === 1
     && (await p4.locator('button[type=submit]').count()) >= 1);
 
+  /* ---- Los adjuntos del expositor ----
+     Los dos campos existen siempre en la página, pero dentro del bloque que
+     solo se despliega al marcar «Voy a exponer». Quien no va a exponer no debe
+     ver dos campos de archivo más: es lo que hace que el formulario parezca
+     largo de verdad. */
+  comprobar('el bloque del expositor llega plegado',
+    await p4.locator('#bloque-expositor').isHidden());
+  comprobar('y con él los dos campos de archivo',
+    await p4.locator('#hoja_vida').isHidden()
+    && await p4.locator('#exposicion').isHidden());
+
+  await p4.locator('#expositor').check();
+  comprobar('al marcar que va a exponer, el bloque se abre',
+    await p4.locator('#bloque-expositor').isVisible());
+  comprobar('y aparecen los campos de la hoja de vida y la exposición',
+    await p4.locator('#hoja_vida').isVisible() && await p4.locator('#exposicion').isVisible());
+
+  comprobar('la hoja de vida solo ofrece PDF',
+    (await p4.locator('#hoja_vida').getAttribute('accept')) === '.pdf,application/pdf');
+  const aceptaExpo = await p4.locator('#exposicion').getAttribute('accept');
+  comprobar('la exposición ofrece también PPTX',
+    aceptaExpo.includes('.pptx') && aceptaExpo.includes('.pdf'), aceptaExpo);
+
+  // Sin esto el navegador manda solo los nombres de los archivos y $_FILES
+  // llega vacío, que es un fallo silencioso: el registro se guarda sin adjuntos
+  // y nadie ve ningún error.
+  comprobar('el formulario va en multipart, que es lo que manda los archivos',
+    (await p4.locator('form').first().getAttribute('enctype')) === 'multipart/form-data');
+
+  comprobar('el perfil pasa a expositor solo',
+    (await p4.locator('#rol').inputValue()) === 'expositor');
+
+  await p4.locator('#expositor').uncheck();
+  comprobar('al desmarcar se vuelve a plegar',
+    await p4.locator('#bloque-expositor').isHidden());
+
   comprobar('sin errores de consola en el registro', erroresRegistro.length === 0,
     erroresRegistro.slice(0, 2).join(' | '));
 

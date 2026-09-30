@@ -53,7 +53,7 @@ if (PHP_SAPI !== 'cli') {
 
 define('EVENTOS_TIC', true);
 define('RAIZ', dirname(__DIR__));
-define('APP_VERSION', '3.2.0');
+define('APP_VERSION', '3.3.0');
 
 spl_autoload_register(static function (string $clase): void {
     if (!str_starts_with($clase, 'App\\')) {
@@ -410,7 +410,8 @@ foreach (['pdo_mysql', 'mbstring', 'openssl', 'json', 'fileinfo'] as $extension)
 if (PHP_VERSION_ID < 80100) {
     $morir('Se requiere PHP 8.1 o superior; este es ' . PHP_VERSION . '.');
 }
-foreach (['config', 'almacen/logos', 'almacen/fotos', 'almacen/respaldos', 'almacen/registro'] as $relativa) {
+foreach (['config', 'almacen/logos', 'almacen/fotos', 'almacen/documentos',
+          'almacen/respaldos', 'almacen/registro'] as $relativa) {
     $ruta = RAIZ . '/' . $relativa;
     if (!is_dir($ruta)) {
         @mkdir($ruta, 0750, true);

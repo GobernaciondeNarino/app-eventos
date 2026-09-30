@@ -15,7 +15,7 @@ use App\Nucleo\Bd;
  */
 final class Esquema
 {
-    public const VERSION = '1.4.0';
+    public const VERSION = '1.5.0';
 
     /**
      * Columnas que ya existen pero cambiaron de tipo.
@@ -238,6 +238,14 @@ final class Esquema
                     'dia_preferido'  => 'TINYINT UNSIGNED NOT NULL DEFAULT 1',
                     'duracion_min'   => 'SMALLINT UNSIGNED NOT NULL DEFAULT 40',
                     'requerimientos' => "VARCHAR(255) NOT NULL DEFAULT ''",
+                    // Los dos adjuntos del expositor. Como en la foto del
+                    // carnet, aquí solo va el nombre que puso el servidor
+                    // dentro de almacen/documentos y el tipo real que se
+                    // comprobó al recibirlo; el archivo nunca toca la raíz web.
+                    'hoja_vida'       => "VARCHAR(120) NOT NULL DEFAULT ''",
+                    'hoja_vida_tipo'  => "VARCHAR(120) NOT NULL DEFAULT ''",
+                    'exposicion'      => "VARCHAR(120) NOT NULL DEFAULT ''",
+                    'exposicion_tipo' => "VARCHAR(120) NOT NULL DEFAULT ''",
                     'estado'         => "ENUM('pendiente','observada','aprobada','rechazada') NOT NULL DEFAULT 'pendiente'",
                     'observacion'    => 'TEXT NULL',
                     'revisada_por'   => 'INT UNSIGNED NULL',

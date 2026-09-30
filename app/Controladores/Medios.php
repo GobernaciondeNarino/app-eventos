@@ -8,6 +8,8 @@ defined('EVENTOS_TIC') || exit;
 use App\Modelos\Credencial;
 use App\Modelos\Evento;
 use App\Nucleo\App;
+use App\Nucleo\Bd;
+use App\Nucleo\Documento;
 use App\Nucleo\Guardia;
 use App\Nucleo\Peticion;
 use App\Nucleo\Qr;
@@ -75,6 +77,54 @@ final class Medios
         // basename() aunque el nombre lo ponga el servidor: es la barrera que
         // impide que una fila manipulada en la base saque archivos del árbol.
         Respuesta::archivo(RAIZ . '/almacen/fotos/' . basename($archivo), $tipo, true);
+    }
+
+    /**
+     * La hoja de vida o la exposición de un expositor.
+     *
+     * Las ve quien las subió y las ve el equipo que revisa las propuestas.
+     * Nadie más: el número de una propuesta es correlativo, así que sin esta
+     * comprobación bastaría con contar desde uno para bajarse las hojas de vida
+     * de todos los expositores, con su teléfono y su dirección dentro.
+     *
+     * Salen siempre como descarga, nunca incrustadas. Ver App\Nucleo\Documento.
+     */
+    public function documento(Peticion $peticion, array $parametros): void
+    {
+        $clase = Documento::porRanura((string) $parametros['ranura']);
+        if ($clase === null) {
+            Respuesta::error(404, 'Documento no encontrado', 'No hay ningún archivo en esa dirección.');
+        }
+
+        $propuesta = Bd::fila(
+            "SELECT pr.persona_id, pr.$clase AS archivo, pr.{$clase}_tipo AS tipo, p.nombre
+               FROM {propuesta} pr
+               JOIN {persona} p ON p.id = pr.persona_id
+              WHERE pr.id = ?",
+            [(int) $parametros['propuesta']]
+        );
+
+        $yo = Guardia::personaActual();
+        $equipo = Guardia::equipoOperativo();
+        $esDelEquipo = $equipo !== null && Guardia::tieneRol($equipo, 'consulta');
+        $esSuyo = $propuesta && $yo !== null && (int) $yo['id'] === (int) $propuesta['persona_id'];
+
+        // El mismo 404 para «no existe» y para «no es tuyo»: distinguirlos
+        // convertiría esta dirección en una forma de averiguar qué propuestas
+        // hay y quién adjuntó qué.
+        if (!$propuesta || (!$esSuyo && !$esDelEquipo) || (string) $propuesta['archivo'] === '') {
+            Respuesta::error(404, 'Documento no encontrado', 'No hay ningún archivo en esa dirección.');
+        }
+
+        $archivo = (string) $propuesta['archivo'];
+        $tipo = (string) $propuesta['tipo'] ?: 'application/octet-stream';
+
+        Respuesta::archivo(
+            Documento::ruta($archivo),
+            $tipo,
+            false,
+            Documento::nombreDescarga($clase, (string) $propuesta['nombre'], $archivo)
+        );
     }
 
     /** QR del carnet propio, como archivo SVG suelto. */

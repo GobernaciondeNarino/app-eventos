@@ -142,15 +142,26 @@ final class Respuesta
     /**
      * Sirve un archivo subido.
      *
-     * Los logos y las fotos nunca se sirven directamente desde el disco: pasan
-     * por aquí. Así el tipo lo decide el servidor y no la extensión del
-     * archivo, y una imagen SVG con un script dentro no se ejecuta en el
-     * origen del sitio (ver docs/SEGURIDAD.md).
+     * Los logos, las fotos y los adjuntos de los expositores nunca se sirven
+     * directamente desde el disco: pasan por aquí. Así el tipo lo decide el
+     * servidor y no la extensión del archivo, y una imagen SVG con un script
+     * dentro no se ejecuta en el origen del sitio (ver docs/SEGURIDAD.md).
+     *
+     * $nombre es con el que se baja. Por omisión, el que tiene en el disco
+     * —que lo puso el servidor y es ilegible a propósito: «pr7-hv-a1b2.pdf»—.
+     * Se le quita todo lo que no sea letra, número, punto o guion: acaba dentro
+     * de una cabecera HTTP, y una comilla o un salto de línea ahí dejan de ser
+     * texto y pasan a ser estructura.
      */
-    public static function archivo(string $ruta, string $tipo, bool $enLinea = true): never
+    public static function archivo(string $ruta, string $tipo, bool $enLinea = true, string $nombre = ''): never
     {
         if (!is_file($ruta)) {
             self::error(404, 'Archivo no encontrado', 'El recurso solicitado ya no está disponible.');
+        }
+
+        $nombre = (string) preg_replace('/[^A-Za-z0-9._-]/', '', $nombre !== '' ? $nombre : basename($ruta));
+        if ($nombre === '') {
+            $nombre = 'archivo';
         }
 
         header('Content-Type: ' . $tipo);
@@ -159,7 +170,7 @@ final class Respuesta
         header('Content-Security-Policy: default-src \'none\'; style-src \'unsafe-inline\'; sandbox');
         header('Cache-Control: private, max-age=86400');
         header('Content-Disposition: ' . ($enLinea ? 'inline' : 'attachment')
-            . '; filename="' . basename($ruta) . '"');
+            . '; filename="' . $nombre . '"');
         readfile($ruta);
         exit;
     }

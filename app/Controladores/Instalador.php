@@ -322,6 +322,7 @@ final class Instalador
             'json'      => ['Serialización interna', true],
             'fileinfo'  => ['Verificar el tipo real de los archivos subidos', true],
             'gd'        => ['Reducir el logo y las fotos del carnet', false],
+            'zip'       => ['Comprobar que un PPTX es de verdad una presentación', false],
             'sodium'    => ['Cifrado moderno; sin él se usa AES-GCM', false],
         ] as $extension => [$para, $obligatoria]) {
             $presente = extension_loaded($extension);
@@ -332,6 +333,29 @@ final class Instalador
                 'estado'  => $presente ? 'ok' : ($obligatoria ? 'fail' : 'warn'),
             ];
         }
+
+        // El tope de subida de PHP. Se comprueba porque es el que decide de
+        // verdad qué se puede adjuntar, y en Plesk viene en 2 MB de fábrica: con
+        // eso no entra ni la foto del carnet, y el fallo es de los peores de
+        // diagnosticar. Pasado post_max_size, PHP descarta el envío completo
+        // —$_POST y $_FILES llegan vacíos, el testigo incluido— y la persona ve
+        // «la sesión expiró» en lugar de «el archivo pesa demasiado».
+        $necesario = 0;
+        foreach (\App\Nucleo\Documento::CLASES as $regla) {
+            $necesario = max($necesario, (int) $regla['peso']);
+        }
+        $subida = self::aBytes((string) ini_get('upload_max_filesize'));
+        $envio = self::aBytes((string) ini_get('post_max_size'));
+        $tope = min($subida, $envio);
+
+        $lista[] = [
+            'nombre'  => 'Tamaño máximo de subida',
+            'detalle' => 'La exposición de un expositor puede pesar hasta '
+                . (int) round($necesario / 1048576) . ' MB',
+            'valor'   => 'upload_max_filesize ' . ini_get('upload_max_filesize')
+                . ', post_max_size ' . ini_get('post_max_size'),
+            'estado'  => $tope >= $necesario ? 'ok' : 'warn',
+        ];
 
         $argon = defined('PASSWORD_ARGON2ID');
         $lista[] = [
@@ -368,6 +392,29 @@ final class Instalador
     }
 
     /**
+     * «8M», «2048K», «1G» a bytes.
+     *
+     * Así se escriben los topes en php.ini. Un 0 o un -1 significan «sin
+     * límite», y aquí eso se traduce a PHP_INT_MAX para que la comparación
+     * funcione igual que con un número.
+     */
+    private static function aBytes(string $valor): int
+    {
+        $valor = trim($valor);
+        if ($valor === '' || (int) $valor <= 0) {
+            return PHP_INT_MAX;
+        }
+
+        $numero = (int) $valor;
+        return match (strtolower(substr($valor, -1))) {
+            'g' => $numero * 1024 * 1024 * 1024,
+            'm' => $numero * 1024 * 1024,
+            'k' => $numero * 1024,
+            default => $numero,
+        };
+    }
+
+    /**
      * ¿Está mod_rewrite? Si se llegó aquí por una URL limpia, la respuesta es sí.
      * Con nginx por delante —lo habitual en Plesk— no se puede saber desde PHP,
      * y entonces se avisa en vez de afirmar.
@@ -390,6 +437,7 @@ final class Instalador
             'config'            => 'Aquí se escribe config.php',
             'almacen/logos'     => 'Logos de cada evento',
             'almacen/fotos'     => 'Fotografías de los carnets',
+            'almacen/documentos' => 'Hojas de vida y exposiciones de los expositores',
             'almacen/respaldos' => 'Copias antes de cada migración',
             'almacen/registro'  => 'Registro de errores',
         ];

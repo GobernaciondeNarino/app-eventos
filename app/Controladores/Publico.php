@@ -13,6 +13,7 @@ use App\Nucleo\App;
 use App\Nucleo\Autenticacion;
 use App\Nucleo\Bd;
 use App\Nucleo\Correo;
+use App\Nucleo\Documento;
 use App\Nucleo\Guardia;
 use App\Nucleo\Imagen;
 use App\Nucleo\Limite;
@@ -123,7 +124,7 @@ final class Publico
                 try {
                     $resultado = Persona::registrar((int) $evento['id'], $valores);
                     $personaId = (int) $resultado['id'];
-                    $this->guardarPropuesta($personaId, $valores, $peticion);
+                    $propuestaId = $this->guardarPropuesta($personaId, $valores, $peticion);
 
                     // La contraseña solo se toca si se escribió una. Dejar el
                     // campo en blanco al corregir los datos conserva la que ya
@@ -133,9 +134,17 @@ final class Publico
                         Persona::ponerClave($personaId, $clave);
                     }
 
-                    // La foto va después de crear la persona porque el nombre
-                    // del archivo lleva su id.
+                    // La foto y los adjuntos van después de crear la persona y
+                    // la propuesta, porque el nombre de cada archivo lleva su
+                    // número.
+                    $avisos = [];
                     $falloFoto = $this->guardarFoto($peticion, $personaId);
+                    if ($falloFoto !== null) {
+                        $avisos[] = 'La foto no se guardó: ' . $falloFoto;
+                    }
+                    if ($propuestaId !== null) {
+                        $avisos = array_merge($avisos, $this->guardarDocumentos($propuestaId, $peticion));
+                    }
 
                     // Queda con sesión abierta: acaba de demostrar que controla
                     // ese correo solo si venía identificado; si no, el enlace
@@ -151,9 +160,13 @@ final class Publico
                         );
                     }
 
-                    if ($falloFoto !== null) {
+                    // Ni la foto ni los adjuntos abortan el registro: se vuelven
+                    // a subir cuando se quiera, y perder el registro entero
+                    // porque el teléfono mandó un HEIC sería desproporcionado.
+                    // Lo que no se puede es guardar a medias en silencio.
+                    if ($avisos) {
                         Respuesta::redirigir('/carnet',
-                            'Guardamos tus datos, pero la foto no: ' . $falloFoto, 'warn');
+                            'Guardamos tus datos. ' . implode(' ', $avisos), 'warn');
                     }
 
                     Respuesta::redirigir('/carnet', $resultado['nueva']
@@ -172,6 +185,7 @@ final class Publico
         // alguien que creó su acceso y todavía no llenó nada, y alguien que ya
         // está registrado y viene a corregir.
         $completo = $yo !== null && Persona::registroCompleto($yo);
+        $suPropuesta = $this->documentosDe($yo);
 
         Respuesta::vista('publico/registro', [
             'titulo'        => $yo === null
@@ -191,6 +205,8 @@ final class Publico
             'tieneClave'    => $yo !== null && Persona::tieneClave($yo),
             'foto'          => $yo !== null && Persona::tieneFoto($yo)
                 ? u('/medios/foto/' . (int) $yo['id']) : '',
+            'documentos'    => $suPropuesta['documentos'],
+            'agendada'      => $suPropuesta['aprobada'],
         ]);
     }
 
@@ -371,10 +387,17 @@ final class Publico
         return $errores;
     }
 
-    private function guardarPropuesta(int $personaId, array $v, Peticion $peticion): void
+    /**
+     * Guarda la propuesta del expositor y devuelve su número.
+     *
+     * Devuelve null solo cuando no hay ninguna: quien no marcó la casilla. Los
+     * adjuntos que vinieran en ese envío se descartan, porque no hay dónde
+     * colgarlos.
+     */
+    private function guardarPropuesta(int $personaId, array $v, Peticion $peticion): ?int
     {
         if (empty($v['expositor'])) {
-            return;
+            return null;
         }
 
         $existente = Bd::fila(
@@ -393,15 +416,113 @@ final class Publico
 
         // Una propuesta ya aprobada no se pisa desde el formulario público: el
         // horario y el salón ya están publicados en la agenda.
+        //
+        // Los archivos sí se pueden cambiar, y por eso se devuelve el número
+        // igual en vez de cortar aquí. Subir la presentación definitiva justo
+        // después de que te aprueben es el momento en que la mayoría la tiene
+        // lista, y cambiar el archivo no mueve nada de la agenda.
         if ($existente && $existente['estado'] === 'aprobada') {
-            return;
+            return (int) $existente['id'];
         }
 
         if ($existente) {
             Bd::actualizar('propuesta', $campos + ['estado' => 'pendiente'], 'id = :id', ['id' => $existente['id']]);
-        } else {
-            Bd::insertar('propuesta', $campos + ['persona_id' => $personaId]);
+            return (int) $existente['id'];
         }
+        return (int) Bd::insertar('propuesta', $campos + ['persona_id' => $personaId]);
+    }
+
+    /**
+     * La hoja de vida y la exposición del expositor.
+     *
+     * Devuelve un aviso por cada una que no se pudo guardar; una lista vacía es
+     * que todo salió bien o que no mandaron nada. Como la foto, no aborta el
+     * registro: el archivo se vuelve a subir entrando otra vez al formulario, y
+     * dejar a alguien sin registrar por un PDF de más de ocho megas no arregla
+     * nada.
+     *
+     * El anterior se borra del disco solo después de que el nuevo esté escrito
+     * y su fila actualizada. Al revés, un fallo a media subida dejaría a la
+     * persona sin el documento que ya tenía.
+     *
+     * @return array<int, string>
+     */
+    private function guardarDocumentos(int $propuestaId, Peticion $peticion): array
+    {
+        $avisos = [];
+
+        foreach (Documento::CLASES as $clase => $regla) {
+            $anterior = (string) (Bd::valor(
+                "SELECT $clase FROM {propuesta} WHERE id = ?",
+                [$propuestaId]
+            ) ?? '');
+
+            if ($peticion->marcado('quitar_' . $clase)) {
+                Bd::actualizar('propuesta', [$clase => '', $clase . '_tipo' => ''],
+                    'id = :id', ['id' => $propuestaId]);
+                Documento::borrar($anterior);
+                continue;
+            }
+
+            $archivo = $peticion->archivo($clase);
+            if ($archivo === null) {
+                continue;
+            }
+
+            try {
+                [$nombre, $tipo] = Documento::guardar($archivo, $clase, $propuestaId);
+                Bd::actualizar('propuesta', [$clase => $nombre, $clase . '_tipo' => $tipo],
+                    'id = :id', ['id' => $propuestaId]);
+                Documento::borrar($anterior);
+            } catch (\DomainException $e) {
+                $avisos[] = mb_strtoupper(mb_substr($regla['etiqueta'], 0, 1))
+                    . mb_substr($regla['etiqueta'], 1) . ' no se guardó: ' . $e->getMessage();
+            } catch (\Throwable $e) {
+                Registro::excepcion($e);
+                $avisos[] = $regla['etiqueta'] . ' no se pudo guardar en el servidor.';
+            }
+        }
+
+        return $avisos;
+    }
+
+    /**
+     * Lo que ya tiene subido quien vuelve al formulario.
+     *
+     * Sin esto, un expositor que entra a corregir una coma del detalle vería
+     * los dos campos vacíos y creería que sus archivos se perdieron.
+     *
+     * @return array{documentos: array<string, array{archivo:string, peso:string, url:string}>, aprobada: bool}
+     */
+    private function documentosDe(?array $persona): array
+    {
+        $vacio = ['documentos' => [], 'aprobada' => false];
+        if ($persona === null) {
+            return $vacio;
+        }
+
+        $fila = Bd::fila(
+            'SELECT id, estado, hoja_vida, exposicion FROM {propuesta}
+              WHERE persona_id = ? ORDER BY id DESC LIMIT 1',
+            [(int) $persona['id']]
+        );
+        if (!$fila) {
+            return $vacio;
+        }
+
+        $subidos = [];
+        foreach (Documento::CLASES as $clase => $regla) {
+            $archivo = (string) ($fila[$clase] ?? '');
+            if ($archivo === '') {
+                continue;
+            }
+            $subidos[$clase] = [
+                'archivo' => $archivo,
+                'peso'    => Documento::peso($archivo),
+                'url'     => u('/medios/documento/' . (int) $fila['id'] . '/' . $regla['ranura']),
+            ];
+        }
+        return ['documentos' => $subidos, 'aprobada' => $fila['estado'] === 'aprobada'];
     }
 
     /** Municipios de un departamento, para el selector dependiente. */

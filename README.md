@@ -92,7 +92,8 @@ Hay dos puertas, y las dos llevan al mismo sitio:
   datos después, sin la fila detrás. El carnet se emite cuando el registro está completo.
 
 1. **Registro** — nombre y documento; el resto es opcional. Si va a exponer, adjunta su
-   propuesta en el mismo formulario.
+   propuesta en el mismo formulario, con su hoja de vida en PDF y su exposición en PDF o
+   PPTX.
 2. **Carnet** — se emite al instante y llega por correo. No hace falta imprimirlo.
 3. **Cada mañana** — apunta la cámara al pliego de la entrada. El código abre la plataforma,
    sella la hora y muestra su historial.
@@ -131,7 +132,7 @@ proceso, y no ofrece la opción que borra tablas.
 | Escanear carnet | Acreditar a alguien cuyo código de puerta falló; incluye búsqueda manual |
 | Registros | Listado con filtros y exportación a CSV |
 | QR por día | Un código por jornada, imprimible a página completa y regenerable |
-| Expositores | Aprobar, observar o rechazar propuestas; al aprobar se publica en la agenda |
+| Expositores | Aprobar, observar o rechazar propuestas, con la hoja de vida y la exposición a mano; al aprobar se publica en la agenda |
 | Organizadores | Equipo, roles y estado del segundo factor |
 | Eventos | Varios eventos a la vez; el activo es el que ven los asistentes |
 | Identidad | Colores, tipografía y logo, con revisión de contraste |
@@ -206,18 +207,19 @@ eventos/                        ← esto es lo que se sube al servidor
 ├── .htaccess                   reescritura, cabeceras y bloqueos
 ├── app/
 │   ├── rutas.php               toda la superficie expuesta, con su guardia
-│   ├── Esquema.php             las 16 tablas, fuente única
+│   ├── Esquema.php             las 17 tablas, fuente única
 │   ├── Datos.php               listas de referencia del formulario
 │   ├── ayudas.php              e(), u(), testigo()…
 │   ├── Nucleo/                 App, Peticion, Enrutador, Guardia, Bd, Sesion,
-│   │                           Csrf, Cripto, Limite, Bitacora, Qr, Tema, Correo, Totp
+│   │                           Csrf, Cripto, Limite, Bitacora, Qr, Tema, Correo, Totp,
+│   │                           Imagen y Documento (lo que sube el público)
 │   ├── Controladores/          Publico, Acceso, Carnet, Escaneo, Contactos,
 │   │                           Admin, Medios, Instalador
 │   ├── Modelos/                Evento, Persona, Credencial, Asistencia, Usuario
 │   └── Vistas/                 PHP plano; parciales, publico/, admin/, instalar/
 ├── assets/                     css, js, tipografías, imágenes
 ├── config/                     config.php lo escribe el instalador
-├── almacen/                    logos, fotos, respaldos, registro de errores
+├── almacen/                    logos, fotos, documentos, respaldos, registro de errores
 ├── docs/                       despliegue, seguridad, esquema de datos
 ├── herramientas/               cuenta.php, tipografías, documentación
 └── pruebas/
@@ -273,6 +275,10 @@ php pruebas/svg-saneado.php
 # La fotografía del carnet: recorte, encuadres manipulados y metadatos
 php pruebas/foto.php
 
+# Los adjuntos del expositor: un .php disfrazado de PDF, un ZIP que dice ser
+# una presentación, y el nombre con el que se baja el archivo
+php pruebas/documentos.php
+
 # La dirección del visitante detrás de un proxy
 php pruebas/proxy-y-limites.php
 
@@ -291,14 +297,16 @@ node pruebas/interacciones.js
 
 `extremo-a-extremo.php` habla por HTTP y no llamando a las clases, así que comprueba también
 el enrutado, las cookies, los testigos y los guardias, que es donde suelen estar los errores.
-Incluye 25 comprobaciones de seguridad.
+Incluye 19 comprobaciones en el bloque específico de seguridad y otras tantas repartidas por
+los guardias de cada pantalla.
 
-Estado actual: **326 de 326** de extremo a extremo, **77** del asistente de instalación,
+Estado actual: **379 de 379** de extremo a extremo, **77** del asistente de instalación,
 **28** del segundo factor contra los vectores del RFC 6238, **22** del hash de contraseñas,
 **19** del correo saliente, **19** de la dirección del visitante detrás del proxy, **21** de la
-fotografía del carnet, **17** del saneado de logos SVG, **198** casos de QR idénticos entre PHP
-y JavaScript, **161** entre JavaScript y la referencia, **13** del lector de QR, **47** de
-interacción en navegador, y las 16 pantallas limpias en escritorio, tableta y móvil.
+fotografía del carnet, **55** de los adjuntos del expositor, **17** del saneado de logos SVG,
+**198** casos de QR idénticos entre PHP y JavaScript, **161** entre JavaScript y la referencia,
+**13** del lector de QR, **56** de interacción en navegador, y las 16 pantallas limpias en
+escritorio, tableta y móvil.
 
 Las pruebas nacieron de errores reales, y por eso cubren lo que cubren: una instalación que se
 interrumpe a mitad, un administrador atrapado en el bucle del segundo factor, un asistente

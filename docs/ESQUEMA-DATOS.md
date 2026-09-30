@@ -1,6 +1,6 @@
 # Esquema de datos
 
-Plataforma de Eventos TIC · versión del esquema **1.4.0**
+Plataforma de Eventos TIC · versión del esquema **1.5.0**
 
 > Documento generado con `php herramientas/generar-doc-esquema.php` a partir de
 > `app/Esquema.php`, la misma definición que el instalador usa para crear y actualizar
@@ -21,7 +21,7 @@ poder compartir la base con otras aplicaciones del alojamiento.
 | `evt_credencial` | 7 | El carnet. El token es lo único que viaja en el QR; nunca datos personales. |
 | `evt_asistencia` | 7 | Un ingreso por persona y jornada. La llave única es lo que impide contar dos veces a la misma persona. |
 | `evt_contacto` | 5 | Intercambio de datos entre asistentes. Guarda quién escaneó a quién, para poder revertirlo si alguien lo pide. |
-| `evt_propuesta` | 13 | Lo que envía un expositor en el preregistro. Al aprobarse se convierte en charla. |
+| `evt_propuesta` | 17 | Lo que envía un expositor en el preregistro. Al aprobarse se convierte en charla. |
 | `evt_charla` | 6 | La agenda pública: propuestas aprobadas con horario y salón asignados. |
 | `evt_usuario` | 13 | El equipo organizador. Contraseña con Argon2id y segundo factor obligatorio para el rol administrador. |
 | `evt_sesion` | 9 | Sesiones en base de datos: se pueden cerrar a distancia y no quedan en archivos compartidos del servidor. |
@@ -260,6 +260,10 @@ Lo que envía un expositor en el preregistro. Al aprobarse se convierte en charl
 | `dia_preferido` | `TINYINT UNSIGNED NOT NULL DEFAULT 1` |
 | `duracion_min` | `SMALLINT UNSIGNED NOT NULL DEFAULT 40` |
 | `requerimientos` | `VARCHAR(255) NOT NULL DEFAULT ''` |
+| `hoja_vida` | `VARCHAR(120) NOT NULL DEFAULT ''` |
+| `hoja_vida_tipo` | `VARCHAR(120) NOT NULL DEFAULT ''` |
+| `exposicion` | `VARCHAR(120) NOT NULL DEFAULT ''` |
+| `exposicion_tipo` | `VARCHAR(120) NOT NULL DEFAULT ''` |
 | `estado` | `ENUM('pendiente','observada','aprobada','rechazada') NOT NULL DEFAULT 'pendiente'` |
 | `observacion` | `TEXT NULL` |
 | `revisada_por` | `INT UNSIGNED NULL` |

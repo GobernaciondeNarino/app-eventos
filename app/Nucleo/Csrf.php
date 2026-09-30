@@ -133,12 +133,39 @@ final class Csrf
      */
     public static function exigir(Peticion $peticion): void
     {
-        if ($peticion->esPost() && !self::valido($peticion)) {
-            Bitacora::registrar('csrf_rechazado', 'seguridad', null, [
-                'ruta' => $peticion->ruta(),
-            ]);
-            Respuesta::error(419, 'La página estuvo demasiado tiempo abierta',
-                'Por seguridad se descartó el envío. Vuelve a cargar la página e inténtalo de nuevo.');
+        if (!$peticion->esPost() || self::valido($peticion)) {
+            return;
         }
+
+        if (self::envioDescartado()) {
+            Respuesta::error(413, 'El envío pesaba demasiado',
+                'El servidor descartó el formulario completo porque superaba su límite de '
+                . 'subida (post_max_size, hoy en ' . ini_get('post_max_size') . '). Si '
+                . 'adjuntaste un archivo grande, ese es el motivo: prueba con uno más liviano, '
+                . 'o pide al área de sistemas que suba el límite.');
+        }
+
+        Bitacora::registrar('csrf_rechazado', 'seguridad', null, [
+            'ruta' => $peticion->ruta(),
+        ]);
+        Respuesta::error(419, 'La página estuvo demasiado tiempo abierta',
+            'Por seguridad se descartó el envío. Vuelve a cargar la página e inténtalo de nuevo.');
+    }
+
+    /**
+     * ¿PHP tiró el envío entero por pasarse de post_max_size?
+     *
+     * Cuando eso pasa no queda nada: $_POST y $_FILES llegan vacíos y el testigo
+     * con ellos. Sin esta comprobación la persona ve «la sesión expiró» y se
+     * pone a recargar la página, que es lo único que no lo va a arreglar nunca.
+     *
+     * Hay cuerpo si el navegador anunció uno en Content-Length. Ningún camino de
+     * la plataforma manda un POST con cuerpo que PHP no sepa leer —no se acepta
+     * JSON en ninguna dirección—, así que un cuerpo anunciado y dos arreglos
+     * vacíos solo pueden ser esto.
+     */
+    private static function envioDescartado(): bool
+    {
+        return (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 0 && $_POST === [] && $_FILES === [];
     }
 }

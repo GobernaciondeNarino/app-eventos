@@ -3,8 +3,8 @@
 Qué se puede cambiar de un evento una vez creado, qué se lleva por delante cada operación y
 qué no tiene vuelta atrás.
 
-Todo lo de aquí está en **Administración → Eventos** y **Administración → QR por día**, y
-exige el rol **administrador**.
+Todo lo de aquí está en **Administración → Eventos**, **Administración → QR por día** y
+**Administración → Expositores**, y exige el rol **administrador**.
 
 ---
 
@@ -94,14 +94,15 @@ evento
  └─ persona            registros
      ├─ credencial     carnets
      ├─ contacto       intercambios, en las dos direcciones
-     ├─ propuesta      lo que enviaron los expositores
+     ├─ propuesta      lo que enviaron los expositores, con sus adjuntos
      ├─ dispositivo    teléfonos recordados
      └─ codigo_acceso  códigos pendientes
 ```
 
-Además se borran del disco las **fotografías** de esas personas y el **logo** del evento. Sin
-eso, cada evento de prueba dejaría sus archivos ocupando espacio para siempre sin que nadie
-supiera de quién eran.
+Además se borran del disco las **fotografías** de esas personas, las **hojas de vida y
+exposiciones** que adjuntaron los expositores, y el **logo** del evento. Sin eso, cada evento de
+prueba dejaría sus archivos ocupando espacio para siempre sin que nadie supiera de quién eran
+—y una hoja de vida trae teléfono, dirección y trayectoria laboral.
 
 Lo que **no** se toca: el equipo organizador y sus roles, la bitácora de auditoría y la
 configuración del servidor. Son de la instalación, no del evento.
@@ -152,7 +153,61 @@ asistente; corregirlo haría que el «día 3» de un carnet señalara otra fecha
 
 ---
 
-## 4. Antes de abrir al público
+## 4. Los documentos de los expositores
+
+En **Administración → Expositores**.
+
+Quien marca «voy a exponer» en el formulario puede adjuntar dos archivos: su **hoja de vida**
+(PDF) y su **exposición** (PDF o PPTX). Los ve solo el equipo que revisa las propuestas; no se
+publican en la agenda ni se comparten con los demás asistentes.
+
+### 4.1 Son opcionales, y eso es a propósito
+
+Exigirlos dejaría fuera a quien marca la casilla desde el celular en la fila de la puerta y no
+tiene el PDF a mano: tendría que desmarcar «voy a exponer», registrarse, y volver después. Así
+que se puede registrar sin ellos y subirlos más tarde entrando otra vez al formulario.
+
+Lo que cambia para el comité es que **la lista dice cuáles faltan**. Cada propuesta lleva dos
+etiquetas debajo del título: en verde lo que llegó, en gris lo que no. Revisar propuestas
+empieza por apartar las que todavía no se pueden evaluar.
+
+Si necesitas uno para decidir, **devuelve la propuesta con observaciones** pidiéndolo. El
+expositor puede volver al formulario y subirlo.
+
+### 4.2 Bajarlos
+
+En el diálogo de cada propuesta, bajo «Documentos de respaldo». Se descargan en vez de abrirse
+dentro de la página, y llegan con un nombre legible —`Hoja-de-vida-Lucia-Villota-Erazo.pdf`—
+en lugar del que tienen en el disco del servidor.
+
+Que se bajen y no se abran incrustados es deliberado: un PDF puede traer sus propios guiones, y
+estos los subió alguien de fuera de la entidad.
+
+### 4.3 Después de aprobar
+
+El expositor **sigue pudiendo cambiar sus archivos** cuando su propuesta ya está aprobada y
+agendada. Es justo cuando la mayoría tiene la presentación definitiva lista, y cambiar el
+archivo no mueve nada de la agenda.
+
+Lo que ya **no** puede cambiar desde el formulario es el tema, la categoría ni el día: están
+publicados. El formulario se lo dice con un aviso, para que nadie edite el detalle, guarde, y
+no entienda por qué no pasó nada.
+
+### 4.4 Si un expositor dice que no puede subir su presentación
+
+Casi siempre es el límite de PHP del servidor, no la plataforma. Mira el diagnóstico del
+instalador (`/instalar/diagnostico`), fila **Tamaño máximo de subida**: si aparece en amarillo,
+`upload_max_filesize` o `post_max_size` se quedaron cortos. Se suben en Plesk, en
+**Dominio → Configuración de PHP**. Está en `docs/DESPLIEGUE-PLESK.md`, sección 2.
+
+El otro caso es un archivo que no es lo que dice ser: un `.pptx` guardado en realidad como
+`.odp`, o un PDF exportado por una herramienta que no escribe la cabecera al principio. El
+formulario lo dice con esas palabras —«el archivo no es PDF o PPTX»— y no guarda nada a medias:
+el archivo anterior se queda intacto y el resto del registro sí se graba.
+
+---
+
+## 5. Antes de abrir al público
 
 Una lista corta para no llevarse sorpresas:
 
@@ -163,3 +218,5 @@ Una lista corta para no llevarse sorpresas:
 3. **Imprime los pliegos después de fijar las fechas.** Cambiar la fecha no invalida el código,
    pero regenerarlo sí: si vas a regenerar, hazlo antes de imprimir.
 4. **Deja el evento bueno activo** y los demás desactivados.
+5. **Comprueba el tamaño máximo de subida** en el diagnóstico, si esperas exposiciones. Es lo
+   único de esta lista que se arregla fuera de la plataforma, y por tanto lo que más tarda.

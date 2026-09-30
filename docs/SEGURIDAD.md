@@ -24,9 +24,10 @@ escribió para eso.
 | Auditoría | Bitácora de solo inserción |
 | Cabeceras y exposición de archivos | En `.htaccess` y también desde PHP |
 
-Lo verifica `pruebas/extremo-a-extremo.php`: 188 comprobaciones sobre un servidor real, de
-las cuales 27 son específicamente de seguridad, más las suites de correo, segundo factor,
-saneado de SVG y detección de proxy.
+Lo verifica `pruebas/extremo-a-extremo.php`: 379 comprobaciones sobre un servidor real, 19 de
+ellas en el bloque específico de seguridad y otras tantas repartidas por los guardias de cada
+pantalla, más las suites de correo, segundo factor, saneado de SVG, fotografía, adjuntos del
+expositor y detección de proxy.
 
 Esta revisión se rehízo módulo por módulo con diez agentes independientes, cada uno con un
 área asignada, y cada hallazgo pasó por otro agente encargado de refutarlo. Lo que sobrevivió
@@ -328,9 +329,10 @@ igual que para uno registrado.
 
 ### Subida de archivos
 
-Se suben dos cosas: el logo del evento, que sube un administrador, y la fotografía del
-carnet, que sube el propio asistente desde el formulario público. La segunda es la que más
-cuidado pide, porque el formulario está abierto.
+Se suben tres cosas: el logo del evento, que sube un administrador; la fotografía del
+carnet, que sube el propio asistente desde el formulario público; y los dos documentos del
+expositor —hoja de vida y exposición—, que suben también desde ahí. Las dos últimas son las
+que más cuidado piden, porque el formulario está abierto.
 
 **La fotografía** (`App\Nucleo\Imagen::guardarFoto`):
 
@@ -356,6 +358,56 @@ cuidado pide, porque el formulario está abierto.
 7. **Nunca se sirve desde el disco.** Pasa por `Medios::foto`, que además comprueba quién
    mira: su dueño, o el equipo organizador. El id es correlativo, así que sin esa
    comprobación bastaría con contar desde uno para descargar la cara de todos los asistentes.
+
+**Los documentos del expositor** (`App\Nucleo\Documento::guardar`). Desde la 3.3 quien marca
+que va a exponer puede adjuntar su hoja de vida (PDF) y su exposición (PDF o PPTX).
+
+Son un caso distinto del de la foto, y más difícil: **no se pueden volver a generar**. Una
+imagen se descompone y se vuelve a dibujar, y en el camino se pierde cualquier cosa escondida
+dentro; reescribir un PDF significaría cambiar el documento que la persona quiso enviar. Como
+no se puede limpiar el contenido, lo que se hace es quitarle al archivo toda posibilidad de
+ejecutarse:
+
+1. Tipo determinado por el **contenido real** (`finfo`), y para el PDF además se exige que el
+   archivo **empiece** por `%PDF-`. libmagic se conforma con encontrar esa cadena en el primer
+   kilobyte, así que sin esa segunda comprobación un archivo que es otra cosa y la lleva
+   metida más adelante pasaría por PDF. La norma dice que la cabecera es la primera línea del
+   archivo y toda herramienta la escribe ahí, así que exigirlo no deja fuera nada legítimo.
+2. **Un PPTX es un ZIP**, y libmagic casi siempre dice solo `application/zip`. Así que se abre
+   el paquete y se le pregunta qué lleva: sin `ppt/presentation.xml` **y** sin que
+   `[Content_Types].xml` lo declare, no es una presentación. Hacen falta las dos condiciones:
+   con solo la primera, bastaría con meter un archivo vacío con ese nombre dentro de un ZIP
+   cualquiera. Nunca se extrae nada al disco, y del paquete se lee un solo archivo —el
+   índice— y únicamente después de comprobar en la tabla del ZIP que mide menos de 512 KB: un
+   ZIP de un mega puede llevar dentro un XML de varios gigas, y descomprimirlo a ciegas tumba
+   el servidor con la memoria agotada.
+3. Cada campo admite **solo lo suyo**: una presentación en el campo de la hoja de vida se
+   rechaza aunque sea un PPTX perfectamente válido.
+4. Topes de 8 MB para la hoja de vida y 25 MB para la exposición. El instalador **comprueba
+   `upload_max_filesize` y `post_max_size`** y avisa si el servidor no llega: en Plesk vienen
+   en 2 MB de fábrica. Y pasado `post_max_size`, PHP descarta el envío completo —`$_POST` y
+   `$_FILES` vacíos, el testigo incluido—, así que `Csrf::exigir()` distingue ese caso y
+   responde 413 con el motivo real en vez del «la sesión expiró» que no lleva a ninguna parte.
+5. El nombre lo pone el servidor, con 8 bytes al azar, y el original del cliente **no se
+   guarda**: sirve de poco y sería texto de fuera que habría que desconfiar cada vez que se
+   imprime. El nombre de la descarga se arma a partir de datos que ya están en la base.
+6. **Nunca se sirven desde el disco.** Pasan por `Medios::documento`, que comprueba quién
+   mira —su dueño, o el equipo que revisa las propuestas— y responde el mismo 404 para «no
+   existe» y para «no es tuyo»: distinguirlos convertiría la dirección en una forma de
+   averiguar qué propuestas hay y quién adjuntó qué.
+7. **Salen siempre como descarga, nunca incrustados.** Un PDF abierto dentro de la página es
+   un documento que puede traer sus propios guiones; bajado al disco lo abre el lector de
+   quien lo pidió, fuera del origen del sitio. El nombre de la descarga se reduce a letras,
+   números, punto y guion, porque acaba dentro de `Content-Disposition`: una comilla o un
+   salto de línea ahí dejan de ser texto y pasan a ser estructura de la respuesta.
+8. La **ranura de la dirección** (`/medios/documento/{n}/hoja-de-vida`) se traduce a nombre de
+   columna con una lista fija de dos, no con el texto de la URL. Esa columna se interpola en
+   el `SELECT`, y es lo único que hace que eso sea seguro: `pruebas/documentos.php` comprueba
+   que ninguna otra palabra —`estado`, `detalle`, `titulo`— resuelva a nada.
+
+Al eliminar un evento estos archivos se borran del disco igual que las fotos. Una hoja de
+vida trae teléfono, dirección y trayectoria laboral: no puede quedarse ahí cuando ya no hay
+nadie que sepa de quién era.
 
 **El logo del evento.** Los controles, en `Admin::guardarLogo()`:
 
@@ -386,7 +438,7 @@ solo escondiendo el botón— y queda en la bitácora.
 
 Desde la 3.2 un administrador puede eliminar un evento entero. Se lleva en cascada las
 personas registradas, sus asistencias, sus contactos, sus propuestas y sus carnets, y borra
-del disco sus fotografías. No hay deshacer.
+del disco sus fotografías y los documentos que adjuntaron los expositores. No hay deshacer.
 
 Los controles, en `Admin::eliminarEvento()` y `Evento::eliminar()`:
 
@@ -615,13 +667,15 @@ conviene decirlo con claridad en la pantalla de privacidad.
 ## 6. Verificación
 
 ```bash
-php pruebas/extremo-a-extremo.php      # 189 comprobaciones, 27 de seguridad
+php pruebas/extremo-a-extremo.php      # 379 comprobaciones sobre un servidor real
 php pruebas/instalacion.php            # el asistente, y qué se ve cuando falla
 php pruebas/claves.php                 # parámetros de Argon2id y rehash
 php pruebas/smtp.php                   # el cliente SMTP contra un servidor real
 php pruebas/totp.php                   # segundo factor contra el RFC 6238
 php pruebas/correo.php                 # formato MIME e inyección de cabeceras
 php pruebas/svg-saneado.php            # logos SVG con código dentro
+php pruebas/foto.php                   # la foto del carnet y encuadres manipulados
+php pruebas/documentos.php             # PDF y PPTX disfrazados de otra cosa
 php pruebas/proxy-y-limites.php        # la IP real detrás del proxy
 php pruebas/qr-php-contra-js.php       # el generador de QR del servidor
 python3 pruebas/qr-contra-referencia.py

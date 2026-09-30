@@ -12,6 +12,7 @@
 # Subidas y datos de cada instalación
 /almacen/logos/*
 /almacen/fotos/*
+/almacen/documentos/*
 /almacen/respaldos/*
 /almacen/registro/*
 !/almacen/*/.gitignore

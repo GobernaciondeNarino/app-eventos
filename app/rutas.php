@@ -184,6 +184,10 @@ $enrutador->get('/medios/logo/{evento:num}', [Medios::class, 'logo']);
 // una de las dos mitades quedaba fuera.
 $enrutador->get('/medios/foto/{persona:num}', [Medios::class, 'foto']);
 
+// Los adjuntos del expositor, por la misma razón: los ve quien los subió y
+// quien revisa las propuestas. La ranura es «hoja-de-vida» o «exposicion».
+$enrutador->get('/medios/documento/{propuesta:num}/{ranura:slug}', [Medios::class, 'documento']);
+
 $enrutador->get('/medios/qr/carnet.svg', [Medios::class, 'qrCarnet'], 'asistente');
 $enrutador->get('/medios/qr/acceso.svg', [Medios::class, 'qrAcceso'], 'asistente');
 $enrutador->get('/medios/qr/dia/{numero:num}.svg', [Medios::class, 'qrDia'], 'admin:operador');

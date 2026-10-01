@@ -6,6 +6,7 @@
  * @var array $municipios @var array $categorias @var array $jornadas @var bool $yaRegistrado
  * @var bool $completo @var bool $pideClave @var int $claveMinima
  * @var bool $tieneClave @var string $foto @var array $documentos @var bool $agendada
+ * @var bool $reelegir
  */
 defined('EVENTOS_TIC') || exit;
 
@@ -441,16 +442,34 @@ guiones('foto.js', 'preregistro.js');
         <!-- ---------- Los dos adjuntos ----------
              Van al final del bloque a propósito: son lo más pesado de
              diligenciar y lo único que puede obligar a buscar un archivo en
-             otro lado. Quien llena esto desde el celular en la fila de la
-             puerta puede dejarlos para después sin que se le trabe el registro.
+             otro lado.
+
+             Son obligatorios para exponer, y la salida de quien no los tiene a
+             mano no es dejarlos en blanco: es registrarse sin marcar «voy a
+             exponer» y volver aquí después. Eso se dice arriba, antes de los
+             campos, y no en el error.
 
              Son campos de archivo normales: sin JavaScript funcionan igual. -->
         <div class="stack stack--3" style="border-top:1px solid var(--hair-soft);padding-top:18px">
           <p class="help" style="margin:0">
-            <strong>Documentos de respaldo.</strong> Son opcionales para registrarte, pero la
-            Secretaría los usa para evaluar la propuesta: sin ellos la revisión se demora.
-            Puedes volver a este formulario y subirlos cuando los tengas.
+            <strong>Documentos de respaldo.</strong> Los dos son obligatorios para exponer: son
+            con lo que la Secretaría evalúa la propuesta. Si no los tienes a mano ahora,
+            regístrate sin marcar «voy a exponer» y vuelve a este formulario cuando los tengas.
           </p>
+
+          <?php if ($reelegir): ?>
+            <!-- El navegador vacía los campos de archivo al repintar el
+                 formulario, y no hay forma de evitarlo desde el servidor. Lo
+                 que sí se puede es no dejar que alguien corrija otro campo,
+                 guarde, y descubra después que sus PDF no llegaron. -->
+            <div class="notice notice--warn">
+              <span class="notice__icon" aria-hidden="true">▲</span>
+              <span>
+                Vuelve a elegir los archivos: el navegador los descarta cada vez que el
+                formulario se repinta con un error, así que no llegaron al servidor.
+              </span>
+            </div>
+          <?php endif; ?>
 
           <?php
           $ayudas = [
@@ -463,7 +482,7 @@ guiones('foto.js', 'preregistro.js');
           ?>
             <div class="field">
               <label class="label" for="<?= e($clase) ?>">
-                <?= e($regla['etiqueta']) ?>
+                <?= e($regla['etiqueta']) ?> <span class="req">*</span>
                 <span class="muted" style="text-transform:none;letter-spacing:normal">
                   (<?= e($formatos) ?>, máximo <?= e(Documento::pesoLegible($clase)) ?>)
                 </span>
@@ -476,20 +495,18 @@ guiones('foto.js', 'preregistro.js');
                 </div>
               <?php endif; ?>
 
-              <input class="input" type="file" id="<?= e($clase) ?>" name="<?= e($clase) ?>"
-                     accept="<?= e(Documento::aceptados($clase)) ?>">
+              <!-- required solo si todavía no hay archivo: a quien ya lo subió
+                   el navegador no puede pedirle que lo vuelva a elegir para
+                   cambiar un teléfono. -->
+              <input class="input<?= $err($clase) ? ' is-invalid' : '' ?>" type="file"
+                     id="<?= e($clase) ?>" name="<?= e($clase) ?>"
+                     accept="<?= e(Documento::aceptados($clase)) ?>"
+                     <?= $ya === null ? 'data-exige-expositor' : '' ?>>
+              <?php if ($err($clase)): ?><span class="error"><?= e($err($clase)) ?></span><?php endif; ?>
               <span class="help">
                 <?= e($ayudas[$clase]) ?>
                 <?= $ya !== null ? ' Si eliges otro archivo, reemplaza al anterior.' : '' ?>
               </span>
-
-              <?php if ($ya !== null): ?>
-                <label class="row" style="gap:10px;cursor:pointer;flex-wrap:nowrap;align-items:flex-start;margin-top:8px">
-                  <input type="checkbox" name="quitar_<?= e($clase) ?>" value="1"
-                         style="width:18px;height:18px;margin-top:2px;flex:none;accent-color:var(--c-accent)">
-                  <span class="help">Quitar el archivo que tengo subido</span>
-                </label>
-              <?php endif; ?>
             </div>
           <?php endforeach; ?>
 

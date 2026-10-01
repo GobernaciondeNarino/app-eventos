@@ -92,8 +92,8 @@ Hay dos puertas, y las dos llevan al mismo sitio:
   datos después, sin la fila detrás. El carnet se emite cuando el registro está completo.
 
 1. **Registro** — nombre y documento; el resto es opcional. Si va a exponer, adjunta su
-   propuesta en el mismo formulario, con su hoja de vida en PDF y su exposición en PDF o
-   PPTX.
+   propuesta en el mismo formulario, con su hoja de vida en PDF y su exposición en PDF o PPTX,
+   que son obligatorias para exponer.
 2. **Carnet** — se emite al instante y llega por correo. No hace falta imprimirlo.
 3. **Cada mañana** — apunta la cámara al pliego de la entrada. El código abre la plataforma,
    sella la hora y muestra su historial.
@@ -132,7 +132,7 @@ proceso, y no ofrece la opción que borra tablas.
 | Escanear carnet | Acreditar a alguien cuyo código de puerta falló; incluye búsqueda manual |
 | Registros | Listado con filtros y exportación a CSV |
 | QR por día | Un código por jornada, imprimible a página completa y regenerable |
-| Expositores | Aprobar, observar o rechazar propuestas, con la hoja de vida y la exposición a mano; al aprobar se publica en la agenda |
+| Expositores | Hoja de revisión por propuesta: los datos completos de quien la presenta, sus dos documentos para bajar, y aprobar, devolver o rechazar |
 | Organizadores | Equipo, roles y estado del segundo factor |
 | Eventos | Varios eventos a la vez; el activo es el que ven los asistentes |
 | Identidad | Colores, tipografía y logo, con revisión de contraste |
@@ -300,12 +300,12 @@ el enrutado, las cookies, los testigos y los guardias, que es donde suelen estar
 Incluye 19 comprobaciones en el bloque específico de seguridad y otras tantas repartidas por
 los guardias de cada pantalla.
 
-Estado actual: **379 de 379** de extremo a extremo, **77** del asistente de instalación,
+Estado actual: **401 de 401** de extremo a extremo, **77** del asistente de instalación,
 **28** del segundo factor contra los vectores del RFC 6238, **22** del hash de contraseñas,
 **19** del correo saliente, **19** de la dirección del visitante detrás del proxy, **21** de la
-fotografía del carnet, **55** de los adjuntos del expositor, **17** del saneado de logos SVG,
+fotografía del carnet, **61** de los adjuntos del expositor, **17** del saneado de logos SVG,
 **198** casos de QR idénticos entre PHP y JavaScript, **161** entre JavaScript y la referencia,
-**13** del lector de QR, **56** de interacción en navegador, y las 16 pantallas limpias en
+**13** del lector de QR, **68** de interacción en navegador, y las 16 pantallas limpias en
 escritorio, tableta y móvil.
 
 Las pruebas nacieron de errores reales, y por eso cubren lo que cubren: una instalación que se

@@ -78,21 +78,8 @@ final class Documento
      */
     public static function guardar(array $archivo, string $clase, int $propuestaId): array
     {
-        $regla = self::CLASES[$clase] ?? null;
-        if ($regla === null) {
-            throw new \DomainException('Ese documento no corresponde a ningún campo del formulario.');
-        }
-
-        self::validarSubida($archivo, $regla);
-
-        $formato = self::formatoReal((string) $archivo['tmp_name']);
-        if ($formato === null || !in_array($formato, $regla['formatos'], true)) {
-            throw new \DomainException(
-                'El archivo no es ' . self::formatosLegibles($clase) . '. Lo que cuenta es el '
-                . 'contenido, no el nombre: cambiarle la extensión a un archivo no lo convierte '
-                . 'en otra cosa.'
-            );
-        }
+        $formato = self::comprobar($archivo, $clase);
+        $regla = self::CLASES[$clase];
 
         $directorio = RAIZ . '/almacen/documentos';
         if (!is_dir($directorio)) {
@@ -114,6 +101,26 @@ final class Documento
         @chmod($destino, 0640);
 
         return [$nombre, self::FORMATOS[$formato]['mime']];
+    }
+
+    /**
+     * Comprueba un archivo sin guardarlo. Devuelve el motivo del rechazo, o
+     * null si sirve.
+     *
+     * Existe porque los dos adjuntos son obligatorios para quien va a exponer,
+     * y un campo obligatorio tiene que fallar con los demás campos del
+     * formulario, antes de guardar nada. Avisar después —«lo guardamos todo,
+     * menos esto»— es lo correcto para la foto del carnet, que es un adorno,
+     * y lo incorrecto para algo sin lo cual la propuesta no se puede evaluar.
+     */
+    public static function revisar(array $archivo, string $clase): ?string
+    {
+        try {
+            self::comprobar($archivo, $clase);
+            return null;
+        } catch (\DomainException $e) {
+            return $e->getMessage();
+        }
     }
 
     /** Borra un documento del disco. */
@@ -208,6 +215,32 @@ final class Documento
     /* =====================================================================
        Interno
        ===================================================================== */
+
+    /**
+     * Todo lo que tiene que cumplir un archivo. Devuelve su formato.
+     *
+     * @throws \DomainException con un texto que se le puede enseñar a la persona
+     */
+    private static function comprobar(array $archivo, string $clase): string
+    {
+        $regla = self::CLASES[$clase] ?? null;
+        if ($regla === null) {
+            throw new \DomainException('Ese documento no corresponde a ningún campo del formulario.');
+        }
+
+        self::validarSubida($archivo, $regla);
+
+        $formato = self::formatoReal((string) $archivo['tmp_name']);
+        if ($formato === null || !in_array($formato, $regla['formatos'], true)) {
+            throw new \DomainException(
+                'El archivo no es ' . self::formatosLegibles($clase) . '. Lo que cuenta es el '
+                . 'contenido, no el nombre: cambiarle la extensión a un archivo no lo convierte '
+                . 'en otra cosa.'
+            );
+        }
+
+        return $formato;
+    }
 
     /**
      * Sin tildes, sin espacios y sin nada que pueda romper una cabecera.

@@ -153,28 +153,63 @@ asistente; corregirlo haría que el «día 3» de un carnet señalara otra fecha
 
 ---
 
-## 4. Los documentos de los expositores
+## 4. Revisar las propuestas de los expositores
 
-En **Administración → Expositores**.
+En **Administración → Expositores**. Exige rol **administrador**, y eso es lo que permite que
+en esta pantalla aparezcan el teléfono y la cédula de quien propone.
 
-Quien marca «voy a exponer» en el formulario puede adjuntar dos archivos: su **hoja de vida**
-(PDF) y su **exposición** (PDF o PPTX). Los ve solo el equipo que revisa las propuestas; no se
-publican en la agenda ni se comparten con los demás asistentes.
+### 4.1 La hoja de revisión
 
-### 4.1 Son opcionales, y eso es a propósito
+Pulsar una propuesta abre todo lo que hace falta para decidir, sin salir de la pantalla:
 
-Exigirlos dejaría fuera a quien marca la casilla desde el celular en la fila de la puerta y no
-tiene el PDF a mano: tendría que desmarcar «voy a exponer», registrarse, y volver después. Así
-que se puede registrar sin ellos y subirlos más tarde entrando otra vez al formulario.
+| Bloque | Qué trae |
+|---|---|
+| **La propuesta** | Título, categoría, detalle, día preferido, duración y requerimientos |
+| **Quién la presenta** | Foto, perfil, correo, teléfono, identificación, entidad, territorio, cuándo se registró y cuándo envió la propuesta. Y un enlace a la **ficha completa**, con sus ingresos y su carnet |
+| **Documentos de respaldo** | La hoja de vida y la exposición, para bajar |
+| **Validar la participación** | La decisión, con el día, la hora y el salón que se le asignan |
 
-Lo que cambia para el comité es que **la lista dice cuáles faltan**. Cada propuesta lleva dos
-etiquetas debajo del título: en verde lo que llegó, en gris lo que no. Revisar propuestas
-empieza por apartar las que todavía no se pueden evaluar.
+Los datos de la persona van aquí y no en otra pantalla a propósito: decidir sobre una propuesta
+es decidir sobre quién la presenta, y tener que abrir la ficha en otra pestaña para ver de qué
+entidad viene convertía la revisión en un ir y venir.
 
-Si necesitas uno para decidir, **devuelve la propuesta con observaciones** pidiéndolo. El
-expositor puede volver al formulario y subirlo.
+Si el perfil de la persona dejó de decir «expositor» —porque lo cambió después de enviar la
+propuesta— aparece marcado. No es un error, pero conviene saberlo antes de aprobar: el carnet se
+imprime con lo que diga el perfil.
 
-### 4.2 Bajarlos
+### 4.2 Las tres decisiones
+
+| Botón | Qué pasa |
+|---|---|
+| **Aprobar y agendar** | La charla se publica en la agenda con el día, la hora y el salón de ese formulario, y el carnet sale con el rótulo de expositor |
+| **Devolver con observaciones** | Se le regresa para que corrija lo que le escribas. La observación es obligatoria, y puede volver a enviarla |
+| **Rechazar** | Queda fuera del evento. Pide confirmación |
+
+**Ninguna es definitiva.** Se puede volver a entrar y cambiarla; al dejar de estar aprobada, la
+charla se quita de la agenda.
+
+### 4.3 Los dos documentos son obligatorios
+
+Quien marca «voy a exponer» en el formulario **tiene que** adjuntar su **hoja de vida** (PDF) y
+su **exposición** (PDF o PPTX). Los ve solo el equipo que revisa las propuestas; no se publican
+en la agenda ni se comparten con los demás asistentes.
+
+Sin los dos, el formulario no se envía: el archivo se comprueba con los demás campos, antes de
+guardar nada. No hay propuesta a medias que alguien tenga que perseguir después por correo.
+
+Quien no los tenga a mano en ese momento tiene una salida, y el propio formulario se la dice:
+**registrarse sin marcar «voy a exponer»** y volver cuando los tenga. Queda registrado, con su
+carnet, y la propuesta la manda otro día.
+
+Tampoco se pueden **quitar** una vez subidos, solo reemplazar. Un botón que deja la propuesta
+sin lo que la hace evaluable no tendría sentido.
+
+Aun así, la lista marca **qué falta**: cada propuesta lleva dos etiquetas debajo del título, en
+verde lo que llegó y en gris lo que no. Si ves alguna en gris es de antes de que fueran
+obligatorios. Devuélvela con observaciones pidiendo el documento: el expositor entra a su
+registro y lo sube.
+
+### 4.4 Bajarlos
 
 En el diálogo de cada propuesta, bajo «Documentos de respaldo». Se descargan en vez de abrirse
 dentro de la página, y llegan con un nombre legible —`Hoja-de-vida-Lucia-Villota-Erazo.pdf`—
@@ -183,7 +218,7 @@ en lugar del que tienen en el disco del servidor.
 Que se bajen y no se abran incrustados es deliberado: un PDF puede traer sus propios guiones, y
 estos los subió alguien de fuera de la entidad.
 
-### 4.3 Después de aprobar
+### 4.5 Después de aprobar
 
 El expositor **sigue pudiendo cambiar sus archivos** cuando su propuesta ya está aprobada y
 agendada. Es justo cuando la mayoría tiene la presentación definitiva lista, y cambiar el
@@ -193,7 +228,7 @@ Lo que ya **no** puede cambiar desde el formulario es el tema, la categoría ni 
 publicados. El formulario se lo dice con un aviso, para que nadie edite el detalle, guarde, y
 no entienda por qué no pasó nada.
 
-### 4.4 Si un expositor dice que no puede subir su presentación
+### 4.6 Si un expositor dice que no puede subir su presentación
 
 Casi siempre es el límite de PHP del servidor, no la plataforma. Mira el diagnóstico del
 instalador (`/instalar/diagnostico`), fila **Tamaño máximo de subida**: si aparece en amarillo,

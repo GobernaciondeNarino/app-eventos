@@ -72,6 +72,11 @@ final class Publico
         $yo = Guardia::personaActual();
         $errores = [];
 
+        // Lo que ya tiene subido. Se mira antes de validar porque los dos
+        // adjuntos son obligatorios para quien expone, y a quien ya los tiene
+        // no se le pueden volver a pedir cada vez que corrige un teléfono.
+        $suPropuesta = $this->documentosDe($yo);
+
         // Quien ya está identificado ve sus datos y puede corregirlos.
         $valores = $yo ? [
             'correo'         => $yo['correo'],
@@ -97,7 +102,9 @@ final class Publico
                 $valores['correo'] = (string) $yo['correo'];
             }
 
-            $errores = $this->validarRegistro($valores, $peticion, $yo !== null);
+            $errores = $this->validarRegistro(
+                $valores, $peticion, $yo !== null, $suPropuesta['documentos']
+            );
 
             // Un correo ya registrado no se puede tocar desde aquí.
             //
@@ -185,7 +192,14 @@ final class Publico
         // alguien que creó su acceso y todavía no llenó nada, y alguien que ya
         // está registrado y viene a corregir.
         $completo = $yo !== null && Persona::registroCompleto($yo);
-        $suPropuesta = $this->documentosDe($yo);
+
+        // Si el envío traía archivos y algo falló, se perdieron: el navegador
+        // vacía los campos de archivo al repintar el formulario. Decirlo evita
+        // que alguien corrija el campo que falló, guarde, y descubra después
+        // que sus PDF no llegaron.
+        $reelegir = $errores !== [] && (
+            $peticion->archivo('hoja_vida') !== null || $peticion->archivo('exposicion') !== null
+        );
 
         Respuesta::vista('publico/registro', [
             'titulo'        => $yo === null
@@ -207,6 +221,7 @@ final class Publico
                 ? u('/medios/foto/' . (int) $yo['id']) : '',
             'documentos'    => $suPropuesta['documentos'],
             'agendada'      => $suPropuesta['aprobada'],
+            'reelegir'      => $reelegir,
         ]);
     }
 
@@ -293,9 +308,15 @@ final class Publico
      * La misma que hace el navegador, otra vez. Lo del navegador es comodidad
      * para quien diligencia; esto es lo que de verdad protege la base de datos,
      * porque un envío puede llegar sin pasar por ninguna pantalla.
+     *
+     * @param array<string, mixed> $yaSubidos los adjuntos que esta persona ya tiene
      */
-    private function validarRegistro(array $v, Peticion $peticion, bool $identificado): array
-    {
+    private function validarRegistro(
+        array $v,
+        Peticion $peticion,
+        bool $identificado,
+        array $yaSubidos = []
+    ): array {
         $errores = [];
 
         if (!$identificado && !filter_var($v['correo'], FILTER_VALIDATE_EMAIL)) {
@@ -354,6 +375,34 @@ final class Publico
             }
             if (mb_strlen($v['detalle']) > 600) {
                 $errores['detalle'] = 'El detalle no puede pasar de 600 caracteres.';
+            }
+
+            // Los dos adjuntos son obligatorios para quien va a exponer. El
+            // comité decide con ellos, y una propuesta sin hoja de vida se
+            // queda esperando a que alguien la persiga por correo.
+            //
+            // A quien ya los tiene no se le vuelven a pedir: un expositor que
+            // entra a corregir una coma del detalle no debería necesitar el PDF
+            // otra vez. Y el archivo se comprueba aquí, no al guardar, porque
+            // un campo obligatorio tiene que fallar con los demás campos del
+            // formulario y no después, con los datos ya grabados.
+            foreach (Documento::CLASES as $clase => $regla) {
+                $archivo = $peticion->archivo($clase);
+
+                if ($archivo === null) {
+                    if (!isset($yaSubidos[$clase])) {
+                        $errores[$clase] = 'Adjunta tu ' . mb_strtolower($regla['etiqueta'])
+                            . ' en ' . Documento::formatosLegibles($clase)
+                            . '. Si todavía no la tienes a mano, regístrate sin marcar «voy a '
+                            . 'exponer» y vuelve a este formulario cuando la tengas.';
+                    }
+                    continue;
+                }
+
+                $fallo = Documento::revisar($archivo, $clase);
+                if ($fallo !== null) {
+                    $errores[$clase] = $fallo;
+                }
             }
         }
 
@@ -435,11 +484,14 @@ final class Publico
     /**
      * La hoja de vida y la exposición del expositor.
      *
-     * Devuelve un aviso por cada una que no se pudo guardar; una lista vacía es
-     * que todo salió bien o que no mandaron nada. Como la foto, no aborta el
-     * registro: el archivo se vuelve a subir entrando otra vez al formulario, y
-     * dejar a alguien sin registrar por un PDF de más de ocho megas no arregla
-     * nada.
+     * Llega aquí con los archivos ya comprobados por validarRegistro(), así
+     * que lo único que puede fallar es el disco. Aun así se atrapa y se avisa
+     * en vez de abortar: con los datos ya grabados, tirar el registro entero
+     * porque falló un permiso de carpeta sería peor que decirlo.
+     *
+     * No hay forma de quitar un adjunto, solo de reemplazarlo: son obligatorios
+     * para quien expone, y un botón que deja la propuesta sin lo que la hace
+     * evaluable no tiene sentido.
      *
      * El anterior se borra del disco solo después de que el nuevo esté escrito
      * y su fila actualizada. Al revés, un fallo a media subida dejaría a la
@@ -456,13 +508,6 @@ final class Publico
                 "SELECT $clase FROM {propuesta} WHERE id = ?",
                 [$propuestaId]
             ) ?? '');
-
-            if ($peticion->marcado('quitar_' . $clase)) {
-                Bd::actualizar('propuesta', [$clase => '', $clase . '_tipo' => ''],
-                    'id = :id', ['id' => $propuestaId]);
-                Documento::borrar($anterior);
-                continue;
-            }
 
             $archivo = $peticion->archivo($clase);
             if ($archivo === null) {

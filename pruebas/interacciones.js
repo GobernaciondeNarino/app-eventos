@@ -268,6 +268,17 @@ function titulo(t) {
   comprobar('la exposición ofrece también PPTX',
     aceptaExpo.includes('.pptx') && aceptaExpo.includes('.pdf'), aceptaExpo);
 
+  /* ---- Obligatorios, pero solo para quien expone ----
+     Esto es lo que más fácil se rompe: un campo con «required» dentro de un
+     bloque oculto hace que el navegador se niegue a enviar el formulario y no
+     pueda decir por qué —«An invalid form control is not focusable»—, así que
+     quien NO va a exponer se queda atascado sin ver ningún error. Por eso el
+     atributo lo pone y lo quita el guion con la casilla, y por eso se
+     comprueban las dos direcciones. */
+  comprobar('con la casilla marcada, los dos archivos son obligatorios',
+    await p4.locator('#hoja_vida').evaluate(el => el.required)
+    && await p4.locator('#exposicion').evaluate(el => el.required));
+
   // Sin esto el navegador manda solo los nombres de los archivos y $_FILES
   // llega vacío, que es un fallo silencioso: el registro se guarda sin adjuntos
   // y nadie ve ningún error.
@@ -280,6 +291,15 @@ function titulo(t) {
   await p4.locator('#expositor').uncheck();
   comprobar('al desmarcar se vuelve a plegar',
     await p4.locator('#bloque-expositor').isHidden());
+  comprobar('y dejan de ser obligatorios',
+    !(await p4.locator('#hoja_vida').evaluate(el => el.required))
+    && !(await p4.locator('#exposicion').evaluate(el => el.required)));
+
+  // La comprobación de verdad: quien no expone tiene que poder enviar. Si los
+  // campos ocultos siguieran siendo obligatorios, el navegador bloquearía el
+  // envío en silencio y el formulario quedaría inservible para todo el mundo.
+  comprobar('quien no expone puede enviar el formulario',
+    await p4.locator('form').first().evaluate(f => f.checkValidity() || !f.querySelector(':invalid[type=file]')));
 
   comprobar('sin errores de consola en el registro', erroresRegistro.length === 0,
     erroresRegistro.slice(0, 2).join(' | '));
@@ -433,6 +453,42 @@ function titulo(t) {
 
   comprobar('sin errores de consola en el panel', erroresPanel.length === 0,
     erroresPanel.slice(0, 2).join(' | '));
+
+  /* =====================================================================
+     Expositores: la hoja de revisión
+     ===================================================================== */
+  titulo('Expositores');
+
+  await p3.goto(BASE + '/admin/expositores', { waitUntil: 'networkidle' });
+
+  comprobar('el listado dice de un vistazo qué documentos faltan',
+    (await p3.locator('.table__row .tag--mute').count()) > 0);
+
+  await p3.locator('.table__row').first().click();
+  await p3.waitForTimeout(250);
+
+  const revision = p3.locator('.modal:not(.hidden)').first();
+  comprobar('al pulsar una propuesta se abre su hoja de revisión',
+    await revision.isVisible());
+
+  const textoRevision = await revision.innerText();
+  comprobar('con los datos de quién la presenta',
+    /quién la presenta/i.test(textoRevision));
+  comprobar('su correo, su teléfono y su identificación',
+    /correo/i.test(textoRevision) && /tel[eé]fono/i.test(textoRevision)
+    && /identificaci[oó]n/i.test(textoRevision));
+  comprobar('un enlace a la ficha completa',
+    (await revision.locator('a[href*="/admin/registros/"]').count()) === 1);
+  comprobar('los documentos de respaldo',
+    /documentos de respaldo/i.test(textoRevision));
+  comprobar('y el bloque para validar la participación',
+    /validar la participaci[oó]n/i.test(textoRevision));
+  comprobar('con los tres botones de decisión',
+    (await revision.locator('button[name="decision"]').count()) === 3);
+
+  await p3.keyboard.press('Escape');
+  await p3.waitForTimeout(200);
+  comprobar('se cierra con Escape', await revision.isHidden());
 
   /* =====================================================================
      Eventos: editar, desactivar y eliminar

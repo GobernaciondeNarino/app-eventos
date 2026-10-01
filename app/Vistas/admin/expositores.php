@@ -2,9 +2,11 @@
 /**
  * Propuestas de exposición.
  * @var array $propuestas @var array $conteos @var string $estado @var array $jornadas
+ * @var bool $puedeVerDocumento
  */
 defined('EVENTOS_TIC') || exit;
 
+use App\Modelos\Persona;
 use App\Nucleo\Documento;
 
 /**
@@ -95,7 +97,8 @@ $columnas = 'grid-template-columns:1.7fr 1.1fr 1fr .8fr .9fr';
             </div>
             <div class="stack" style="gap:2px;min-width:0">
               <span style="color:var(--c-title)"><?= e($p['expositor']) ?></span>
-              <span class="mono muted" style="font-size:11px"><?= e($p['entidad'] ?: '—') ?></span>
+              <span class="mono muted" style="font-size:11px;word-break:break-all"><?= e($p['correo']) ?></span>
+              <span class="mono muted" style="font-size:11px"><?= e($p['entidad'] ?: 'Independiente') ?></span>
             </div>
             <span style="color:var(--c-text);font-size:13px"><?= e($p['categoria']) ?></span>
             <span class="mono" style="font-size:12.5px;color:var(--c-text)">
@@ -114,7 +117,11 @@ $columnas = 'grid-template-columns:1.7fr 1.1fr 1fr .8fr .9fr';
 
 </div>
 
-<?php foreach ($propuestas as $p): ?>
+<?php foreach ($propuestas as $p):
+  // El estado se vuelve a resolver aquí. Heredar el del bucle de la tabla
+  // habría pintado en todos los diálogos el de la última fila.
+  [$suEtiqueta, $suClase] = $estados[$p['estado']] ?? ['—', ''];
+?>
   <div class="modal hidden" id="modal-propuesta-<?= (int) $p['id'] ?>" hidden>
     <div class="modal__panel" role="dialog" aria-modal="true" aria-label="Propuesta de exposición">
       <div class="modal__head">
@@ -123,11 +130,6 @@ $columnas = 'grid-template-columns:1.7fr 1.1fr 1fr .8fr .9fr';
       </div>
       <div class="modal__body">
         <h2 style="font-size:24px"><?= e($p['titulo']) ?></h2>
-
-        <div class="row mono" style="gap:16px;font-size:12.5px;color:var(--c-text)">
-          <span><span class="muted">Expositor:</span> <?= e($p['expositor']) ?></span>
-          <span><span class="muted">Entidad:</span> <?= e($p['entidad'] ?: '—') ?></span>
-        </div>
 
         <div class="row">
           <span class="tag">Día preferido: <?= e((string) $p['dia_preferido']) ?></span>
@@ -139,31 +141,98 @@ $columnas = 'grid-template-columns:1.7fr 1.1fr 1fr .8fr .9fr';
 
         <p style="font-size:14.5px;line-height:1.7;color:var(--c-text)"><?= nl2br(e($p['detalle'])) ?></p>
 
-        <!-- Los adjuntos. Se bajan al disco en vez de abrirse dentro de la
-             página: un PDF incrustado es un documento que puede traer sus
-             propios guiones, y estos los subió alguien de fuera. -->
-        <div class="stack stack--2">
-          <span class="kicker">Documentos de respaldo</span>
-          <div class="row" style="gap:10px">
-            <?php foreach ($adjuntos($p) as $d): ?>
-              <?php if ($d['hay']): ?>
-                <a class="btn btn--sm" href="<?= e($d['url']) ?>" download>
-                  <?= e($d['etiqueta']) ?>
-                  <span class="muted" style="font-weight:400">
-                    <?= e(trim($d['formato'] . ($d['peso'] !== '' ? ' · ' . $d['peso'] : ''))) ?>
-                  </span>
-                </a>
-              <?php else: ?>
-                <span class="tag tag--mute">Sin <?= e(mb_strtolower($d['etiqueta'])) ?></span>
-              <?php endif; ?>
-            <?php endforeach; ?>
+        <!-- ---------- Quién la presenta ----------
+             Decidir sobre una propuesta es decidir sobre quién la presenta, así
+             que los datos van aquí y no a una pantalla aparte: tener que abrir
+             la ficha en otra pestaña para ver de qué entidad viene convertía la
+             revisión en un ir y venir. La ficha completa —ingresos, carnet,
+             caracterización— sigue estando a un clic. -->
+        <div class="card">
+          <div class="card__head">
+            <span>Quién la presenta</span>
+            <a href="<?= e(u('/admin/registros/' . (int) $p['persona_id'])) ?>">Ficha completa ›</a>
           </div>
-          <?php if (!$p['hoja_vida'] || !$p['exposicion']): ?>
-            <span class="help">
-              Son opcionales al registrarse. Si los necesitas para decidir, devuelve la propuesta
-              con observaciones: el expositor puede volver al formulario y subirlos.
-            </span>
-          <?php endif; ?>
+          <div class="card__body stack stack--3">
+
+            <div class="ficha">
+              <div class="ficha__foto">
+                <?php if ((string) $p['foto'] !== ''): ?>
+                  <img src="<?= e(u('/medios/foto/' . (int) $p['persona_id'])) ?>"
+                       alt="Fotografía de <?= e($p['expositor']) ?>">
+                <?php else: ?>
+                  <span class="ficha__iniciales" aria-hidden="true"><?= e(iniciales((string) $p['expositor'])) ?></span>
+                <?php endif; ?>
+              </div>
+              <div class="stack stack--2" style="min-width:0">
+                <h3 style="font-size:19px;margin:0;line-height:1.2"><?= e($p['expositor'] ?: 'Registro sin completar') ?></h3>
+                <div class="row">
+                  <span class="tag <?= e(claseRol((string) $p['rol'])) ?>"><?= e(etiquetaRol((string) $p['rol'])) ?></span>
+                  <?php if ((string) $p['rol'] !== 'expositor'): ?>
+                    <!-- Pasa cuando alguien cambia su perfil después de mandar
+                         la propuesta. No es un error, pero al aprobar hay que
+                         saberlo: el carnet se imprime con lo que diga el perfil. -->
+                    <span class="tag tag--warn">Su carnet no dice «expositor»</span>
+                  <?php endif; ?>
+                </div>
+              </div>
+            </div>
+
+            <div class="card__body--tight" style="padding:0">
+              <?php
+              $doc = $puedeVerDocumento ? Persona::documento($p) : '';
+              foreach ([
+                ['Correo', $p['correo']],
+                ['Teléfono', $p['telefono'] !== '' ? $p['telefono'] : 'Sin registrar'],
+                ['Identificación', $doc !== ''
+                    ? $p['tipo_documento'] . ' ' . documento($doc)
+                    : ($puedeVerDocumento ? 'Todavía no la ha dado' : 'Reservada')],
+                ['Entidad', $p['entidad'] ?: 'Independiente'],
+                ['Territorio', trim((string) $p['municipio'] . ' · ' . (string) $p['departamento'], ' ·') ?: 'Sin registrar'],
+                ['Se registró', fecha((string) $p['registrado_en'])],
+                ['Envió la propuesta', fecha((string) $p['creado_en'])],
+              ] as [$k, $valor]): ?>
+                <div class="kv">
+                  <span class="kv__k"><?= e($k) ?></span>
+                  <strong class="kv__v" style="word-break:break-word"><?= e((string) $valor) ?></strong>
+                </div>
+              <?php endforeach; ?>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- ---------- Los adjuntos ----------
+             Se bajan al disco en vez de abrirse dentro de la página: un PDF
+             incrustado es un documento que puede traer sus propios guiones, y
+             estos los subió alguien de fuera. -->
+        <div class="card">
+          <div class="card__head"><span>Documentos de respaldo</span></div>
+          <div class="card__body stack stack--3">
+            <div class="row" style="gap:10px">
+              <?php foreach ($adjuntos($p) as $d): ?>
+                <?php if ($d['hay']): ?>
+                  <a class="btn btn--sm" href="<?= e($d['url']) ?>" download>
+                    <?= e($d['etiqueta']) ?>
+                    <span class="muted" style="font-weight:400">
+                      <?= e(trim($d['formato'] . ($d['peso'] !== '' ? ' · ' . $d['peso'] : ''))) ?>
+                    </span>
+                  </a>
+                <?php else: ?>
+                  <span class="tag tag--mute">Sin <?= e(mb_strtolower($d['etiqueta'])) ?></span>
+                <?php endif; ?>
+              <?php endforeach; ?>
+            </div>
+            <?php if (!$p['hoja_vida'] || !$p['exposicion']): ?>
+              <!-- Desde la 3.3 son obligatorios, así que una propuesta a la que
+                   le falta alguno es de antes del cambio. Decirlo evita que
+                   alguien lo tome por un fallo de la plataforma. -->
+              <span class="help">
+                Los dos son obligatorios desde que se pide la propuesta, así que a esta le
+                faltan porque se envió antes de ese cambio. Devuélvela con observaciones
+                pidiéndolos: el expositor entra a su registro y los sube.
+              </span>
+            <?php endif; ?>
+          </div>
         </div>
 
         <?php if ($p['observacion']): ?>
@@ -173,9 +242,24 @@ $columnas = 'grid-template-columns:1.7fr 1.1fr 1fr .8fr .9fr';
           </div>
         <?php endif; ?>
 
-        <form method="post" action="<?= e(u('/admin/expositores/decidir')) ?>" class="stack stack--3">
+        <form method="post" action="<?= e(u('/admin/expositores/decidir')) ?>" class="card">
           <?= testigo() ?>
           <input type="hidden" name="propuesta" value="<?= (int) $p['id'] ?>">
+
+          <div class="card__head">
+            <span>Validar la participación</span>
+            <span class="tag <?= e($suClase) ?>">Hoy: <?= e($suEtiqueta) ?></span>
+          </div>
+
+          <div class="card__body stack stack--3">
+
+          <p class="help" style="margin:0">
+            <strong>Aprobar</strong> publica la charla en la agenda con el día, la hora y el salón
+            de abajo, y el carnet del expositor sale con ese rótulo.
+            <strong>Devolver</strong> se la regresa para que corrija lo que le digas, y puede
+            volver a enviarla. <strong>Rechazar</strong> la deja fuera del evento. Las tres se
+            pueden cambiar después volviendo a entrar aquí.
+          </p>
 
           <div class="grid-3">
             <div class="field">
@@ -207,9 +291,14 @@ $columnas = 'grid-template-columns:1.7fr 1.1fr 1fr .8fr .9fr';
           </div>
 
           <div class="row row--end">
-            <button class="btn btn--danger" type="submit" name="decision" value="rechazada">Rechazar</button>
+            <button class="btn btn--danger" type="submit" name="decision" value="rechazada"
+                    data-confirmar="Se rechaza la propuesta de <?= e($p['expositor']) ?> y queda fuera del evento. ¿Continuar?">
+              Rechazar
+            </button>
             <button class="btn" type="submit" name="decision" value="observada">Devolver con observaciones</button>
             <button class="btn btn--primary" type="submit" name="decision" value="aprobada">Aprobar y agendar</button>
+          </div>
+
           </div>
         </form>
       </div>

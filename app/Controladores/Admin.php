@@ -605,8 +605,16 @@ final class Admin
             $parametros['estado'] = $estado;
         }
 
+        // Se traen los datos completos de la persona, no solo su nombre: decidir
+        // sobre una propuesta es decidir sobre quién la presenta, y tener que
+        // abrir la ficha en otra pantalla para ver de qué entidad viene o si
+        // dejó teléfono convertía la revisión en un ir y venir.
         $propuestas = Bd::filas(
-            'SELECT pr.*, p.nombre AS expositor, p.entidad, p.correo,
+            'SELECT pr.*,
+                    p.id AS persona_id, p.nombre AS expositor, p.correo, p.telefono,
+                    p.comparte_telefono, p.tipo_documento, p.documento_cifrado,
+                    p.entidad, p.municipio, p.departamento, p.rol, p.foto,
+                    p.creado_en AS registrado_en,
                     c.id AS charla_id, c.hora_inicio, c.salon
                FROM {propuesta} pr
                JOIN {persona} p ON p.id = pr.persona_id
@@ -633,6 +641,10 @@ final class Admin
             'conteos'    => $conteos,
             'estado'     => $estado,
             'jornadas'   => Evento::jornadas((int) $evento['id']),
+            // La ruta ya exige administrador, pero la comprobación se deja
+            // escrita para que mover el guardia no destape el documento sin
+            // que nadie se dé cuenta.
+            'puedeVerDocumento' => Guardia::puede('operador'),
         ]);
     }
 

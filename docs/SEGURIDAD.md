@@ -24,7 +24,7 @@ escribió para eso.
 | Auditoría | Bitácora de solo inserción |
 | Cabeceras y exposición de archivos | En `.htaccess` y también desde PHP |
 
-Lo verifica `pruebas/extremo-a-extremo.php`: 379 comprobaciones sobre un servidor real, 19 de
+Lo verifica `pruebas/extremo-a-extremo.php`: 401 comprobaciones sobre un servidor real, 19 de
 ellas en el bloque específico de seguridad y otras tantas repartidas por los guardias de cada
 pantalla, más las suites de correo, segundo factor, saneado de SVG, fotografía, adjuntos del
 expositor y detección de proxy.
@@ -360,7 +360,8 @@ que más cuidado piden, porque el formulario está abierto.
    comprobación bastaría con contar desde uno para descargar la cara de todos los asistentes.
 
 **Los documentos del expositor** (`App\Nucleo\Documento::guardar`). Desde la 3.3 quien marca
-que va a exponer puede adjuntar su hoja de vida (PDF) y su exposición (PDF o PPTX).
+que va a exponer **tiene que** adjuntar su hoja de vida (PDF) y su exposición (PDF o PPTX): son
+obligatorios, y el formulario no se envía sin ellos.
 
 Son un caso distinto del de la foto, y más difícil: **no se pueden volver a generar**. Una
 imagen se descompone y se vuelve a dibujar, y en el camino se pierde cualquier cosa escondida
@@ -383,24 +384,30 @@ ejecutarse:
    el servidor con la memoria agotada.
 3. Cada campo admite **solo lo suyo**: una presentación en el campo de la hoja de vida se
    rechaza aunque sea un PPTX perfectamente válido.
-4. Topes de 8 MB para la hoja de vida y 25 MB para la exposición. El instalador **comprueba
+4. **Se comprueba antes de guardar nada** (`Documento::revisar()`), durante la validación del
+   formulario. Un campo obligatorio tiene que fallar con los demás campos: avisar después
+   —«lo guardamos todo, menos esto»— es lo correcto para la foto del carnet, que es un adorno,
+   y lo incorrecto para algo sin lo cual la propuesta no se puede evaluar. Y no hay forma de
+   **quitar** un adjunto, solo de reemplazarlo: un botón que deja la propuesta sin lo que la
+   hace evaluable no tiene sentido.
+5. Topes de 8 MB para la hoja de vida y 25 MB para la exposición. El instalador **comprueba
    `upload_max_filesize` y `post_max_size`** y avisa si el servidor no llega: en Plesk vienen
    en 2 MB de fábrica. Y pasado `post_max_size`, PHP descarta el envío completo —`$_POST` y
    `$_FILES` vacíos, el testigo incluido—, así que `Csrf::exigir()` distingue ese caso y
    responde 413 con el motivo real en vez del «la sesión expiró» que no lleva a ninguna parte.
-5. El nombre lo pone el servidor, con 8 bytes al azar, y el original del cliente **no se
+6. El nombre lo pone el servidor, con 8 bytes al azar, y el original del cliente **no se
    guarda**: sirve de poco y sería texto de fuera que habría que desconfiar cada vez que se
    imprime. El nombre de la descarga se arma a partir de datos que ya están en la base.
-6. **Nunca se sirven desde el disco.** Pasan por `Medios::documento`, que comprueba quién
+7. **Nunca se sirven desde el disco.** Pasan por `Medios::documento`, que comprueba quién
    mira —su dueño, o el equipo que revisa las propuestas— y responde el mismo 404 para «no
    existe» y para «no es tuyo»: distinguirlos convertiría la dirección en una forma de
    averiguar qué propuestas hay y quién adjuntó qué.
-7. **Salen siempre como descarga, nunca incrustados.** Un PDF abierto dentro de la página es
+8. **Salen siempre como descarga, nunca incrustados.** Un PDF abierto dentro de la página es
    un documento que puede traer sus propios guiones; bajado al disco lo abre el lector de
    quien lo pidió, fuera del origen del sitio. El nombre de la descarga se reduce a letras,
    números, punto y guion, porque acaba dentro de `Content-Disposition`: una comilla o un
    salto de línea ahí dejan de ser texto y pasan a ser estructura de la respuesta.
-8. La **ranura de la dirección** (`/medios/documento/{n}/hoja-de-vida`) se traduce a nombre de
+9. La **ranura de la dirección** (`/medios/documento/{n}/hoja-de-vida`) se traduce a nombre de
    columna con una lista fija de dos, no con el texto de la URL. Esa columna se interpola en
    el `SELECT`, y es lo único que hace que eso sea seguro: `pruebas/documentos.php` comprueba
    que ninguna otra palabra —`estado`, `detalle`, `titulo`— resuelva a nada.
@@ -667,7 +674,7 @@ conviene decirlo con claridad en la pantalla de privacidad.
 ## 6. Verificación
 
 ```bash
-php pruebas/extremo-a-extremo.php      # 379 comprobaciones sobre un servidor real
+php pruebas/extremo-a-extremo.php      # 401 comprobaciones sobre un servidor real
 php pruebas/instalacion.php            # el asistente, y qué se ve cuando falla
 php pruebas/claves.php                 # parámetros de Argon2id y rehash
 php pruebas/smtp.php                   # el cliente SMTP contra un servidor real

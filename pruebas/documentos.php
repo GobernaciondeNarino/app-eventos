@@ -290,6 +290,43 @@ comprobar('el atributo accept nombra extensión y tipo',
     && str_contains(Documento::aceptados('exposicion'), 'presentationml.presentation'));
 
 /* =========================================================================
+   Comprobar sin guardar
+   -------------------------------------------------------------------------
+   Es lo que hace que un adjunto obligatorio falle con los demás campos del
+   formulario y no después, con los datos ya grabados.
+   ========================================================================= */
+titulo('revisar() dice que no antes de tocar el disco');
+
+// Lo que se puede comprobar aquí es hasta donde llega sin una subida real.
+// is_uploaded_file() es false para un archivo que no vino por HTTP, y esa
+// barrera tiene que seguir estando: por eso el rechazo por formato se prueba de
+// extremo a extremo, con una subida multipart de verdad, y no en esta suite.
+comprobar('devuelve el mismo motivo que daría al guardar',
+    str_contains((string) Documento::revisar(subida(pdf(), UPLOAD_ERR_OK, 9 * 1024 * 1024), 'hoja_vida'),
+        'más de 8 MB'));
+
+comprobar('rechaza una clase inventada',
+    str_contains((string) Documento::revisar(subida(pdf()), 'contrato'), 'ningún campo'));
+
+comprobar('rechaza una subida a medias',
+    Documento::revisar(subida(pdf(), UPLOAD_ERR_PARTIAL), 'hoja_vida') !== null);
+
+comprobar('y un archivo que no llegó por HTTP',
+    str_contains((string) Documento::revisar(subida($php), 'hoja_vida'), 'subida válida'));
+
+// El formato sí se puede comprobar a este lado, por separado: es la pieza que
+// revisar() usa cuando la subida es de verdad.
+comprobar('el detector que usa rechaza una presentación para la hoja de vida',
+    !in_array(formato(pptx()), Documento::CLASES['hoja_vida']['formatos'], true));
+
+// No deja nada escrito: es lo que separa «comprobar» de «guardar».
+$antes = glob(RAIZ . '/almacen/documentos/*') ?: [];
+Documento::revisar(subida(pdf()), 'hoja_vida');
+Documento::revisar(subida(pptx()), 'exposicion');
+comprobar('y no escribe ningún archivo al comprobar',
+    count(glob(RAIZ . '/almacen/documentos/*') ?: []) === count($antes));
+
+/* =========================================================================
    La ranura de la dirección pública
    ========================================================================= */
 titulo('La ranura de la URL no puede nombrar otra columna');

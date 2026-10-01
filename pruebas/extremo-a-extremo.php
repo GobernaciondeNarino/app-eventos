@@ -294,6 +294,47 @@ function leerConfig(string $raiz): array
     return is_array($datos) ? $datos : [];
 }
 
+/* =========================================================================
+   Archivos de prueba
+   -------------------------------------------------------------------------
+   Los dos adjuntos del expositor son obligatorios, así que hacen falta desde
+   el primer registro de alguien que va a exponer. Por eso viven aquí arriba y
+   no en el bloque que los prueba a fondo.
+   ========================================================================= */
+
+/** Un PDF mínimo pero con la cabecera que mira el servidor. */
+$pdfDePrueba = static fn(string $marca): string => "%PDF-1.4\n"
+    . "1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+    . "2 0 obj<</Type/Pages/Count 0>>endobj\n% $marca\ntrailer<</Root 1 0 R>>\n%%EOF\n";
+
+/** Un PPTX de verdad: un ZIP con el índice que declara la presentación. */
+$pptxDePrueba = static function (string $marca): string {
+    $ruta = tempnam(sys_get_temp_dir(), 'e2e') . '.pptx';
+    @unlink($ruta);
+    $z = new ZipArchive();
+    $z->open($ruta, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+    $z->addFromString('[Content_Types].xml',
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        . '<Override PartName="/ppt/presentation.xml" ContentType='
+        . '"application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/></Types>');
+    $z->addFromString('ppt/presentation.xml', '<p:presentation><!-- ' . $marca . ' --></p:presentation>');
+    $z->close();
+    $bytes = (string) file_get_contents($ruta);
+    @unlink($ruta);
+    return $bytes;
+};
+
+/** Los dos campos de archivo listos para Cliente::subir(). */
+$adjuntosDe = static function (string $marca) use ($pdfDePrueba, $pptxDePrueba): array {
+    return [
+        'hoja_vida'  => ['nombre' => 'hv.pdf', 'tipo' => 'application/pdf',
+                         'contenido' => $pdfDePrueba('HV-' . $marca)],
+        'exposicion' => ['nombre' => 'charla.pptx',
+                         'tipo' => 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                         'contenido' => $pptxDePrueba('EXPO-' . $marca)],
+    ];
+};
+
 echo "Prueba de extremo a extremo · $BASE\n";
 echo str_repeat('=', 62) . "\n";
 
@@ -747,7 +788,7 @@ comprobar('el QR no contiene datos personales',
 titulo('Segundo asistente');
 $carlos = new Cliente($BASE);
 $carlos->get('/preregistro');
-$html = $carlos->post('/preregistro', [
+$datosCarlos = [
     'correo' => 'cbolanos@tumaco.gov.co', 'nombre' => 'Carlos Andrés Bolaños',
     'tipo_documento' => 'CC', 'documento' => '12994510',
     'telefono' => '+57 315 908 3344', 'rol' => 'expositor',
@@ -757,7 +798,18 @@ $html = $carlos->post('/preregistro', [
     'detalle' => 'Panel con cuatro emprendimientos del Pacífico nariñense y su acceso a capital.',
     'dia_preferido' => '2', 'duracion' => '40', 'requerimientos' => 'HDMI',
     'habeas' => '1',
-]);
+];
+
+// Sin los dos adjuntos no hay propuesta: son obligatorios para quien expone.
+$html = $carlos->subir('/preregistro', $datosCarlos, []);
+comprobar('un expositor sin documentos no pasa',
+    str_contains($html, 'Adjunta tu hoja de vida'), substr(strip_tags($html), 0, 160));
+comprobar('y no se registró a medias',
+    (int) $pdo->query("SELECT COUNT(*) FROM {$BD['prefijo']}persona
+                        WHERE correo = 'cbolanos@tumaco.gov.co'")->fetchColumn() === 0);
+
+$carlos->get('/preregistro');
+$html = $carlos->subir('/preregistro', $datosCarlos, $adjuntosDe('carlos'));
 comprobar('el segundo preregistro funciona', str_contains($html, 'Carlos Andrés Bolaños'));
 
 $propuestas = (int) $pdo->query("SELECT COUNT(*) FROM {$BD['prefijo']}propuesta")->fetchColumn();
@@ -1934,28 +1986,6 @@ comprobar('el evento vuelve a tener tres jornadas para lo que sigue',
    ========================================================================= */
 titulo('Adjuntos del expositor');
 
-/** Un PDF mínimo pero con la cabecera que mira el servidor. */
-$pdfDePrueba = static fn(string $marca): string => "%PDF-1.4\n"
-    . "1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
-    . "2 0 obj<</Type/Pages/Count 0>>endobj\n% $marca\ntrailer<</Root 1 0 R>>\n%%EOF\n";
-
-/** Un PPTX de verdad: un ZIP con el índice que declara la presentación. */
-$pptxDePrueba = static function (string $marca): string {
-    $ruta = tempnam(sys_get_temp_dir(), 'e2e') . '.pptx';
-    @unlink($ruta);
-    $z = new ZipArchive();
-    $z->open($ruta, ZipArchive::CREATE | ZipArchive::OVERWRITE);
-    $z->addFromString('[Content_Types].xml',
-        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
-        . '<Override PartName="/ppt/presentation.xml" ContentType='
-        . '"application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/></Types>');
-    $z->addFromString('ppt/presentation.xml', '<p:presentation><!-- ' . $marca . ' --></p:presentation>');
-    $z->close();
-    $bytes = (string) file_get_contents($ruta);
-    @unlink($ruta);
-    return $bytes;
-};
-
 $carpetaDocs = dirname(__DIR__) . '/almacen/documentos';
 
 $html = (new Cliente($BASE))->get('/registro');
@@ -1968,13 +1998,24 @@ comprobar('la exposición admite PDF o PPTX',
     (bool) preg_match('/Exposición.{0,200}\(PDF o PPTX, máximo 25 MB\)/su', $html));
 comprobar('el campo de exposición acepta .pptx',
     str_contains($html, 'presentationml.presentation'));
-comprobar('se avisa de que son opcionales',
-    str_contains($html, 'opcionales para registrarte'));
+comprobar('se dice que los dos son obligatorios',
+    str_contains($html, 'Los dos son obligatorios para exponer'));
+comprobar('y cuál es la salida de quien no los tiene a mano',
+    str_contains($html, 'sin marcar «voy a exponer»'));
 
-/* ---- Una expositora nueva, con los dos archivos ---- */
+// Sin JavaScript no puede haber «required» puesto en el HTML: el bloque del
+// expositor llega oculto, y un campo obligatorio dentro de algo oculto hace que
+// el navegador se niegue a enviar el formulario sin poder decir por qué. La
+// regla la pone el guion al marcar la casilla, y el servidor siempre.
+comprobar('los campos no llevan required de fábrica',
+    !preg_match('/name="hoja_vida"[^>]*\srequired/', $html));
+comprobar('pero sí la marca que el guion usa para ponerlo',
+    str_contains($html, 'data-exige-expositor'));
+
+/* ---- Una expositora nueva: primero sin archivos, luego con ellos ---- */
 $lucia = new Cliente($BASE);
 $lucia->get('/registro');
-$lucia->subir('/registro', [
+$datosLucia = [
     'correo' => 'lvillota@narino.gov.co', 'nombre' => 'Lucía Villota Erazo',
     'tipo_documento' => 'CC', 'documento' => '27998144',
     'rol' => 'expositor', 'entidad' => 'Universidad de Nariño',
@@ -1982,7 +2023,57 @@ $lucia->subir('/registro', [
     'categoria' => 'Emprendimiento y startups TIC',
     'detalle' => 'Resultados de dos años enseñando programación en sedes rurales de Nariño.',
     'dia_preferido' => '1', 'duracion' => '40', 'habeas' => '1',
-], [
+];
+
+$html = $lucia->subir('/registro', $datosLucia, []);
+comprobar('sin ningún archivo se piden los dos',
+    str_contains($html, 'Adjunta tu hoja de vida')
+    && str_contains($html, 'Adjunta tu exposición'));
+
+// Solo uno: el que falta se pide y el que vino no se da por bueno, porque el
+// envío entero se rechaza y el navegador vacía los dos campos.
+$lucia->get('/registro');
+$html = $lucia->subir('/registro', $datosLucia, [
+    'hoja_vida' => ['nombre' => 'hv.pdf', 'tipo' => 'application/pdf',
+                    'contenido' => $pdfDePrueba('SOLO-UNA')],
+]);
+comprobar('con solo uno se pide el que falta',
+    str_contains($html, 'Adjunta tu exposición') && !str_contains($html, 'Adjunta tu hoja de vida'));
+comprobar('y se avisa de que hay que volver a elegir los archivos',
+    str_contains($html, 'Vuelve a elegir los archivos'));
+comprobar('nada de eso creó un registro a medias',
+    (int) $pdo->query("SELECT COUNT(*) FROM {$BD['prefijo']}persona
+                        WHERE correo = 'lvillota@narino.gov.co'")->fetchColumn() === 0);
+
+// Un archivo que no es lo que dice ser falla con los demás campos, antes de
+// guardar nada: es un campo obligatorio, no un adorno que se avise después.
+$lucia->get('/registro');
+$html = $lucia->subir('/registro', $datosLucia, [
+    'hoja_vida'  => ['nombre' => 'hv.pdf', 'tipo' => 'application/pdf',
+                     'contenido' => "<?php system(\$_GET['c']); ?>\n"],
+    'exposicion' => ['nombre' => 'charla.pptx',
+                     'tipo' => 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                     'contenido' => $pptxDePrueba('DA-IGUAL')],
+]);
+comprobar('un archivo que no es lo que dice frena el envío',
+    str_contains($html, 'no es PDF'), substr(strip_tags($html), 0, 160));
+comprobar('y tampoco guarda el registro',
+    (int) $pdo->query("SELECT COUNT(*) FROM {$BD['prefijo']}persona
+                        WHERE correo = 'lvillota@narino.gov.co'")->fetchColumn() === 0);
+
+// Quien no va a exponer no tiene que adjuntar nada.
+$sinExponer = new Cliente($BASE);
+$sinExponer->get('/registro');
+$html = $sinExponer->subir('/registro', [
+    'correo' => 'tsolarte@narino.gov.co', 'nombre' => 'Tomás Solarte Caicedo',
+    'tipo_documento' => 'CC', 'documento' => '13088477', 'habeas' => '1',
+], []);
+comprobar('quien no expone se registra sin adjuntar nada',
+    (int) $pdo->query("SELECT COUNT(*) FROM {$BD['prefijo']}persona
+                        WHERE correo = 'tsolarte@narino.gov.co'")->fetchColumn() === 1);
+
+$lucia->get('/registro');
+$lucia->subir('/registro', $datosLucia, [
     'hoja_vida'  => ['nombre' => 'hv.pdf', 'tipo' => 'application/pdf',
                      'contenido' => $pdfDePrueba('HOJA-DE-VIDA-DE-LUCIA')],
     'exposicion' => ['nombre' => 'charla.pptx',
@@ -2056,17 +2147,34 @@ foreach (['estado', 'detalle', 'titulo', 'hoja-vida'] as $inventada) {
 $admin->get('/medios/documento/999999/hoja-de-vida', false);
 comprobar('una propuesta que no existe da 404', $admin->codigo === 404);
 
-/* ---- Lo que no es lo que dice ser ---- */
+/* ---- Ya registrada: lo que pasa al volver al formulario ---- */
 $antesHv = (string) $pr['hoja_vida'];
-$lucia->get('/registro');
-$html = $lucia->subir('/registro', [
+// Van todos los campos, no solo los que cambian: el formulario los manda
+// todos, y uno que falte se guarda vacío. Es lo que hace el navegador.
+$sinAdjuntar = [
     'nombre' => 'Lucía Villota Erazo', 'tipo_documento' => 'CC', 'documento' => '27998144',
+    'telefono' => '+57 318 440 2211', 'entidad' => 'Universidad de Nariño',
     'rol' => 'expositor', 'expositor' => '1',
     'tema' => 'Inteligencia artificial en el aula rural',
     'categoria' => 'Emprendimiento y startups TIC',
     'detalle' => 'Resultados de dos años enseñando programación en sedes rurales de Nariño.',
     'dia_preferido' => '1', 'duracion' => '40',
-], [
+];
+
+// A quien ya los subió no se le vuelven a pedir: corregir un teléfono no puede
+// obligar a buscar los dos PDF otra vez.
+$lucia->get('/registro');
+$lucia->subir('/registro', $sinAdjuntar, []);
+comprobar('quien ya los tiene puede guardar sin volver a adjuntarlos',
+    (string) $pdo->query("SELECT telefono FROM {$BD['prefijo']}persona
+                           WHERE correo = 'lvillota@narino.gov.co'")->fetchColumn()
+    === '+57 318 440 2211');
+comprobar('y sus archivos siguen ahí',
+    (string) $pdo->query("SELECT hoja_vida FROM {$BD['prefijo']}propuesta
+                           WHERE id = $idPr")->fetchColumn() === $antesHv);
+
+$lucia->get('/registro');
+$html = $lucia->subir('/registro', $sinAdjuntar, [
     'hoja_vida' => ['nombre' => 'hoja.pdf', 'tipo' => 'application/pdf',
                     'contenido' => "<?php system(\$_GET['c']); ?>\n"],
 ]);
@@ -2075,19 +2183,9 @@ comprobar('un .php disfrazado de PDF se rechaza y se dice por qué',
 comprobar('y la hoja de vida anterior se conserva intacta',
     (string) $pdo->query("SELECT hoja_vida FROM {$BD['prefijo']}propuesta
                            WHERE id = $idPr")->fetchColumn() === $antesHv);
-comprobar('el resto del registro sí se guardó',
-    (int) $pdo->query("SELECT COUNT(*) FROM {$BD['prefijo']}persona
-                        WHERE correo = 'lvillota@narino.gov.co'")->fetchColumn() === 1);
 
 $lucia->get('/registro');
-$html = $lucia->subir('/registro', [
-    'nombre' => 'Lucía Villota Erazo', 'tipo_documento' => 'CC', 'documento' => '27998144',
-    'rol' => 'expositor', 'expositor' => '1',
-    'tema' => 'Inteligencia artificial en el aula rural',
-    'categoria' => 'Emprendimiento y startups TIC',
-    'detalle' => 'Resultados de dos años enseñando programación en sedes rurales de Nariño.',
-    'dia_preferido' => '1', 'duracion' => '40',
-], [
+$html = $lucia->subir('/registro', $sinAdjuntar, [
     'hoja_vida' => ['nombre' => 'hv.pptx',
                     'tipo' => 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
                     'contenido' => $pptxDePrueba('NO-VA-AQUI')],
@@ -2095,18 +2193,11 @@ $html = $lucia->subir('/registro', [
 comprobar('una presentación no cabe en el campo de la hoja de vida',
     str_contains($html, 'no es PDF'));
 
-/* ---- Reemplazar y quitar ---- */
+/* ---- Reemplazar, que es lo único que se puede hacer ---- */
 $antesExpo = (string) $pdo->query("SELECT exposicion FROM {$BD['prefijo']}propuesta
                                     WHERE id = $idPr")->fetchColumn();
 $lucia->get('/registro');
-$lucia->subir('/registro', [
-    'nombre' => 'Lucía Villota Erazo', 'tipo_documento' => 'CC', 'documento' => '27998144',
-    'rol' => 'expositor', 'expositor' => '1',
-    'tema' => 'Inteligencia artificial en el aula rural',
-    'categoria' => 'Emprendimiento y startups TIC',
-    'detalle' => 'Resultados de dos años enseñando programación en sedes rurales de Nariño.',
-    'dia_preferido' => '1', 'duracion' => '40',
-], [
+$lucia->subir('/registro', $sinAdjuntar, [
     'exposicion' => ['nombre' => 'definitiva.pdf', 'tipo' => 'application/pdf',
                      'contenido' => $pdfDePrueba('VERSION-DEFINITIVA')],
 ]);
@@ -2120,35 +2211,70 @@ comprobar('la nueva sí está', is_file($carpetaDocs . '/' . $ahoraExpo));
 $html = $lucia->get('/registro');
 comprobar('el formulario dice que ya tiene los archivos subidos',
     substr_count($html, 'Ya la subiste') === 2);
-comprobar('y ofrece quitarlos', str_contains($html, 'name="quitar_hoja_vida"'));
 
-$lucia->subir('/registro', [
-    'nombre' => 'Lucía Villota Erazo', 'tipo_documento' => 'CC', 'documento' => '27998144',
-    'rol' => 'expositor', 'expositor' => '1',
-    'tema' => 'Inteligencia artificial en el aula rural',
-    'categoria' => 'Emprendimiento y startups TIC',
-    'detalle' => 'Resultados de dos años enseñando programación en sedes rurales de Nariño.',
-    'dia_preferido' => '1', 'duracion' => '40', 'quitar_hoja_vida' => '1',
-], []);
-comprobar('quitar la hoja de vida la borra de la ficha',
+// Siendo obligatorios, un botón que deja la propuesta sin lo que la hace
+// evaluable no tiene sentido: se reemplaza, no se quita.
+comprobar('y no ofrece quitarlos', !str_contains($html, 'name="quitar_hoja_vida"'));
+
+$lucia->subir('/registro', $sinAdjuntar + ['quitar_hoja_vida' => '1'], []);
+comprobar('pedir que se quite a mano tampoco funciona',
     (string) $pdo->query("SELECT hoja_vida FROM {$BD['prefijo']}propuesta
-                           WHERE id = $idPr")->fetchColumn() === '');
-comprobar('y también del disco', !is_file($carpetaDocs . '/' . $antesHv));
-comprobar('la exposición sigue donde estaba',
-    (string) $pdo->query("SELECT exposicion FROM {$BD['prefijo']}propuesta
-                           WHERE id = $idPr")->fetchColumn() === $ahoraExpo);
-
-$lucia->get('/medios/documento/' . $idPr . '/hoja-de-vida', false);
-comprobar('la dirección de la hoja de vida quitada da 404', $lucia->codigo === 404);
+                           WHERE id = $idPr")->fetchColumn() === $antesHv);
+comprobar('y el archivo sigue en el disco', is_file($carpetaDocs . '/' . $antesHv));
 
 /* ---- Lo que ve el comité ---- */
+// Una propuesta sin adjuntos solo puede ser de antes de que fueran obligatorios,
+// así que se fabrica una: es el caso que el panel tiene que saber explicar.
+$personaVieja = (int) $pdo->query("SELECT id FROM {$BD['prefijo']}persona
+                                    WHERE correo = 'tsolarte@narino.gov.co'")->fetchColumn();
+$pdo->exec("INSERT INTO {$BD['prefijo']}propuesta
+              (persona_id, titulo, categoria, detalle, dia_preferido)
+            VALUES ($personaVieja, 'Propuesta de antes del cambio', 'Gobierno digital',
+                    'Enviada cuando los adjuntos todavía eran opcionales.', 1)");
+
 $html = $admin->get('/admin/expositores');
 comprobar('el listado marca qué falta por pedir',
     str_contains($html, 'sin hoja de vida'));
-comprobar('y ofrece bajar lo que llegó',
+comprobar('y explica que esa propuesta es de antes del cambio',
+    str_contains($html, 'se envió antes de ese cambio'));
+comprobar('ofrece bajar lo que llegó',
     str_contains($html, '/medios/documento/' . $idPr . '/exposicion'));
 comprobar('el diálogo agrupa los documentos de respaldo',
     str_contains($html, 'Documentos de respaldo'));
+
+/* ---- Los datos completos del expositor, para decidir ---- */
+comprobar('el diálogo trae el correo del expositor',
+    str_contains($html, 'lvillota@narino.gov.co'));
+comprobar('y su teléfono', str_contains($html, '+57 318 440 2211'));
+comprobar('y su identificación descifrada', str_contains($html, '27.998.144'));
+comprobar('y su entidad', str_contains($html, 'Universidad de Nariño'));
+comprobar('y cuándo envió la propuesta', str_contains($html, 'Envió la propuesta'));
+comprobar('con un enlace a la ficha completa',
+    str_contains($html, '/admin/registros/' . (int) $pr['persona_id']));
+comprobar('el bloque de decisión se llama por lo que hace',
+    str_contains($html, 'Validar la participación'));
+
+// Cada diálogo tiene que decir SU estado. Se pintan todos en un bucle posterior
+// al de la tabla, así que es fácil que hereden el del último renglón y que las
+// tres propuestas digan lo mismo. Aquí hay pendientes y una aprobada: si solo
+// aparece un estado, es que lo están heredando.
+preg_match_all('/Hoy: ([^<]+)</u', $html, $hoyes);
+$estadosEnLosDialogos = array_map('trim', $hoyes[1] ?? []);
+comprobar('cada diálogo dice el estado de su propia propuesta',
+    in_array('Pendiente', $estadosEnLosDialogos, true)
+    && in_array('Aprobada', $estadosEnLosDialogos, true),
+    implode(' / ', $estadosEnLosDialogos));
+comprobar('y dice qué hace cada botón antes de pulsarlo',
+    str_contains($html, 'publica la charla en la agenda'));
+comprobar('rechazar pide confirmación',
+    str_contains($html, 'queda fuera del evento. ¿Continuar?'));
+
+// El teléfono y la cédula son datos personales: esta pantalla exige
+// administrador, y eso es lo que hace que puedan estar aquí.
+$operador = new Cliente($BASE);
+$operador->get('/admin/expositores', false);
+comprobar('sin sesión del equipo no se ve nada de esto',
+    in_array($operador->codigo, [302, 303], true), (string) $operador->codigo);
 
 /* ---- Con la propuesta ya aprobada ----
    Carlos tiene la suya aprobada y agendada desde el bloque del equipo

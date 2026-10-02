@@ -21,7 +21,53 @@ use App\Nucleo\Imagen;
  */
 final class Persona
 {
-    public const ROLES = ['participante', 'visitante', 'expositor', 'organizador', 'prensa'];
+    /** Todos los perfiles de asistencia que existen. */
+    public const ROLES = ['participante', 'visitante', 'expositor', 'organizador', 'prensa', 'staff'];
+
+    /**
+     * Los que puede elegir quien llena el formulario.
+     *
+     * «staff» queda fuera, y no es un detalle de presentación: ese perfil da
+     * acceso a la plataforma —ver los carnets de todo el mundo, con su cédula, y
+     * sellar ingresos—, así que ofrecerlo en un formulario abierto al público
+     * sería dejar que cualquiera se lo asignara. Esconder la opción no basta:
+     * un envío hecho a mano no pasa por la pantalla. Por eso la lista está aquí
+     * y es contra esta contra la que valida el registro público.
+     *
+     * Lo asigna un administrador desde la ficha de la persona.
+     */
+    public const ROLES_PUBLICOS = ['participante', 'visitante', 'expositor', 'prensa'];
+
+    /** ¿Este perfil da acceso a acreditar y a ver los carnets? */
+    public static function esStaff(?array $persona): bool
+    {
+        return $persona !== null && (string) ($persona['rol'] ?? '') === 'staff';
+    }
+
+    /**
+     * El perfil que de verdad se guarda desde el formulario público.
+     *
+     * Dos reglas, y la segunda es la que no se ve venir:
+     *
+     * 1. No se puede subir. El enviado vale solo si está en ROLES_PUBLICOS.
+     * 2. Tampoco se puede perder. Un perfil que solo pone un administrador
+     *    —«staff», «organizador»— se conserva pase lo que pase en el envío. Si
+     *    no, a alguien del staff le bastaba con abrir «mis datos» y guardar para
+     *    quedarse sin su perfil: el selector del formulario no tiene su opción,
+     *    así que el navegador manda la primera de la lista.
+     */
+    public static function rolAdmitido(string $enviado, string $actual): string
+    {
+        $esDeAdmin = in_array($actual, self::ROLES, true)
+            && !in_array($actual, self::ROLES_PUBLICOS, true);
+        if ($esDeAdmin) {
+            return $actual;
+        }
+        if (in_array($enviado, self::ROLES_PUBLICOS, true)) {
+            return $enviado;
+        }
+        return in_array($actual, self::ROLES, true) ? $actual : 'participante';
+    }
 
     public static function porId(int $id): ?array
     {
@@ -167,7 +213,15 @@ final class Persona
                 'entidad'           => mb_substr(trim((string) ($datos['entidad'] ?? '')), 0, 160),
                 'departamento'      => mb_substr(trim((string) ($datos['departamento'] ?? '')), 0, 80),
                 'municipio'         => mb_substr(trim((string) ($datos['municipio'] ?? '')), 0, 80),
-                'rol'               => in_array($datos['rol'] ?? '', self::ROLES, true) ? $datos['rol'] : 'participante',
+                // El perfil se admite solo si es de los que puede elegir quien
+                // llena el formulario. Si llega otro —«staff» en un envío hecho
+                // a mano— se conserva el que ya tenía, no se baja a
+                // participante: si no, un miembro del staff que entrara a
+                // corregir su teléfono se quedaría sin su perfil.
+                'rol'               => self::rolAdmitido(
+                    (string) ($datos['rol'] ?? ''),
+                    $existente ? (string) $existente['rol'] : 'participante'
+                ),
             ];
 
             if ($existente) {
@@ -246,11 +300,28 @@ final class Persona
             // fallaba: toda búsqueda por texto del panel respondía 500,
             // incluida la del escáner, que es la que se usa en la puerta
             // cuando a alguien no le funciona el código.
-            $donde[] = '(p.nombre LIKE :texto1 OR p.correo LIKE :texto2'
-                . ' OR p.entidad LIKE :texto3 OR p.municipio LIKE :texto4)';
+            $campos = '(p.nombre LIKE :texto1 OR p.correo LIKE :texto2'
+                . ' OR p.entidad LIKE :texto3 OR p.municipio LIKE :texto4';
             $patron = '%' . str_replace(['%', '_'], ['\%', '\_'], (string) $filtros['texto']) . '%';
             $parametros += ['texto1' => $patron, 'texto2' => $patron,
                             'texto3' => $patron, 'texto4' => $patron];
+
+            // Y por número de identificación, que es lo que trae quien llega a
+            // la puerta sin carnet y sin teléfono: la cédula en la mano.
+            //
+            // El número está cifrado, así que un LIKE sobre él no encuentra
+            // nada —la pantalla lo ofrecía desde el principio y nunca funcionó—.
+            // Lo que sí se puede es comparar la huella HMAC, que es exacta: o
+            // se escribe el documento completo, o no aparece. Buscar por los
+            // últimos cuatro dígitos exigiría descifrar la tabla entera en cada
+            // búsqueda, y eso es justamente lo que el cifrado evita.
+            $documento = self::normalizarDocumento((string) $filtros['texto']);
+            if ($documento !== '') {
+                $campos .= ' OR p.documento_huella = :huella';
+                $parametros['huella'] = Cripto::huella($documento);
+            }
+
+            $donde[] = $campos . ')';
         }
         if (!empty($filtros['rol']) && in_array($filtros['rol'], self::ROLES, true)) {
             $donde[] = 'p.rol = :rol';
@@ -277,6 +348,20 @@ final class Persona
               LIMIT ' . $limite,
             $parametros
         );
+    }
+
+    /**
+     * Las personas que pueden tener carnet, para listarlo e imprimirlo.
+     *
+     * Deja fuera los registros a medias —quien creó su acceso con correo y
+     * contraseña y no llenó el formulario—: un carnet sin nombre ni documento
+     * es una cartulina en blanco, y en una tanda de doscientas se cuela sin que
+     * nadie la vea hasta que la reparte.
+     */
+    public static function conCredencial(int $eventoId, array $filtros = []): array
+    {
+        $personas = self::buscar($eventoId, $filtros);
+        return array_values(array_filter($personas, static fn(array $p): bool => self::registroCompleto($p)));
     }
 
     /** Días en que ingresó, como arreglo de enteros. */

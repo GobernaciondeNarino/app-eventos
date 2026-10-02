@@ -49,6 +49,43 @@
   .barcode span { background: #000000 !important; }
   .brandmark { border-color: #000000 !important; color: #000000 !important; background: none !important; }
 
+  /* ---- Tanda de carnets --------------------------------------------------- */
+  /* Una cara por persona, seis por hoja tamaño carta. El reparto lo hace el
+     navegador: «break-inside: avoid» es lo que impide que una tarjeta quede
+     partida entre dos páginas, que es el único defecto que hace inservible una
+     tanda impresa. */
+  .carnet-tanda {
+    display: grid !important;
+    grid-template-columns: repeat(3, 60mm);
+    gap: 4mm;
+    justify-content: start;
+  }
+  .carnet-uno {
+    width: 60mm; height: 95mm;
+    page-break-inside: avoid; break-inside: avoid;
+    background: #FFFFFF !important;
+    border: .3mm solid #000000 !important;
+    border-top: 1mm solid #000000 !important;
+    padding: 4mm;
+    gap: 2.5mm;
+  }
+  .carnet-uno__rol, .carnet-uno__nombre, .carnet-uno__codigo > span:first-child {
+    color: #000000 !important;
+  }
+  /* El perfil y la cara son lo que se lee a un metro en una fila: el nombre se
+     comprueba ya de cerca. Por eso van más grandes que en pantalla. */
+  .carnet-uno__rol { font-size: 10pt; letter-spacing: .18em; }
+  .carnet-uno__nombre { font-size: 11pt; }
+  .carnet-uno__dato { color: #222222 !important; }
+  .carnet-uno__cap, .carnet-uno__foto span { color: #555555 !important; }
+  .carnet-uno__quien { gap: 3mm; }
+  .carnet-uno__foto {
+    width: 24mm; height: 30mm;
+    border-color: #000000 !important; background: #FFFFFF !important;
+  }
+  .carnet-uno__pie { border-top-color: #999999 !important; }
+  .carnet-uno__qr { width: 22mm; background: #FFFFFF !important; padding: 0; }
+
   /* ---- Pliego del QR del día --------------------------------------------- */
   .print-sheet { display: block !important; page-break-after: always; text-align: center; }
   .print-sheet__title { font-size: 28pt; color: #000000 !important; margin-bottom: 4mm; }

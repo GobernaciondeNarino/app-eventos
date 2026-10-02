@@ -11,6 +11,7 @@ declare(strict_types=1);
  * Guardias:
  *   (ninguno)              público
  *   'asistente'            exige sesión de asistente
+ *   'acreditar'            equipo operador, o persona con perfil Staff
  *   'admin:consulta'       equipo, cualquier rol
  *   'admin:operador'       operador o administrador
  *   'admin:administrador'  solo administrador
@@ -88,7 +89,7 @@ $enrutador->get('/d/{token:token}', [Escaneo::class, 'codigoDelDia'], 'asistente
 // el equipo sella su ingreso, otro asistente intercambia contacto.
 $enrutador->get('/c/{token:token}', [Escaneo::class, 'carnetAjeno']);
 $enrutador->post('/c/{token:token}/contacto', [Escaneo::class, 'guardarContacto'], 'asistente');
-$enrutador->post('/c/{token:token}/asistencia', [Escaneo::class, 'sellarAsistencia'], 'admin:operador');
+$enrutador->post('/c/{token:token}/asistencia', [Escaneo::class, 'sellarAsistencia'], 'acreditar');
 
 /* =========================================================================
    Asistente identificado
@@ -96,6 +97,19 @@ $enrutador->post('/c/{token:token}/asistencia', [Escaneo::class, 'sellarAsistenc
 $enrutador->get('/carnet', [Carnet::class, 'ver'], 'asistente');
 $enrutador->get('/carnet/imprimir', [Carnet::class, 'imprimir'], 'asistente');
 $enrutador->post('/carnet/dispositivos', [Carnet::class, 'cerrarDispositivos'], 'asistente');
+
+/* =========================================================================
+   Acreditación — el equipo y el Staff
+   -------------------------------------------------------------------------
+   Las mismas pantallas para los dos. El equipo llega por /admin/escaner desde
+   su panel; el Staff por /acreditar, que es lo que ve en su navegación.
+   ========================================================================= */
+$enrutador->get('/acreditar', [Escaneo::class, 'pantallaAcreditar'], 'acreditar');
+$enrutador->post('/acreditar/buscar', [Escaneo::class, 'buscar'], 'acreditar');
+
+// Todos los carnets del evento: para consultarlos e imprimirlos en tanda.
+$enrutador->get('/carnets', [Carnet::class, 'lista'], 'acreditar');
+$enrutador->get('/carnets/imprimir', [Carnet::class, 'imprimirTodos'], 'acreditar');
 $enrutador->get('/checkin', [Escaneo::class, 'pantallaCheckin'], 'asistente');
 $enrutador->get('/contactos', [Contactos::class, 'listar'], 'asistente');
 $enrutador->post('/contactos/privacidad', [Contactos::class, 'privacidad'], 'asistente');
@@ -119,8 +133,11 @@ $enrutador->get('/admin', [Admin::class, 'panel'], 'admin:consulta');
 // tablas y columnas; nunca borra. Ver Esquema::revisionPendiente().
 $enrutador->post('/admin/actualizar-esquema', [Admin::class, 'actualizarEsquema'], 'admin:administrador');
 
-$enrutador->get('/admin/escaner', [Admin::class, 'escaner'], 'admin:operador');
-$enrutador->post('/admin/escaner/buscar', [Admin::class, 'buscarPersona'], 'admin:operador');
+// La pantalla de la puerta. Es la misma para el equipo y para el Staff —de ahí
+// el guardia 'acreditar' y las dos direcciones—, y vive en Escaneo porque dejó
+// de ser del backoffice el día que una persona con perfil Staff pudo usarla.
+$enrutador->get('/admin/escaner', [Escaneo::class, 'pantallaAcreditar'], 'acreditar');
+$enrutador->post('/admin/escaner/buscar', [Escaneo::class, 'buscar'], 'acreditar');
 
 $enrutador->get('/admin/registros', [Admin::class, 'registros'], 'admin:consulta');
 $enrutador->get('/admin/registros/exportar', [Admin::class, 'exportar'], 'admin:consulta');
@@ -130,6 +147,10 @@ $enrutador->get('/admin/registros/exportar', [Admin::class, 'exportar'], 'admin:
 $enrutador->get('/admin/registros/{persona:num}', [Admin::class, 'ficha'], 'admin:consulta');
 $enrutador->post('/admin/registros/clave', [Admin::class, 'restablecerClave'], 'admin:administrador');
 $enrutador->post('/admin/registros/qr', [Admin::class, 'regenerarQrAcceso'], 'admin:administrador');
+
+// El perfil de asistencia. Exige administrador porque por aquí se pone «Staff»,
+// que da acceso a los carnets de todo el evento y a sellar ingresos.
+$enrutador->post('/admin/registros/perfil', [Admin::class, 'cambiarPerfil'], 'admin:administrador');
 
 $enrutador->get('/admin/qr-dias', [Admin::class, 'codigosDia'], 'admin:operador');
 $enrutador->get('/admin/qr-dias/{numero:num}/imprimir', [Admin::class, 'imprimirCodigo'], 'admin:operador');

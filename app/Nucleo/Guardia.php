@@ -18,6 +18,10 @@ defined('EVENTOS_TIC') || exit;
  * Hay dos accesos distintos y por eso hay dos guardias:
  *   · «asistente»  → acceso por correo con código de un solo uso.
  *   · «admin»      → acceso del equipo, con contraseña y segundo factor.
+ *
+ * Y uno más que acepta cualquiera de los dos: «acreditar». Lo pasan el equipo
+ * con rol operador y las personas con perfil Staff, que entran por la puerta del
+ * asistente pero pueden ver los carnets del evento y sellar ingresos.
  */
 final class Guardia
 {
@@ -32,9 +36,111 @@ final class Guardia
         match ($tipo) {
             'asistente' => self::asistente($peticion),
             'admin'     => self::admin($peticion, $exigencia),
+            'acreditar' => self::acreditar($peticion),
             'instalar'  => self::instalador(),
             default     => null,
         };
+    }
+
+    /* =====================================================================
+       Acreditación: el equipo, o una persona con perfil Staff
+       ===================================================================== */
+
+    /**
+     * Pantallas de la puerta: ver los carnets, imprimirlos y sellar ingresos.
+     *
+     * Entra el equipo con rol operador y entra el Staff. Son dos sesiones
+     * distintas y por eso hay que decidir a cuál de las dos puertas mandar a
+     * quien llegue sin ninguna: se manda a la del asistente, que es la de la
+     * mayoría —el staff de un evento son voluntarios con su carnet, no gente
+     * con cuenta del equipo— y desde ahí se puede llegar a la otra.
+     */
+    private static function acreditar(Peticion $peticion): void
+    {
+        // Con sesión del equipo se le aplica el guardia del equipo completo, no
+        // una comprobación de rol a secas. Ahí viven el segundo factor
+        // pendiente, la contraseña que puso otra persona y la cuenta
+        // suspendida, y cada uno sabe a qué pantalla mandar a quien llega: un
+        // 403 genérico dejaría a un operador recién creado sin entender que lo
+        // único que le falta es cambiar su contraseña.
+        if (self::usuarioActual() !== null) {
+            self::admin($peticion, 'operador');
+            return;
+        }
+
+        if (self::staffActual() !== null) {
+            return;
+        }
+
+        // Identificado como asistente pero sin el perfil: no es un problema de
+        // identificarse, así que mandarlo otra vez al acceso lo dejaría dando
+        // vueltas sin entender por qué.
+        if (self::personaActual() !== null) {
+            Respuesta::error(403, 'No tienes permiso',
+                'Esta sección es para el equipo organizador y para quienes tienen el perfil '
+                . 'Staff. Si crees que te corresponde, pídeselo a la administración del evento.');
+        }
+
+        self::pedirIdentificacion($peticion, '/entrar');
+    }
+
+    /** La persona con sesión abierta, si su perfil es Staff. */
+    public static function staffActual(): ?array
+    {
+        $persona = self::personaActual();
+
+        // Con el registro a medias no se acredita a nadie: la pantalla enseña
+        // cédulas, y quien no ha dado ni la suya no ha terminado de entrar.
+        if ($persona === null
+            || !\App\Modelos\Persona::esStaff($persona)
+            || !\App\Modelos\Persona::registroCompleto($persona)) {
+            return null;
+        }
+        return $persona;
+    }
+
+    /** ¿Puede ver los carnets y sellar ingresos? Para las vistas y las rutas. */
+    public static function puedeAcreditar(): bool
+    {
+        if (self::staffActual() !== null) {
+            return true;
+        }
+        $usuario = self::equipoOperativo();
+        return $usuario !== null && self::tieneRol($usuario, 'operador');
+    }
+
+    /**
+     * Quién está acreditando, para firmar el sello y contar sus escaneos.
+     *
+     * El equipo manda sobre el staff cuando las dos sesiones están abiertas en
+     * el mismo navegador: pasa en la puerta, con el teléfono de un organizador
+     * que además está registrado como asistente, y el sello tiene que quedar a
+     * nombre de la cuenta con más responsabilidad.
+     *
+     * @return array{tipo:string, id:int, nombre:string}|null
+     */
+    public static function acreditador(): ?array
+    {
+        $usuario = self::equipoOperativo();
+        if ($usuario !== null && self::tieneRol($usuario, 'operador')) {
+            return [
+                'tipo'   => 'equipo',
+                'id'     => (int) $usuario['id'],
+                'nombre' => (string) $usuario['nombre'],
+                'puesto' => (string) ($usuario['puesto'] ?? ''),
+            ];
+        }
+
+        $staff = self::staffActual();
+        if ($staff !== null) {
+            return [
+                'tipo'   => 'staff',
+                'id'     => (int) $staff['id'],
+                'nombre' => (string) $staff['nombre'],
+                'puesto' => (string) ($staff['entidad'] ?? ''),
+            ];
+        }
+        return null;
     }
 
     /* =====================================================================
@@ -175,6 +281,13 @@ final class Guardia
             return null;
         }
         if (!empty(Sesion::datos('admin')['pendiente_2fa'])) {
+            return null;
+        }
+        // Con una contraseña puesta por otra persona no se trabaja. El guardia
+        // 'admin' lo comprobaba desde siempre, pero esta función no, y por aquí
+        // pasan las rutas que no lo llevan: escanear un carnet es una de ellas,
+        // y al otro lado está la cédula de alguien.
+        if ((int) $usuario['debe_cambiar'] === 1) {
             return null;
         }
         if (\App\Modelos\Usuario::exigeSegundoFactor($usuario)

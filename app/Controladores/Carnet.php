@@ -10,6 +10,7 @@ use App\Modelos\Credencial;
 use App\Modelos\Persona;
 use App\Nucleo\App;
 use App\Nucleo\Autenticacion;
+use App\Nucleo\Bitacora;
 use App\Nucleo\Dispositivo;
 use App\Nucleo\Guardia;
 use App\Nucleo\Peticion;
@@ -85,6 +86,93 @@ final class Carnet
                 'nivel' => 'Q', 'silencio' => 2, 'clase' => 'qr',
                 'titulo' => 'Código de la credencial',
             ]),
+            'sinPlantilla' => true,
+        ]);
+    }
+
+    /* =====================================================================
+       Todos los carnets del evento
+       -------------------------------------------------------------------------
+       Para el equipo y para el Staff. Hace falta porque la gente llega sin
+       teléfono, o con el teléfono sin batería, o prefiere el plástico: hasta
+       ahora cada carnet había que imprimirlo desde la sesión de su dueño, lo
+       que para doscientos asistentes era imposible.
+       ===================================================================== */
+
+    public function lista(Peticion $peticion): void
+    {
+        $evento = App::eventoExigido();
+        $filtros = [
+            'texto' => $peticion->query('q'),
+            'rol'   => $peticion->query('rol'),
+            'limite' => 500,
+        ];
+
+        $personas = Persona::conCredencial((int) $evento['id'], $filtros);
+
+        Bitacora::registrar('carnets_listados', 'evento', (int) $evento['id'], [
+            'cuantos' => count($personas),
+        ]);
+
+        Respuesta::vista('admin/carnets', [
+            'titulo'   => 'Carnets del evento',
+            'pantalla' => 'carnets',
+            'personas' => $personas,
+            'filtros'  => $filtros,
+            'total'    => (int) \App\Nucleo\Bd::valor(
+                'SELECT COUNT(*) FROM {persona} WHERE evento_id = ?', [(int) $evento['id']]
+            ),
+        ]);
+    }
+
+    /**
+     * Todos los carnets en una sola página, listos para imprimir.
+     *
+     * Una cara por persona, con el QR dentro. Las dos caras del carnet
+     * individual tienen sentido para quien imprime el suyo y lo dobla; para una
+     * tanda de doscientos, imprimir cuatrocientas caras y aparearlas a mano es
+     * lo que hace que nadie use la función. Con el código en la misma cara, se
+     * recorta y ya sirve.
+     *
+     * No se pagina aquí: el navegador reparte las tarjetas por hoja con
+     * «break-inside: avoid», que es lo que hace que ninguna quede cortada.
+     */
+    public function imprimirTodos(Peticion $peticion): void
+    {
+        $evento = App::eventoExigido();
+        $filtros = [
+            'texto' => $peticion->query('q'),
+            'rol'   => $peticion->query('rol'),
+            'limite' => 500,
+        ];
+
+        $personas = Persona::conCredencial((int) $evento['id'], $filtros);
+
+        // Cada carnet necesita su credencial. Se asegura aquí y no en la vista
+        // para que una persona sin carnet emitido —registro recién completado—
+        // no salga con un hueco donde va el código.
+        $tarjetas = [];
+        foreach ($personas as $p) {
+            $credencial = Credencial::asegurar((int) $p['id']);
+            $tarjetas[] = [
+                'persona'    => $p,
+                'credencial' => $credencial,
+                'documento'  => Persona::documento($p),
+                'qr'         => Qr::svg(Credencial::urlQr($credencial), [
+                    'nivel' => 'Q', 'silencio' => 2, 'clase' => 'qr',
+                    'titulo' => 'Código de ' . $p['nombre'],
+                ]),
+            ];
+        }
+
+        Bitacora::registrar('carnets_impresos', 'evento', (int) $evento['id'], [
+            'cuantos' => count($tarjetas),
+        ]);
+
+        Respuesta::vista('admin/carnets-imprimir', [
+            'titulo'       => 'Carnets para imprimir',
+            'tarjetas'     => $tarjetas,
+            'filtros'      => $filtros,
             'sinPlantilla' => true,
         ]);
     }

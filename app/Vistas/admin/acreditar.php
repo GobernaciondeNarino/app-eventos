@@ -1,8 +1,14 @@
 <?php
 /**
- * Ficha de acreditación: lo que ve el operador tras leer un carnet.
+ * Ficha de acreditación: lo que ve quien acredita tras leer un carnet.
+ *
+ * La abren el equipo organizador y el Staff, que entra con su propio acceso de
+ * asistente. Lo único que cambia entre los dos es a dónde vuelve el botón del
+ * final: cada uno a su pantalla de escaneo.
+ *
  * @var array $credencial @var string $documento @var array|null $jornada
  * @var array|null $yaTiene @var array $historial @var int $escaneosHoy
+ * @var array $acreditador
  */
 defined('EVENTOS_TIC') || exit;
 ?>
@@ -75,5 +81,8 @@ defined('EVENTOS_TIC') || exit;
     </form>
   <?php endif; ?>
 
-  <a class="btn btn--block" href="<?= e(u('/admin/escaner')) ?>">Escanear el siguiente</a>
+  <a class="btn btn--block"
+     href="<?= e(u($acreditador['tipo'] === 'staff' ? '/acreditar' : '/admin/escaner')) ?>">
+    Escanear el siguiente
+  </a>
 </div>

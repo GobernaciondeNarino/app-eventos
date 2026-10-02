@@ -131,6 +131,37 @@ $qrAcceso = $qrAcceso ?? '';
   <?php endif; ?>
 
   <?php if ($esAdministrador): ?>
+    <!-- El perfil de asistencia, y con él el acceso del Staff.
+         Solo aparece para el administrador porque «Staff» no es una etiqueta
+         del carnet: deja ver los carnets de todo el evento, con la cédula de
+         cada quien, y sellar ingresos. -->
+    <div class="card">
+      <div class="card__head"><span>Perfil de asistencia</span></div>
+      <div class="card__body stack stack--3">
+        <form class="row" method="post" action="<?= e(u('/admin/registros/perfil')) ?>"
+              data-ficha-accion style="flex-wrap:nowrap;gap:10px">
+          <?= testigo() ?>
+          <input type="hidden" name="persona" value="<?= e((string) $id) ?>">
+          <label class="sr-only" for="perfil-<?= e((string) $id) ?>">Perfil de asistencia</label>
+          <select class="select" id="perfil-<?= e((string) $id) ?>" name="rol" style="flex:1">
+            <?php foreach (\App\Modelos\Persona::ROLES as $unRol): ?>
+              <option value="<?= e($unRol) ?>" <?= (string) $persona['rol'] === $unRol ? 'selected' : '' ?>>
+                <?= e(etiquetaRol($unRol)) ?>
+              </option>
+            <?php endforeach; ?>
+          </select>
+          <button class="btn btn--sm btn--primary" type="submit">Cambiar</button>
+        </form>
+
+        <p class="help" style="margin:0">
+          <strong>Staff</strong> es el único que cambia algo más que el rótulo del carnet: quien
+          lo tenga entra con su propio acceso de asistente y puede <strong>ver e imprimir los
+          carnets del evento y acreditar ingresos</strong>. Los demás perfiles son solo
+          descriptivos. Cada cambio queda en la bitácora.
+        </p>
+      </div>
+    </div>
+
     <div class="card">
       <div class="card__head"><span>Cómo entra esta persona</span></div>
       <div class="card__body stack stack--4">

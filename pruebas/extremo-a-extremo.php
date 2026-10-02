@@ -634,6 +634,24 @@ foreach (['hoja_vida', 'hoja_vida_tipo', 'exposicion', 'exposicion_tipo'] as $si
 comprobar('se quitaron las columnas de los adjuntos',
     $pdo->query("SHOW COLUMNS FROM {$BD['prefijo']}propuesta LIKE 'hoja_vida'")->fetchAll() === []);
 
+// Y el otro camino del ajuste de tipo: a un ENUM le entra un valor nuevo. Es lo
+// que se encuentra una instalación anterior a la 1.6.0, donde «staff» todavía
+// no existía como perfil de asistencia.
+$pdo->exec("ALTER TABLE {$BD['prefijo']}persona MODIFY COLUMN rol
+            ENUM('participante','visitante','expositor','organizador','prensa')
+            NOT NULL DEFAULT 'participante'");
+$tipoDelRol = static fn(): string => (string) $pdo->query(
+    "SELECT COLUMN_TYPE FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{$BD['prefijo']}persona'
+        AND COLUMN_NAME = 'rol'"
+)->fetchColumn();
+comprobar('se quitó «staff» del enum para probar el ajuste',
+    !str_contains($tipoDelRol(), 'staff'));
+
+$pdo->exec("ALTER TABLE {$BD['prefijo']}asistencia DROP COLUMN operador_tipo");
+comprobar('y la columna que dice quién selló',
+    $pdo->query("SHOW COLUMNS FROM {$BD['prefijo']}asistencia LIKE 'operador_tipo'")->fetchAll() === []);
+
 // Y una columna se devuelve a como era antes —NOT NULL— para probar el otro
 // camino: el de las que ya existen pero cambiaron de tipo. Agregar lo que falta
 // no alcanza ahí, porque la columna está; hace falta un ALTER ... MODIFY. Es
@@ -671,6 +689,14 @@ $porOmision = (string) $pdo->query("SELECT COLUMN_DEFAULT FROM information_schem
                                        AND COLUMN_NAME = 'hoja_vida'")->fetchColumn();
 comprobar('vacías por omisión, para las propuestas que ya estaban',
     trim($porOmision, "'") === '', $porOmision);
+
+comprobar('y al enum de perfiles le entra «staff»',
+    str_contains($tipoDelRol(), "'staff'"), $tipoDelRol());
+comprobar('sin perder los perfiles que ya tenía',
+    str_contains($tipoDelRol(), "'expositor'") && str_contains($tipoDelRol(), "'prensa'"));
+comprobar('y vuelve la columna que dice quién selló cada ingreso',
+    count($pdo->query("SHOW COLUMNS FROM {$BD['prefijo']}asistencia
+                        LIKE 'operador_tipo'")->fetchAll()) === 1);
 comprobar('paso 3 de la reparación', str_contains($html, 'Cuenta administradora'));
 comprobar('no borró nada de lo que ya había',
     $anotaciones() >= $antesDeReparar, $anotaciones() . ' de ' . $antesDeReparar);
@@ -2310,6 +2336,243 @@ comprobar('y el tema publicado en la agenda no se mueve',
     (string) $deCarlos['titulo'] === 'Emprender TIC desde el Pacífico', (string) $deCarlos['titulo']);
 
 /* =========================================================================
+   El perfil Staff
+   -------------------------------------------------------------------------
+   Es el único perfil de asistencia que da permisos, así que lo que de verdad
+   se prueba aquí no es que funcione: es que no se lo pueda dar nadie a sí
+   mismo. El formulario de registro está abierto al público y manda el campo
+   «rol»; si ese campo aceptara «staff», cualquiera con el enlace podría ver
+   la cédula de todos los asistentes.
+   ========================================================================= */
+titulo('Perfil Staff');
+
+$html = (new Cliente($BASE))->get('/registro');
+comprobar('el formulario público no ofrece el perfil Staff',
+    !str_contains($html, 'value="staff"'));
+
+// Un envío a mano con rol=staff, sin pasar por la pantalla. El formulario
+// rechaza el envío entero en vez de guardarlo con otro perfil: así quien lo
+// intenta se entera, y no queda un registro con un perfil que no pidió.
+$colado = new Cliente($BASE);
+$colado->get('/registro');
+$datosColado = [
+    'correo' => 'colado@ajeno.example', 'nombre' => 'Quien Se Cuela Solo',
+    'tipo_documento' => 'CC', 'documento' => '98712345', 'habeas' => '1',
+];
+$html = $colado->subir('/registro', $datosColado + ['rol' => 'staff'], []);
+comprobar('un envío a mano con rol=staff se rechaza',
+    str_contains($html, 'Perfil no válido'), substr(strip_tags($html), 0, 140));
+comprobar('y no deja ningún registro',
+    (int) $pdo->query("SELECT COUNT(*) FROM {$BD['prefijo']}persona
+                        WHERE correo = 'colado@ajeno.example'")->fetchColumn() === 0);
+
+// Registrado como es debido, para comprobar la otra mitad: tener sesión de
+// asistente no abre ninguna de estas pantallas.
+$colado->get('/registro');
+$colado->subir('/registro', $datosColado + ['rol' => 'participante'], []);
+comprobar('registrado como participante sí entra',
+    (string) $pdo->query("SELECT rol FROM {$BD['prefijo']}persona
+                           WHERE correo = 'colado@ajeno.example'")->fetchColumn() === 'participante');
+
+$colado->get('/acreditar', false);
+comprobar('pero no entra a acreditar', $colado->codigo === 403, (string) $colado->codigo);
+$colado->get('/carnets', false);
+comprobar('ni a los carnets', $colado->codigo === 403, (string) $colado->codigo);
+
+// Y ya con sesión, tampoco puede subirse el perfil desde «mis datos».
+$colado->get('/registro');
+$colado->subir('/registro', $datosColado + ['rol' => 'staff'], []);
+comprobar('ni se lo puede poner después desde sus propios datos',
+    (string) $pdo->query("SELECT rol FROM {$BD['prefijo']}persona
+                           WHERE correo = 'colado@ajeno.example'")->fetchColumn() === 'participante');
+
+// Tampoco se puede ver la foto de otra persona desde una sesión cualquiera.
+$colado->get('/medios/foto/1', false);
+comprobar('ni a la foto de nadie', $colado->codigo === 404, (string) $colado->codigo);
+
+/* ---- El administrador sí lo asigna, desde la ficha ---- */
+$idStaff = (int) $pdo->query("SELECT id FROM {$BD['prefijo']}persona
+                               WHERE correo = 'cbolanos@tumaco.gov.co'")->fetchColumn();
+
+$html = $admin->get('/admin/registros/' . $idStaff);
+comprobar('la ficha ofrece cambiar el perfil de asistencia',
+    str_contains($html, '/admin/registros/perfil'));
+comprobar('con el perfil Staff entre las opciones', str_contains($html, 'value="staff"'));
+comprobar('y explica qué cambia ese perfil',
+    str_contains($html, 'acreditar ingresos'));
+
+$admin->post('/admin/registros/perfil', ['persona' => (string) $idStaff, 'rol' => 'staff']);
+comprobar('el administrador le pone el perfil Staff',
+    (string) $pdo->query("SELECT rol FROM {$BD['prefijo']}persona
+                           WHERE id = $idStaff")->fetchColumn() === 'staff');
+comprobar('y queda en la bitácora con el perfil anterior',
+    (int) $pdo->query("SELECT COUNT(*) FROM {$BD['prefijo']}bitacora
+                        WHERE accion = 'perfil_cambiado' AND entidad_id = $idStaff")->fetchColumn() === 1);
+
+$admin->post('/admin/registros/perfil', ['persona' => (string) $idStaff, 'rol' => 'inventado']);
+comprobar('un perfil que no existe se rechaza',
+    (string) $pdo->query("SELECT rol FROM {$BD['prefijo']}persona
+                           WHERE id = $idStaff")->fetchColumn() === 'staff');
+
+// Un registro a medias no puede ser staff: el guardia de asistente lo mandaría
+// a terminar el formulario y se quedaría con el perfil puesto y sin usarlo.
+$idAMedias = (int) $pdo->query("SELECT id FROM {$BD['prefijo']}persona
+                                 WHERE documento_huella IS NULL LIMIT 1")->fetchColumn();
+if ($idAMedias > 0) {
+    $html = $admin->post('/admin/registros/perfil', ['persona' => (string) $idAMedias, 'rol' => 'staff']);
+    comprobar('un registro sin completar no puede ser staff',
+        (string) $pdo->query("SELECT rol FROM {$BD['prefijo']}persona
+                               WHERE id = $idAMedias")->fetchColumn() !== 'staff');
+}
+
+/* ---- El staff entra con su propio acceso de asistente ---- */
+$tokenStaff = (string) $pdo->query("SELECT acceso_token FROM {$BD['prefijo']}persona
+                                     WHERE id = $idStaff")->fetchColumn();
+$puerta = new Cliente($BASE);
+$puerta->get('/entrar/qr/' . $tokenStaff);
+
+$html = $puerta->get('/acreditar');
+comprobar('el staff entra a acreditar', $puerta->codigo === 200, (string) $puerta->codigo);
+comprobar('la pantalla lo rotula como staff y no como administrador',
+    str_contains($html, 'Staff') && !str_contains($html, 'Operador en turno'));
+comprobar('y su buscador apunta a su propia dirección',
+    str_contains($html, '/acreditar/buscar'));
+
+$html = $puerta->get('/carnets');
+comprobar('y a los carnets del evento', $puerta->codigo === 200, (string) $puerta->codigo);
+comprobar('que trae a los demás asistentes', str_contains($html, 'María Fernanda Zambrano'));
+
+// Su navegación: lo suyo arriba, el trabajo del evento aparte. Y nada de
+// administración, que es de la otra sesión.
+comprobar('tiene su grupo de navegación propio', str_contains($html, 'Staff del evento'));
+comprobar('y no ve el panel de administración',
+    !str_contains($html, '/admin/organizadores') && !str_contains($html, '/admin/eventos'));
+
+// La foto de otra persona sí, porque imprime los carnets.
+$puerta->get('/medios/foto/' . (int) $pdo->query("SELECT id FROM {$BD['prefijo']}persona
+                                                   WHERE foto <> '' LIMIT 1")->fetchColumn(), false);
+comprobar('el staff sí puede ver una foto ajena, porque imprime el carnet',
+    in_array($puerta->codigo, [200, 404], true), (string) $puerta->codigo);
+
+/* ---- Sellar un ingreso, y que quede a su nombre ---- */
+// El bloque de eventos movió el evento una semana, así que hoy no hay jornada y
+// sin jornada no se sella nada. Se acerca una al día de hoy —que es la
+// situación de un evento en curso, justo cuando el staff trabaja— y al terminar
+// se devuelve a donde estaba, para no alterar lo que viene después.
+$jornadaDeHoy = $pdo->query("SELECT id, fecha FROM {$BD['prefijo']}evento_dia
+                              WHERE evento_id = $idEvento ORDER BY numero LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+$fechaOriginal = (string) $jornadaDeHoy['fecha'];
+$pdo->exec("UPDATE {$BD['prefijo']}evento_dia SET fecha = '" . date('Y-m-d') . "'
+             WHERE id = " . (int) $jornadaDeHoy['id']);
+
+$conCarnet = $pdo->query("SELECT p.id, c.token FROM {$BD['prefijo']}persona p
+                            JOIN {$BD['prefijo']}credencial c ON c.persona_id = p.id
+                           WHERE p.id <> $idStaff AND p.documento_huella IS NOT NULL
+                           LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+$idSellado = (int) ($conCarnet['id'] ?? 0);
+$pdo->exec("DELETE FROM {$BD['prefijo']}asistencia WHERE persona_id = $idSellado");
+
+$html = $puerta->get('/c/' . $conCarnet['token']);
+comprobar('al escanear un carnet, el staff ve la ficha de acreditación',
+    str_contains($html, 'Carnet reconocido'), substr(strip_tags($html), 0, 120));
+comprobar('y no la pantalla de intercambiar contacto',
+    !str_contains($html, 'Intercambiar contacto'));
+
+$puerta->post('/c/' . $conCarnet['token'] . '/asistencia', []);
+$sello = $pdo->query("SELECT operador_id, operador_tipo FROM {$BD['prefijo']}asistencia
+                       WHERE persona_id = $idSellado ORDER BY id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+comprobar('el staff sella el ingreso', is_array($sello));
+comprobar('y el sello queda a su nombre, no al de un usuario del equipo',
+    (int) ($sello['operador_id'] ?? 0) === $idStaff
+    && (string) ($sello['operador_tipo'] ?? '') === 'staff',
+    json_encode($sello));
+
+// Sus escaneos se cuentan aparte de los del equipo: el usuario 7 y el staff 7
+// son dos personas distintas en la misma columna.
+$html = $puerta->get('/acreditar');
+comprobar('sus escaneos se cuentan aparte de los del equipo',
+    str_contains($html, '1 escaneos hoy'), substr(strip_tags($html), 0, 0) ?: '');
+
+$pdo->exec("UPDATE {$BD['prefijo']}evento_dia SET fecha = '" . $fechaOriginal . "'
+             WHERE id = " . (int) $jornadaDeHoy['id']);
+
+/* ---- Un staff editando sus datos no se queda sin perfil ---- */
+$puerta->get('/registro');
+$puerta->subir('/registro', [
+    'nombre' => 'Carlos Andrés Bolaños', 'tipo_documento' => 'CC', 'documento' => '12994510',
+    'telefono' => '+57 315 908 3344', 'entidad' => 'Alcaldía de Tumaco',
+    'rol' => 'participante',
+], []);
+comprobar('un staff que corrige sus datos conserva su perfil',
+    (string) $pdo->query("SELECT rol FROM {$BD['prefijo']}persona
+                           WHERE id = $idStaff")->fetchColumn() === 'staff');
+
+/* =========================================================================
+   Los carnets del evento
+   ========================================================================= */
+titulo('Carnets del evento');
+
+$html = $admin->get('/carnets');
+comprobar('el equipo también ve la lista', $admin->codigo === 200, (string) $admin->codigo);
+comprobar('con el botón de imprimir la tanda', str_contains($html, '/carnets/imprimir'));
+
+// Los registros a medias no se imprimen: un carnet sin nombre ni documento es
+// una cartulina en blanco que nadie ve hasta que la reparte.
+$aMedias = (int) $pdo->query("SELECT COUNT(*) FROM {$BD['prefijo']}persona
+                               WHERE documento_huella IS NULL")->fetchColumn();
+if ($aMedias > 0) {
+    comprobar('y avisa de los registros sin carnet',
+        str_contains($html, 'sin carnet'), 'con ' . $aMedias . ' a medias');
+}
+
+$html = $admin->get('/carnets/imprimir');
+$cuantas = substr_count($html, 'class="carnet-uno"');
+comprobar('la impresión trae una tarjeta por persona', $cuantas > 1, (string) $cuantas);
+comprobar('cada una con su código QR', substr_count($html, '<svg') >= $cuantas);
+comprobar('en una sola cara: no hay reverso que aparear',
+    !str_contains($html, 'carnet__face--back'));
+comprobar('y dice cuántas son', str_contains($html, (string) $cuantas . ' carnet'));
+
+// El filtro es lo que de verdad se usa: «los expositores», «los de tal entidad».
+$html = $admin->get('/carnets/imprimir?rol=staff');
+comprobar('el filtro por perfil llega hasta la impresión',
+    substr_count($html, 'class="carnet-uno"') === 1,
+    (string) substr_count($html, 'class="carnet-uno"'));
+
+/* =========================================================================
+   Acreditar por número de identificación
+   -------------------------------------------------------------------------
+   La pantalla ofrecía buscar por documento desde el principio y nunca
+   funcionó: el número está cifrado, así que un LIKE sobre él no encuentra
+   nada. Se compara la huella HMAC, que es exacta.
+   ========================================================================= */
+titulo('Buscar por identificación');
+
+$html = $admin->post('/admin/escaner/buscar', ['q' => '1085234567']);
+comprobar('el número de identificación completo encuentra a su dueña',
+    str_contains($html, 'María Fernanda Zambrano'), substr(strip_tags($html), 0, 140));
+
+$html = $admin->post('/admin/escaner/buscar', ['q' => '1.085.234.567']);
+comprobar('con puntos también, que es como está impreso en la cédula',
+    str_contains($html, 'María Fernanda Zambrano'));
+
+// Los últimos dígitos no sirven, y la pantalla lo dice: buscar por una parte
+// exigiría descifrar la tabla entera en cada búsqueda.
+$html = $admin->post('/admin/escaner/buscar', ['q' => '234567']);
+comprobar('una parte del número no encuentra a nadie',
+    !str_contains($html, 'María Fernanda Zambrano'));
+comprobar('y la pantalla avisa de que hay que escribirlo completo',
+    str_contains($html, 'escribirlo completo'));
+
+$html = $admin->post('/admin/escaner/buscar', ['q' => 'Zambrano']);
+comprobar('por nombre sigue funcionando con una parte',
+    str_contains($html, 'María Fernanda Zambrano'));
+
+$html = $puerta->post('/acreditar/buscar', ['q' => '1085234567']);
+comprobar('el staff busca por identificación desde su propia pantalla',
+    str_contains($html, 'María Fernanda Zambrano'), substr(strip_tags($html), 0, 140));
+
+/* =========================================================================
    10 · Cierre de sesión
    ========================================================================= */
 titulo('Cierre de sesión');
@@ -2441,6 +2704,15 @@ $tokenDeMaria = (string) ($pdo->query(
 )->fetchColumn() ?: '');
 if ($tokenDeMaria !== '') {
     file_put_contents($carpetaSalidas . '/token-asistente.txt', $tokenDeMaria);
+}
+
+// Y el de alguien con perfil Staff, que la prueba de navegador necesita para
+// entrar a las pantallas de la puerta sin ser del equipo organizador.
+$tokenDelStaff = (string) ($pdo->query(
+    "SELECT acceso_token FROM {$BD['prefijo']}persona WHERE rol = 'staff' LIMIT 1"
+)->fetchColumn() ?: '');
+if ($tokenDelStaff !== '') {
+    file_put_contents($carpetaSalidas . '/token-staff.txt', $tokenDelStaff);
 }
 
 /* =========================================================================

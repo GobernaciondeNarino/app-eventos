@@ -1,18 +1,27 @@
 <?php
 /**
- * Escáner del operador.
+ * La pantalla de la puerta.
+ *
+ * La misma para el equipo organizador y para el Staff. Quién la abre solo
+ * cambia dos cosas: el rótulo de quién está en turno y a dónde apunta el
+ * formulario de búsqueda, que es distinto para cada uno.
+ *
  * @var array $jornadas @var array|null $jornadaHoy @var int $escaneosHoy
+ * @var array|null $acreditador
  * @var string|null $busqueda @var array|null $encontradas
  */
 defined('EVENTOS_TIC') || exit;
 
 guiones('qr-lector.js', 'escaner.js');
+
+$esStaff = ($acreditador['tipo'] ?? 'equipo') === 'staff';
+$rutaBuscar = $esStaff ? '/acreditar/buscar' : '/admin/escaner/buscar';
 ?>
 <div class="view view--medium split" style="align-items:start">
 
   <div class="stack stack--4">
     <span class="kicker">
-      Administrador<?= $jornadaHoy ? ' · Día ' . e((string) $jornadaHoy['numero']) : '' ?>
+      <?= $esStaff ? 'Staff' : 'Administrador' ?><?= $jornadaHoy ? ' · Día ' . e((string) $jornadaHoy['numero']) : '' ?>
     </span>
     <h1 class="hero-title">Escanear el carnet<br><em>del asistente</em></h1>
     <p class="lead">
@@ -21,10 +30,13 @@ guiones('qr-lector.js', 'escaner.js');
     </p>
 
     <div class="card">
-      <div class="card__head"><span>Operador en turno</span></div>
+      <div class="card__head"><span>Quién está en turno</span></div>
       <div class="card__body row row--between">
         <span style="font-size:14px;color:var(--c-title)">
-          <?= e($usuario['nombre']) ?><?= $usuario['puesto'] !== '' ? ' · ' . e($usuario['puesto']) : '' ?>
+          <?= e((string) ($acreditador['nombre'] ?? '—')) ?><?php
+            $puesto = (string) ($acreditador['puesto'] ?? '');
+            echo $puesto !== '' ? ' · ' . e($puesto) : '';
+          ?>
         </span>
         <span class="tag"><?= e(numero($escaneosHoy)) ?> escaneos hoy</span>
       </div>
@@ -41,15 +53,20 @@ guiones('qr-lector.js', 'escaner.js');
     <?php endif; ?>
 
     <!-- Búsqueda manual: la salida cuando el carnet no se puede leer -->
-    <form class="card" method="post" action="<?= e(u('/admin/escaner/buscar')) ?>">
+    <form class="card" method="post" action="<?= e(u($rutaBuscar)) ?>">
       <?= testigo() ?>
       <div class="card__head"><span>Buscar a mano</span></div>
       <div class="card__body stack stack--3">
-        <p class="help">Cuando el teléfono se quedó sin batería o el código está rayado.</p>
+        <p class="help">
+          Cuando el teléfono se quedó sin batería, el código está rayado o la persona llegó
+          sin nada. Por <strong>número de identificación</strong> hay que escribirlo completo:
+          está cifrado en la base y solo se puede comparar exacto. Por nombre, correo o
+          entidad basta con una parte.
+        </p>
         <div class="row" style="flex-wrap:nowrap">
-          <label class="sr-only" for="q">Nombre, documento o correo</label>
+          <label class="sr-only" for="q">Identificación, nombre o correo</label>
           <input class="input" id="q" name="q" value="<?= e((string) ($busqueda ?? '')) ?>"
-                 placeholder="Nombre, documento o correo" style="flex:1">
+                 placeholder="Identificación, nombre o correo" style="flex:1">
           <button class="btn btn--sm btn--primary" type="submit">Buscar</button>
         </div>
 

@@ -84,6 +84,18 @@ hay que regenerarlos.
 
 ### El asistente
 
+### Quién entra a qué
+
+| Quién | Entra con | Ve |
+|---|---|---|
+| Asistente | Su correo, su contraseña o su QR | Su carnet, su ingreso, sus contactos, la agenda |
+| **Staff** | Lo mismo: es un asistente con ese perfil | Además: acreditar en la puerta e imprimir los carnets del evento |
+| Equipo organizador | Cuenta propia, con contraseña y segundo factor | El panel, según su rol: consulta, operador o administrador |
+
+El perfil **Staff** lo asigna un administrador desde la ficha de la persona, y es el único de
+los perfiles de asistencia que da permisos. Para los voluntarios de la puerta, a los que no se
+les va a crear una cuenta del equipo.
+
 Hay dos puertas, y las dos llevan al mismo sitio:
 
 - **El formulario completo** (`/registro`, siempre abierto al público) — nombre y documento;
@@ -129,8 +141,9 @@ proceso, y no ofrece la opción que borra tablas.
 | Pantalla | Para qué |
 |---|---|
 | Panel | Indicadores, ingresos por jornada, cobertura territorial, pendientes |
-| Escanear carnet | Acreditar a alguien cuyo código de puerta falló; incluye búsqueda manual |
-| Registros | Listado con filtros y exportación a CSV |
+| Escanear carnet | Acreditar a alguien cuyo código de puerta falló; búsqueda a mano por identificación, nombre o correo |
+| Registros | Listado con filtros y exportación a CSV; desde la ficha se asigna el perfil **Staff** |
+| Carnets | Todos los del evento, para imprimirlos en tanda: una cara por persona, con el QR |
 | QR por día | Un código por jornada, imprimible a página completa y regenerable |
 | Expositores | Hoja de revisión por propuesta: los datos completos de quien la presenta, sus dos documentos para bajar, y aprobar, devolver o rechazar |
 | Organizadores | Equipo, roles y estado del segundo factor |
@@ -300,12 +313,12 @@ el enrutado, las cookies, los testigos y los guardias, que es donde suelen estar
 Incluye 19 comprobaciones en el bloque específico de seguridad y otras tantas repartidas por
 los guardias de cada pantalla.
 
-Estado actual: **401 de 401** de extremo a extremo, **77** del asistente de instalación,
+Estado actual: **448 de 448** de extremo a extremo, **77** del asistente de instalación,
 **28** del segundo factor contra los vectores del RFC 6238, **22** del hash de contraseñas,
 **19** del correo saliente, **19** de la dirección del visitante detrás del proxy, **21** de la
 fotografía del carnet, **61** de los adjuntos del expositor, **17** del saneado de logos SVG,
 **198** casos de QR idénticos entre PHP y JavaScript, **161** entre JavaScript y la referencia,
-**13** del lector de QR, **68** de interacción en navegador, y las 16 pantallas limpias en
+**13** del lector de QR, **81** de interacción en navegador, y las 16 pantallas limpias en
 escritorio, tableta y móvil.
 
 Las pruebas nacieron de errores reales, y por eso cubren lo que cubren: una instalación que se

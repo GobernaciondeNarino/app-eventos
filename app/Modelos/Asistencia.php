@@ -24,8 +24,18 @@ final class Asistencia
      *
      * @return array{sellada: bool, repetida: bool, cuando: string}
      */
-    public static function sellar(int $personaId, array $jornada, string $via, ?int $operadorId = null): array
-    {
+    /**
+     * $operadorTipo dice en qué tabla vive $operadorId: «equipo» es un usuario
+     * del backoffice, «staff» es una persona con ese perfil. Sin eso, el
+     * usuario 7 y el staff 7 serían el mismo número en la misma columna.
+     */
+    public static function sellar(
+        int $personaId,
+        array $jornada,
+        string $via,
+        ?int $operadorId = null,
+        string $operadorTipo = 'equipo'
+    ): array {
         $ip = @inet_pton(App::peticion()->ip()) ?: null;
 
         try {
@@ -34,6 +44,7 @@ final class Asistencia
                 'evento_dia_id' => (int) $jornada['id'],
                 'via'           => in_array($via, ['qr_dia', 'carnet_operador', 'manual'], true) ? $via : 'qr_dia',
                 'operador_id'   => $operadorId,
+                'operador_tipo' => $operadorTipo === 'staff' ? 'staff' : 'equipo',
                 'ip'            => $ip,
             ]);
 
@@ -41,7 +52,7 @@ final class Asistencia
                 $via === 'qr_dia' ? 'checkin_propio' : 'asistencia_sellada',
                 'persona',
                 $personaId,
-                ['dia' => $jornada['numero'], 'via' => $via]
+                ['dia' => $jornada['numero'], 'via' => $via, 'selló' => $operadorTipo]
             );
 
             return ['sellada' => true, 'repetida' => false, 'cuando' => date('Y-m-d H:i:s')];
@@ -94,12 +105,12 @@ final class Asistencia
     }
 
     /** Escaneos que lleva hoy un operador, para su pantalla. */
-    public static function escaneosDeHoy(int $operadorId): int
+    public static function escaneosDeHoy(int $operadorId, string $operadorTipo = 'equipo'): int
     {
         return (int) Bd::valor(
             'SELECT COUNT(*) FROM {asistencia}
-              WHERE operador_id = ? AND DATE(registrado_en) = CURDATE()',
-            [$operadorId]
+              WHERE operador_id = ? AND operador_tipo = ? AND DATE(registrado_en) = CURDATE()',
+            [$operadorId, $operadorTipo === 'staff' ? 'staff' : 'equipo']
         );
     }
 }

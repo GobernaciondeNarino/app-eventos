@@ -24,7 +24,7 @@ escribió para eso.
 | Auditoría | Bitácora de solo inserción |
 | Cabeceras y exposición de archivos | En `.htaccess` y también desde PHP |
 
-Lo verifica `pruebas/extremo-a-extremo.php`: 401 comprobaciones sobre un servidor real, 19 de
+Lo verifica `pruebas/extremo-a-extremo.php`: 448 comprobaciones sobre un servidor real, 19 de
 ellas en el bloque específico de seguridad y otras tantas repartidas por los guardias de cada
 pantalla, más las suites de correo, segundo factor, saneado de SVG, fotografía, adjuntos del
 expositor y detección de proxy.
@@ -441,6 +441,67 @@ equipo de un funcionario.
 La exportación con caracterización exige rol administrador —comprobado en el servidor, no
 solo escondiendo el botón— y queda en la bitácora.
 
+### El perfil Staff: el único que da permisos
+
+Desde la 3.4, una persona registrada puede tener el perfil **Staff**. No es una etiqueta más
+del carnet: quien lo tenga entra con su propio acceso de asistente y puede ver e imprimir los
+carnets del evento —con la cédula y la foto de cada quien— y sellar ingresos.
+
+Eso convierte un campo del formulario público en un campo de permisos, y ahí está el riesgo:
+`/registro` está abierto al público y envía `rol`. Las barreras, en orden:
+
+1. **El formulario no lo ofrece.** La lista sale de `Persona::ROLES_PUBLICOS`, que es la misma
+   contra la que valida el servidor: escritas por separado, una y otra podían separarse.
+2. **El servidor lo rechaza.** `Publico::validarRegistro()` valida contra `ROLES_PUBLICOS` y no
+   contra `ROLES`. Esconder la opción no sirve de nada por sí solo: un envío hecho a mano no
+   pasa por ninguna pantalla. El envío se rechaza entero, con el motivo a la vista, en vez de
+   guardarse con otro perfil.
+3. **Y el modelo tampoco lo escribe.** `Persona::rolAdmitido()` descarta cualquier perfil que
+   no sea público. Es la red por si alguien añade mañana otro camino que llame a `registrar()`.
+4. **Solo lo pone un administrador**, desde la ficha de la persona
+   (`POST /admin/registros/perfil`, guardia `admin:administrador`), y el cambio queda en la
+   bitácora con el perfil anterior y el nuevo.
+
+La misma función cierra el lado contrario, que es menos obvio: un perfil que solo pone un
+administrador **tampoco se pierde** desde el formulario. Sin eso, a alguien del staff le
+bastaba con abrir «mis datos» y guardar para quedarse sin su perfil, porque el selector no
+tiene su opción y el navegador manda la primera de la lista. Por eso, además, a quien tiene uno
+de esos perfiles se le enseña su etiqueta en vez de un selector.
+
+No se le puede poner a un registro a medias: entrar a acreditar exige sesión de asistente, y el
+guardia manda a esa persona a terminar el formulario. Quedaría con el perfil puesto y sin poder
+usarlo.
+
+### El guardia «acreditar»
+
+Las pantallas de la puerta —ver los carnets, imprimirlos, sellar ingresos— las pasan dos
+sesiones distintas: el equipo con rol operador y el Staff. El guardia lo resuelve así:
+
+- **Con sesión del equipo** se aplica el guardia del equipo completo, no una comprobación de
+  rol a secas. Ahí viven el segundo factor pendiente, la contraseña que puso otra persona y la
+  cuenta suspendida, y cada uno sabe a qué pantalla mandar a quien llega.
+- **Con sesión de asistente** se exige el perfil Staff y el registro completo.
+- **Sin ninguna** se manda al acceso del asistente, que es por donde entra la mayoría.
+
+Al armarlo apareció un hueco que ya existía: `Guardia::equipoOperativo()` —la que usan las
+rutas que no llevan guardia, como escanear un carnet— no miraba `debe_cambiar`. Una cuenta con
+la contraseña puesta por otra persona podía acreditar escaneando, aunque el panel se lo
+negara. Ahora lo mira.
+
+`Asistencia` guarda **quién** selló y **de qué tabla** sale ese número (`operador_tipo`): sin
+eso, el usuario 7 del equipo y el staff 7 serían el mismo número en la misma columna, y los
+reportes de quién acreditó a quién no significarían nada.
+
+### Buscar por número de identificación
+
+La pantalla de la puerta ofrecía desde el principio buscar por documento, y nunca funcionó: el
+número se guarda cifrado, así que un `LIKE` sobre él no encuentra nada. Desde la 3.4 se compara
+la **huella HMAC**, que es exacta: o se escribe el documento completo, o no aparece.
+
+Buscar por los últimos dígitos exigiría descifrar la tabla entera en cada búsqueda, que es
+justamente lo que el cifrado evita. La pantalla lo dice con esas palabras en vez de dejar que
+alguien lo intente y crea que la persona no está registrada.
+
 ### Eliminar un evento borra datos personales de verdad
 
 Desde la 3.2 un administrador puede eliminar un evento entero. Se lleva en cascada las
@@ -674,7 +735,7 @@ conviene decirlo con claridad en la pantalla de privacidad.
 ## 6. Verificación
 
 ```bash
-php pruebas/extremo-a-extremo.php      # 401 comprobaciones sobre un servidor real
+php pruebas/extremo-a-extremo.php      # 448 comprobaciones sobre un servidor real
 php pruebas/instalacion.php            # el asistente, y qué se ve cuando falla
 php pruebas/claves.php                 # parámetros de Argon2id y rehash
 php pruebas/smtp.php                   # el cliente SMTP contra un servidor real

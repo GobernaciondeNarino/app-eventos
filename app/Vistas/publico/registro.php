@@ -6,7 +6,7 @@
  * @var array $municipios @var array $categorias @var array $jornadas @var bool $yaRegistrado
  * @var bool $completo @var bool $pideClave @var int $claveMinima
  * @var bool $tieneClave @var string $foto @var array $documentos @var bool $agendada
- * @var bool $reelegir
+ * @var bool $reelegir @var string $perfilFijo
  */
 defined('EVENTOS_TIC') || exit;
 
@@ -129,11 +129,39 @@ guiones('foto.js', 'preregistro.js');
         </div>
         <div class="field">
           <label class="label" for="rol">Perfil de asistencia</label>
-          <select class="select" id="rol" name="rol">
-            <?php foreach (['participante', 'visitante', 'expositor', 'prensa'] as $rol): ?>
-              <option value="<?= e($rol) ?>" <?= $v('rol', 'participante') === $rol ? 'selected' : '' ?>><?= e(etiquetaRol($rol)) ?></option>
-            <?php endforeach; ?>
-          </select>
+          <?php
+          // Hay perfiles que solo pone un administrador —«Staff»,
+          // «Organizador»—. A quien tenga uno no se le puede enseñar una lista
+          // que no lo contiene: el navegador mandaría la primera opción y, de
+          // guardar sus datos, se quedaría sin su perfil. Se le dice cuál tiene
+          // y no se le ofrece cambiarlo; el servidor lo conserva igual.
+          //
+          // $perfilFijo sale de lo guardado y no de $valores: con lo enviado,
+          // a cualquiera que mandara «rol=staff» a mano se le pintaba esta
+          // etiqueta como si ya lo fuera.
+          $suyo = $v('rol', 'participante');
+          ?>
+          <?php if ($perfilFijo !== ''): ?>
+            <div class="row" style="gap:10px;min-height:42px;align-items:center">
+              <span class="tag <?= e(claseRol($perfilFijo)) ?>"><?= e(etiquetaRol($perfilFijo)) ?></span>
+            </div>
+            <span class="help">
+              Te lo asignó la organización del evento, así que no se cambia desde aquí.
+            </span>
+          <?php else: ?>
+            <!-- La lista sale de ROLES_PUBLICOS, que es contra la que valida el
+                 servidor: escrita a mano aquí, una y otra podían separarse. -->
+            <select class="select" id="rol" name="rol">
+              <?php foreach (\App\Modelos\Persona::ROLES_PUBLICOS as $rol): ?>
+                <option value="<?= e($rol) ?>" <?= $suyo === $rol ? 'selected' : '' ?>><?= e(etiquetaRol($rol)) ?></option>
+              <?php endforeach; ?>
+            </select>
+            <?php /* El error del perfil se pintaba en ninguna parte: un envío
+                     con un valor que no está en la lista rebotaba sin decir por
+                     qué, y eso es exactamente lo que pasa al intentar colarse
+                     como «staff». Vale más decirlo que dejar el formulario mudo. */ ?>
+            <?php if ($err('rol')): ?><span class="error"><?= e($err('rol')) ?></span><?php endif; ?>
+          <?php endif; ?>
         </div>
       </div>
 

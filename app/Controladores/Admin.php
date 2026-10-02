@@ -145,51 +145,6 @@ final class Admin
        Escáner del operador
        ===================================================================== */
 
-    public function escaner(Peticion $peticion): void
-    {
-        $usuario = Guardia::usuarioActual();
-        $evento = App::eventoExigido();
-
-        Respuesta::vista('admin/escaner', [
-            'titulo'      => 'Escanear carnet',
-            'pantalla'    => 'admin-escaner',
-            'jornadas'    => Evento::jornadas((int) $evento['id']),
-            'jornadaHoy'  => Evento::jornadaDeHoy((int) $evento['id']),
-            'escaneosHoy' => Asistencia::escaneosDeHoy((int) $usuario['id']),
-        ]);
-    }
-
-    /**
-     * Búsqueda manual, para cuando el carnet no se puede leer.
-     *
-     * Es la salida cuando alguien perdió el teléfono o el código está rayado.
-     * Devuelve pocos resultados y queda registrada: es una consulta de datos
-     * personales hecha a mano.
-     */
-    public function buscarPersona(Peticion $peticion): void
-    {
-        $evento = App::eventoExigido();
-        $texto = $peticion->campo('q');
-
-        if (mb_strlen($texto) < 3) {
-            Respuesta::redirigir('/admin/escaner', 'Escribe al menos tres caracteres para buscar.', 'warn');
-        }
-
-        $encontradas = Persona::buscar((int) $evento['id'], ['texto' => $texto, 'limite' => 10]);
-        Bitacora::registrar('busqueda_manual', 'persona', null, ['resultados' => count($encontradas)]);
-
-        $usuario = Guardia::usuarioActual();
-        Respuesta::vista('admin/escaner', [
-            'titulo'      => 'Escanear carnet',
-            'pantalla'    => 'admin-escaner',
-            'jornadas'    => Evento::jornadas((int) $evento['id']),
-            'jornadaHoy'  => Evento::jornadaDeHoy((int) $evento['id']),
-            'escaneosHoy' => Asistencia::escaneosDeHoy((int) $usuario['id']),
-            'busqueda'    => $texto,
-            'encontradas' => $encontradas,
-        ]);
-    }
-
     /* =====================================================================
        Registros
        ===================================================================== */
@@ -348,6 +303,59 @@ final class Admin
         Bitacora::registrar('qr_acceso_regenerado', 'persona', $id);
 
         $this->ficha($peticion, ['persona' => $id, 'conQr' => true]);
+    }
+
+    /**
+     * Cambia el perfil de asistencia de una persona.
+     *
+     * Es la única puerta por la que se pone el perfil **Staff**, y por eso la
+     * ruta exige administrador: ese perfil deja ver los carnets de todo el
+     * evento —con la cédula de cada quien— y sellar ingresos. El formulario
+     * público no lo admite ni enviándolo a mano.
+     *
+     * El cambio queda en la bitácora con el perfil anterior y el nuevo: es un
+     * cambio de permisos, y hay que poder responder quién lo hizo y cuándo.
+     */
+    public function cambiarPerfil(Peticion $peticion): void
+    {
+        $evento = App::eventoExigido();
+        $id = $peticion->entero('persona');
+        $persona = Persona::porId($id);
+
+        if (!$persona || (int) $persona['evento_id'] !== (int) $evento['id']) {
+            Respuesta::redirigir('/admin/registros', 'Esa persona no existe en este evento.', 'warn');
+        }
+
+        $nuevo = $peticion->campo('rol');
+        if (!in_array($nuevo, Persona::ROLES, true)) {
+            Respuesta::redirigir('/admin/registros/' . $id, 'Ese perfil no existe.', 'warn');
+        }
+
+        $anterior = (string) $persona['rol'];
+        if ($nuevo === $anterior) {
+            Respuesta::redirigir('/admin/registros/' . $id, 'El perfil ya era ese.');
+        }
+
+        // Un registro sin completar no puede ser staff: entrar a acreditar
+        // exige sesión de asistente, y el guardia la manda a terminar el
+        // formulario. Quedaría con el perfil puesto y sin poder usarlo.
+        if ($nuevo === 'staff' && !Persona::registroCompleto($persona)) {
+            Respuesta::redirigir('/admin/registros/' . $id,
+                'Esa persona todavía no ha completado su registro, así que no podría entrar '
+                . 'a acreditar. Pídele que llene su nombre y su identificación.', 'warn');
+        }
+
+        Bd::actualizar('persona', ['rol' => $nuevo], 'id = :id', ['id' => $id]);
+        Bitacora::registrar('perfil_cambiado', 'persona', $id, [
+            'de' => $anterior,
+            'a'  => $nuevo,
+        ]);
+
+        Respuesta::redirigir('/admin/registros/' . $id,
+            $nuevo === 'staff'
+                ? etiquetaRol($nuevo) . ': ' . $persona['nombre'] . ' ya puede entrar a ver los '
+                  . 'carnets y a acreditar con su propio acceso de asistente.'
+                : 'Perfil cambiado a ' . etiquetaRol($nuevo) . '.');
     }
 
     /**

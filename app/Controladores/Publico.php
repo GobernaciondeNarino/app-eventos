@@ -222,6 +222,13 @@ final class Publico
             'documentos'    => $suPropuesta['documentos'],
             'agendada'      => $suPropuesta['aprobada'],
             'reelegir'      => $reelegir,
+            // El perfil que solo pone un administrador, si esta persona tiene
+            // uno. Sale de lo guardado y nunca de lo enviado: con lo enviado,
+            // a cualquiera que mandara «rol=staff» a mano se le pintaba la
+            // etiqueta de Staff como si ya lo fuera.
+            'perfilFijo'    => $yo !== null
+                && !in_array((string) $yo['rol'], Persona::ROLES_PUBLICOS, true)
+                ? (string) $yo['rol'] : '',
         ]);
     }
 
@@ -350,7 +357,12 @@ final class Publico
         if (!in_array($v['tipo_documento'], array_keys(Datos::TIPOS_DOCUMENTO), true)) {
             $errores['tipo_documento'] = 'Tipo de documento no válido.';
         }
-        if (!in_array($v['rol'], Persona::ROLES, true)) {
+        // Contra ROLES_PUBLICOS y no contra ROLES: «staff» da acceso a la
+        // plataforma y solo lo pone un administrador. Quitar la opción de la
+        // pantalla no sirve de nada por sí solo —un envío hecho a mano no pasa
+        // por ninguna pantalla—, así que la barrera está aquí y, por si alguien
+        // añade otra entrada mañana, también en Persona::rolAdmitido().
+        if (!in_array($v['rol'], Persona::ROLES_PUBLICOS, true)) {
             $errores['rol'] = 'Perfil no válido.';
         }
         if ($v['departamento'] !== '' && !in_array($v['departamento'], Datos::departamentos(), true)) {

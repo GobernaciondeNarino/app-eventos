@@ -1,10 +1,12 @@
-# Administrar eventos y jornadas
+# Administrar el evento
 
-Qué se puede cambiar de un evento una vez creado, qué se lleva por delante cada operación y
-qué no tiene vuelta atrás.
+Qué se puede cambiar una vez creado, quién puede tocar qué, y qué no tiene vuelta atrás:
+eventos y jornadas, las propuestas de los expositores, el perfil Staff, la impresión de
+carnets y la acreditación en la puerta.
 
-Todo lo de aquí está en **Administración → Eventos**, **Administración → QR por día** y
-**Administración → Expositores**, y exige el rol **administrador**.
+Todo lo de aquí está en **Administración → Eventos**, **QR por día**, **Expositores** y
+**Registros**, y exige el rol **administrador** salvo donde se diga otra cosa. Las dos
+secciones del final —imprimir carnets y acreditar— las comparten el equipo y el Staff.
 
 ---
 
@@ -242,7 +244,101 @@ el archivo anterior se queda intacto y el resto del registro sí se graba.
 
 ---
 
-## 5. Antes de abrir al público
+## 5. El perfil Staff
+
+En **Administración → Registros**, abriendo la ficha de la persona. Exige rol administrador.
+
+### 5.1 Qué es
+
+Es el único perfil de asistencia que cambia algo más que el rótulo del carnet. Quien lo tenga
+entra **con su propio acceso de asistente** —el mismo correo y contraseña, o su QR— y además de
+sus pantallas ve dos más:
+
+- **Acreditar**, la pantalla de la puerta: lector de QR y búsqueda a mano.
+- **Carnets**, la lista de todos los del evento, para consultarla e imprimirla.
+
+Es para los voluntarios y el personal de apoyo: gente que trabaja en el evento pero a la que no
+se le va a crear una cuenta del equipo organizador con contraseña y segundo factor.
+
+Lo que **no** ve: el panel, los registros con su caracterización, las propuestas, los eventos,
+la identidad ni la configuración. Nada de administración.
+
+### 5.2 Cómo se pone
+
+Abre la ficha de la persona desde *Registros*, en el bloque **Perfil de asistencia**: se elige
+Staff y se pulsa Cambiar. Cada cambio queda en la bitácora con el perfil anterior y el nuevo.
+
+Dos cosas que conviene saber:
+
+- **Solo desde aquí.** El formulario público no ofrece ese perfil y tampoco lo acepta enviado a
+  mano: si lo aceptara, cualquiera con el enlace del registro podría ver la cédula de todos los
+  asistentes.
+- **No se pierde solo.** Quien tiene el perfil puede entrar a «mis datos» y corregir su teléfono
+  sin quedarse sin él. En su formulario aparece la etiqueta de su perfil en lugar del selector.
+
+Para quitárselo, el mismo control: se elige otro perfil.
+
+A quien todavía no ha completado su registro no se le puede poner: no podría entrar a acreditar,
+porque la plataforma lo mandaría primero a llenar su nombre y su identificación.
+
+---
+
+## 6. Imprimir los carnets
+
+En **Carnets**, que ven el equipo y el Staff.
+
+### 6.1 La tanda
+
+El botón **Imprimir** saca todos los carnets de la lista, **una sola cara por persona y con el
+código QR dentro**. Caben seis por hoja tamaño carta; se imprime en cartulina y se recorta.
+
+Una cara y no dos es lo que hace que la función sirva: el carnet individual tiene anverso y
+reverso porque su dueño lo dobla por la mitad, pero para doscientos eso significa imprimir
+cuatrocientas caras y aparearlas a mano.
+
+Cada tarjeta lleva el perfil en grande, la foto, el nombre, la identificación, la entidad y el
+código. El perfil y la foto van grandes a propósito: son lo que se mira a un metro de distancia
+en una fila; el nombre se comprueba ya de cerca.
+
+### 6.2 Imprimir solo una parte
+
+El filtro de la lista llega hasta la impresión. Es lo que de verdad se usa: «los expositores»,
+«los de la Alcaldía de Tumaco». Se filtra, se comprueba la cuenta y se imprime.
+
+### 6.3 Quién queda fuera
+
+Los registros a medias —quien creó su acceso con correo y contraseña y no llenó el formulario—
+no se imprimen, y la pantalla dice cuántos son. Un carnet sin nombre ni identificación es una
+cartulina en blanco que nadie ve hasta que la reparte.
+
+---
+
+## 7. Acreditar a quien llega sin nada
+
+En **Acreditar** (el Staff) o **Escanear carnet** (el equipo).
+
+Lo normal es leer el QR del carnet. Cuando no se puede —teléfono sin batería, código rayado, o
+la persona llegó sin nada— está la búsqueda a mano, debajo del lector.
+
+Se busca por **número de identificación**, nombre, correo o entidad. Con una diferencia que la
+pantalla explica:
+
+| Por | Cómo |
+|---|---|
+| **Identificación** | Completa. Con puntos o sin ellos, da igual, pero entera |
+| Nombre, correo, entidad, municipio | Basta con una parte |
+
+El número hay que escribirlo completo porque está cifrado en la base: lo que se compara es una
+huella, y una huella o coincide entera o no coincide. Buscar por los últimos cuatro dígitos
+obligaría a descifrar la tabla de todos los asistentes en cada búsqueda, que es justamente lo
+que el cifrado evita.
+
+Cada búsqueda queda en la bitácora con cuántos resultados dio: es una consulta de datos
+personales hecha a mano.
+
+---
+
+## 8. Antes de abrir al público
 
 Una lista corta para no llevarse sorpresas:
 

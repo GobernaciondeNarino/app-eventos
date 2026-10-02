@@ -301,6 +301,74 @@
 .carnet[data-rol="expositor"]    { --rol: var(--c-rol-expositor); }
 .carnet[data-rol="organizador"]  { --rol: var(--c-rol-organizador); }
 .carnet[data-rol="prensa"]       { --rol: var(--c-rol-prensa); }
+.carnet[data-rol="staff"]        { --rol: var(--c-rol-staff); }
+
+/* -------------------------------------------------------------------------
+   Tanda de carnets: una cara por persona, con el código dentro.
+   El carnet individual se dobla por la mitad y por eso tiene dos caras; para
+   imprimir doscientos eso obligaría a aparear cuatrocientas hojas a mano.
+   ------------------------------------------------------------------------- */
+.carnet-tanda {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 16px;
+}
+.carnet-uno {
+  --rol: var(--c-accent);
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 14px;
+  background: var(--c-surface);
+  border: 1px solid var(--a-22);
+  border-top: 3px solid var(--rol);
+}
+.carnet-uno[data-rol="participante"] { --rol: var(--c-rol-participante); }
+.carnet-uno[data-rol="visitante"]    { --rol: var(--c-rol-visitante); }
+.carnet-uno[data-rol="expositor"]    { --rol: var(--c-rol-expositor); }
+.carnet-uno[data-rol="organizador"]  { --rol: var(--c-rol-organizador); }
+.carnet-uno[data-rol="prensa"]       { --rol: var(--c-rol-prensa); }
+.carnet-uno[data-rol="staff"]        { --rol: var(--c-rol-staff); }
+
+.carnet-uno__head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.carnet-uno__rol {
+  font-family: var(--f-mono); font-size: 9px; letter-spacing: .22em;
+  text-transform: uppercase; color: var(--rol);
+}
+.carnet-uno__quien { display: flex; gap: 10px; align-items: flex-start; min-width: 0; }
+.carnet-uno__foto {
+  flex: none; width: 54px; height: 66px; overflow: hidden;
+  border: 1px solid var(--a-40); background: var(--c-sunken);
+  display: grid; place-items: center;
+}
+.carnet-uno__foto img { width: 100%; height: 100%; object-fit: cover; }
+.carnet-uno__foto span {
+  font-family: var(--f-mono); font-size: 15px; letter-spacing: .08em; color: var(--c-muted);
+}
+.carnet-uno__datos { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.carnet-uno__nombre {
+  font-family: var(--f-display); font-size: 13.5px; font-weight: 600;
+  letter-spacing: .03em; color: var(--c-title); line-height: 1.2;
+  /* Un nombre largo sin espacios se sale de la tarjeta y se imprime encima de
+     la de al lado. Pasa de verdad con los apellidos compuestos. */
+  overflow-wrap: anywhere;
+}
+.carnet-uno__dato {
+  font-family: var(--f-mono); font-size: 9.5px; color: var(--c-text);
+  overflow-wrap: anywhere;
+}
+.carnet-uno__pie {
+  margin-top: auto; display: flex; gap: 10px; align-items: center;
+  border-top: 1px solid var(--a-22); padding-top: 10px;
+}
+.carnet-uno__qr { flex: none; width: 64px; background: #FFFFFF; padding: 4px; }
+.carnet-uno__qr svg { display: block; width: 100%; height: auto; }
+.carnet-uno__codigo { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.carnet-uno__codigo > span:first-child {
+  font-family: var(--f-mono); font-size: 11px; letter-spacing: .14em; color: var(--c-title);
+}
+.carnet-uno__cap {
+  font-family: var(--f-mono); font-size: 8px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--c-muted);
+}
 
 /* =========================================================================
    Código QR

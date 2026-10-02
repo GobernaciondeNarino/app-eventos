@@ -47,9 +47,13 @@ final class Medios
     /**
      * La fotografía de una persona.
      *
-     * La ve su dueño y la ve el equipo organizador. Nadie más: el id es un
+     * La ve su dueño, el equipo organizador y el Staff. Nadie más: el id es un
      * número correlativo, así que sin esta comprobación bastaría con contar
      * desde uno para descargar la cara de todos los asistentes.
+     *
+     * El Staff entra aquí porque imprime los carnets, y un carnet sin foto no
+     * sirve para lo único que hace falta en la puerta: comparar la cara que
+     * está delante con la del plástico.
      */
     public function foto(Peticion $peticion, array $parametros): void
     {
@@ -59,7 +63,7 @@ final class Medios
         $equipo = Guardia::equipoOperativo();
         $esDelEquipo = $equipo !== null && Guardia::tieneRol($equipo, 'consulta');
 
-        if (($yo === null || (int) $yo['id'] !== $id) && !$esDelEquipo) {
+        if (($yo === null || (int) $yo['id'] !== $id) && !$esDelEquipo && !Guardia::puedeAcreditar()) {
             Respuesta::error(404, 'Sin fotografía', 'No hay ninguna imagen en esa dirección.');
         }
 

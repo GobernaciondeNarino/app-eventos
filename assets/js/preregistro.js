@@ -11,8 +11,13 @@
   'use strict';
 
   var casilla = document.getElementById('expositor');
+
+  /* El selector de perfil puede no estar: a quien tiene un perfil que solo pone
+     un administrador —Staff, Organizador— se le enseña su etiqueta y no una
+     lista. Antes el guion se iba aquí mismo si faltaba, y con él se iba también
+     lo de abajo: los adjuntos del expositor dejaban de marcarse obligatorios. */
   var perfil = document.getElementById('rol');
-  if (!casilla || !perfil) return;
+  if (!casilla) return;
 
   /* Los dos adjuntos son obligatorios, pero solo para quien expone.
 
@@ -33,20 +38,24 @@
   }
 
   casilla.addEventListener('change', function () {
-    if (casilla.checked && perfil.value === 'participante') {
-      perfil.value = 'expositor';
-    } else if (!casilla.checked && perfil.value === 'expositor') {
-      perfil.value = 'participante';
+    if (perfil) {
+      if (casilla.checked && perfil.value === 'participante') {
+        perfil.value = 'expositor';
+      } else if (!casilla.checked && perfil.value === 'expositor') {
+        perfil.value = 'participante';
+      }
     }
     sincronizar();
   });
 
-  perfil.addEventListener('change', function () {
-    if (perfil.value === 'expositor' && !casilla.checked) {
-      casilla.checked = true;
-      casilla.dispatchEvent(new Event('change'));
-    }
-  });
+  if (perfil) {
+    perfil.addEventListener('change', function () {
+      if (perfil.value === 'expositor' && !casilla.checked) {
+        casilla.checked = true;
+        casilla.dispatchEvent(new Event('change'));
+      }
+    });
+  }
 
   // Al cargar: el bloque puede venir abierto porque la propuesta ya existe o
   // porque algo del envío anterior falló.

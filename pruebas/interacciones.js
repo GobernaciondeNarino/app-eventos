@@ -31,6 +31,12 @@ const TOKEN = (() => {
   try { return fs.readFileSync(RUTA_TOKEN, 'utf8').trim(); } catch (e) { return ''; }
 })();
 
+/* Y el de alguien con perfil Staff: entra por la misma puerta que un asistente
+   —no tiene cuenta del equipo— pero ve las pantallas de acreditación. */
+const TOKEN_STAFF = (() => {
+  try { return fs.readFileSync('pruebas/capturas/token-staff.txt', 'utf8').trim(); } catch (e) { return ''; }
+})();
+
 let ok = 0;
 const fallos = [];
 
@@ -453,6 +459,75 @@ function titulo(t) {
 
   comprobar('sin errores de consola en el panel', erroresPanel.length === 0,
     erroresPanel.slice(0, 2).join(' | '));
+
+  /* =====================================================================
+     Carnets del evento: lista e impresión en tanda
+     ===================================================================== */
+  titulo('Carnets del evento');
+
+  await p3.goto(BASE + '/carnets', { waitUntil: 'networkidle' });
+  comprobar('la lista de carnets se abre desde el equipo',
+    (await p3.locator('.table__row').count()) > 0);
+  comprobar('con el botón de imprimir la tanda',
+    (await p3.locator('a[href*="/carnets/imprimir"]').count()) === 1);
+
+  await p3.goto(BASE + '/carnets/imprimir', { waitUntil: 'networkidle' });
+  const tarjetas = await p3.locator('.carnet-uno').count();
+  comprobar('la impresión trae una tarjeta por persona', tarjetas > 1, String(tarjetas));
+  comprobar('cada una con su QR dentro, en la misma cara',
+    (await p3.locator('.carnet-uno .carnet-uno__qr svg').count()) === tarjetas);
+
+  // Lo que de verdad arruina una tanda impresa: una tarjeta que se sale de su
+  // caja y se imprime encima de la de al lado.
+  const seSalen = await p3.locator('.carnet-uno').evaluateAll(
+    nodos => nodos.filter(n => n.scrollWidth > n.clientWidth + 1).length
+  );
+  comprobar('ninguna tarjeta se desborda de su caja', seSalen === 0, String(seSalen));
+
+  /* =====================================================================
+     Staff: entra por la puerta del asistente y acredita
+     ===================================================================== */
+  titulo('Staff');
+
+  if (!TOKEN_STAFF) {
+    comprobar('hay un token de staff para la prueba', false,
+      'falta pruebas/capturas/token-staff.txt; corre antes extremo-a-extremo.php');
+  } else {
+    const staff = await navegador.newContext({
+      viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true,
+    });
+    const ps = await staff.newPage();
+    const erroresStaff = [];
+    ps.on('console', m => { if (m.type() === 'error') erroresStaff.push(m.text()); });
+
+    await ps.goto(BASE + '/entrar/qr/' + TOKEN_STAFF, { waitUntil: 'networkidle' });
+    await ps.goto(BASE + '/acreditar', { waitUntil: 'networkidle' });
+
+    comprobar('el staff abre la pantalla de acreditar',
+      (await ps.locator('[data-escaner]').count()) === 1);
+    comprobar('con el lector de la cámara listo',
+      (await ps.locator('[data-escaner-iniciar]').count()) === 1);
+    // Por el action y no por «el primer form»: el de cerrar sesión va antes en
+    // el documento y la prueba acababa leyéndolo a él.
+    const buscador = ps.locator('form[action*="buscar"]').first();
+    comprobar('y con la búsqueda a mano por identificación',
+      /identificaci[oó]n/i.test(await buscador.innerText()));
+    comprobar('que apunta a la dirección del staff, no a la del admin',
+      (await buscador.getAttribute('action')).includes('/acreditar/buscar'));
+
+    const nav = await ps.locator('.tabbar, .sidebar').first().innerText();
+    comprobar('su navegación trae lo suyo del evento',
+      /acreditar/i.test(nav) && /carnets/i.test(nav), nav.replace(/\s+/g, ' ').slice(0, 90));
+    comprobar('y no la administración del evento', !/organizadores/i.test(nav));
+
+    await ps.goto(BASE + '/carnets', { waitUntil: 'networkidle' });
+    comprobar('y ve los carnets del evento',
+      (await ps.locator('.table__row').count()) > 0);
+
+    comprobar('sin errores de consola en las pantallas del staff',
+      erroresStaff.length === 0, erroresStaff.slice(0, 2).join(' | '));
+    await staff.close();
+  }
 
   /* =====================================================================
      Expositores: la hoja de revisión

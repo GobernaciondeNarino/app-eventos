@@ -1,6 +1,6 @@
 # Esquema de datos
 
-Plataforma de Eventos TIC · versión del esquema **1.5.0**
+Plataforma de Eventos TIC · versión del esquema **1.6.0**
 
 > Documento generado con `php herramientas/generar-doc-esquema.php` a partir de
 > `app/Esquema.php`, la misma definición que el instalador usa para crear y actualizar
@@ -19,7 +19,7 @@ poder compartir la base con otras aplicaciones del alojamiento.
 | `evt_persona` | 21 | Quien se preregistra. El documento va cifrado, con una huella aparte para detectar duplicados sin descifrar. |
 | `evt_persona_caracterizacion` | 5 | Datos sensibles (Ley 1581, art. 5) en tabla aparte: las consultas del día a día no los tocan y su lectura se audita. |
 | `evt_credencial` | 7 | El carnet. El token es lo único que viaja en el QR; nunca datos personales. |
-| `evt_asistencia` | 7 | Un ingreso por persona y jornada. La llave única es lo que impide contar dos veces a la misma persona. |
+| `evt_asistencia` | 8 | Un ingreso por persona y jornada. La llave única es lo que impide contar dos veces a la misma persona. |
 | `evt_contacto` | 5 | Intercambio de datos entre asistentes. Guarda quién escaneó a quién, para poder revertirlo si alguien lo pide. |
 | `evt_propuesta` | 17 | Lo que envía un expositor en el preregistro. Al aprobarse se convierte en charla. |
 | `evt_charla` | 6 | La agenda pública: propuestas aprobadas con horario y salón asignados. |
@@ -145,7 +145,7 @@ Quien se preregistra. El documento va cifrado, con una huella aparte para detect
 | `entidad` | `VARCHAR(160) NOT NULL DEFAULT ''` |
 | `departamento` | `VARCHAR(80) NOT NULL DEFAULT ''` |
 | `municipio` | `VARCHAR(80) NOT NULL DEFAULT ''` |
-| `rol` | `ENUM('participante','visitante','expositor','organizador','prensa') NOT NULL DEFAULT 'participante'` |
+| `rol` | `ENUM('participante','visitante','expositor','organizador','prensa','staff') NOT NULL DEFAULT 'participante'` |
 | `comparte_telefono` | `TINYINT(1) NOT NULL DEFAULT 1` |
 | `clave_hash` | `VARCHAR(255) NOT NULL DEFAULT ''` |
 | `foto` | `VARCHAR(80) NOT NULL DEFAULT ''` |
@@ -217,6 +217,7 @@ Un ingreso por persona y jornada. La llave única es lo que impide contar dos ve
 | `registrado_en` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` |
 | `via` | `ENUM('qr_dia','carnet_operador','manual') NOT NULL DEFAULT 'qr_dia'` |
 | `operador_id` | `INT UNSIGNED NULL` |
+| `operador_tipo` | `ENUM('equipo','staff') NOT NULL DEFAULT 'equipo'` |
 | `ip` | `VARBINARY(16) NULL` |
 
 Llaves e índices:

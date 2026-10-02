@@ -112,6 +112,7 @@ function etiquetaRol(string $rol): string
         'expositor'    => 'Expositor',
         'organizador'  => 'Organizador',
         'prensa'       => 'Prensa',
+        'staff'        => 'Staff',
     ][$rol] ?? $rol;
 }
 
@@ -121,6 +122,7 @@ function claseRol(string $rol): string
     return match ($rol) {
         'expositor'   => 'tag--warn',
         'organizador' => 'tag--ok',
+        'staff'       => 'tag--ok',
         'prensa'      => 'tag--mute',
         default       => '',
     };

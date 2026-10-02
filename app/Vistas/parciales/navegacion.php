@@ -61,6 +61,19 @@ if ($persona !== null) {
     ];
 }
 
+// --- Staff ----------------------------------------------------------------
+// Una persona con perfil Staff entra por la puerta del asistente —tiene su
+// carnet como todo el mundo— y además acredita en la entrada. Sus dos pantallas
+// van en un grupo aparte para que se vea que son otra cosa: lo suyo está arriba,
+// el trabajo del evento aquí.
+$grupoStaff = [];
+if (Guardia::staffActual() !== null) {
+    $grupoStaff = [
+        ['clave' => 'acreditar', 'etiqueta' => 'Acreditar', 'icono' => 'scan', 'ruta' => '/acreditar'],
+        ['clave' => 'carnets', 'etiqueta' => 'Carnets', 'icono' => 'card', 'ruta' => '/carnets'],
+    ];
+}
+
 // --- Equipo organizador ---------------------------------------------------
 $grupoAdmin = [];
 if ($usuario !== null) {
@@ -86,11 +99,21 @@ $navegacion = [];
 if ($grupoParticipante) {
     $navegacion[] = ['titulo' => $persona !== null ? 'Mi participación' : 'Participante', 'items' => $grupoParticipante];
 }
+if ($grupoStaff) {
+    $navegacion[] = ['titulo' => 'Staff del evento', 'items' => $grupoStaff];
+}
 if ($grupoAdmin) {
     $navegacion[] = ['titulo' => 'Administración', 'items' => $grupoAdmin];
 }
 
-/** Las cuatro entradas de la barra inferior del móvil. */
-$pestanasMovil = $usuario !== null
-    ? array_slice($grupoAdmin, 0, 4)
-    : array_slice($grupoParticipante, 0, 4);
+/**
+ * Las cuatro entradas de la barra inferior del móvil.
+ *
+ * El staff trabaja en la puerta y con el teléfono en la mano, así que lo suyo va
+ * primero: acreditar y los carnets, y luego sus propias pantallas.
+ */
+$pestanasMovil = match (true) {
+    $usuario !== null => array_slice($grupoAdmin, 0, 4),
+    (bool) $grupoStaff => array_slice(array_merge($grupoStaff, $grupoParticipante), 0, 4),
+    default => array_slice($grupoParticipante, 0, 4),
+};

@@ -15,21 +15,26 @@ use App\Nucleo\Bd;
  */
 final class Esquema
 {
-    public const VERSION = '1.5.0';
+    public const VERSION = '1.6.0';
 
     /**
      * Columnas que ya existen pero cambiaron de tipo.
      *
      * «actualizar» solo agrega lo que falta, y eso no alcanza cuando una
-     * columna pasa de NOT NULL a nulable: la tabla ya la tiene, así que nadie
-     * la toca y la instalación vieja se queda con la definición antigua.
+     * columna pasa de NOT NULL a nulable, o cuando a un ENUM le entra un valor
+     * nuevo: la tabla ya la tiene, así que nadie la toca y la instalación vieja
+     * se queda con la definición antigua.
      *
      * Cada ajuste dice qué tiene que ser cierto para aplicarse, y se comprueba
      * contra information_schema antes de ejecutar el ALTER. Así se puede correr
      * muchas veces sin que pase nada: es el requisito para que el botón de
      * actualizar del panel sea seguro con el evento en curso.
      *
-     * @var array<int, array{tabla:string, columna:string, tipo:string, si:string}>
+     * Condiciones:
+     *   'no_nulable'     la columna todavía es NOT NULL
+     *   'falta_en_tipo'  el tipo actual no contiene «busca» (un valor de ENUM)
+     *
+     * @var array<int, array{tabla:string, columna:string, tipo:string, si:string, busca?:string}>
      */
     private const AJUSTES = [
         [
@@ -43,6 +48,14 @@ final class Esquema
             'columna' => 'documento_huella',
             'tipo'    => 'CHAR(64) NULL DEFAULT NULL',
             'si'      => 'no_nulable',
+        ],
+        [
+            'tabla'   => 'persona',
+            'columna' => 'rol',
+            'tipo'    => "ENUM('participante','visitante','expositor','organizador','prensa','staff') "
+                         . "NOT NULL DEFAULT 'participante'",
+            'si'      => 'falta_en_tipo',
+            'busca'   => "'staff'",
         ],
     ];
 
@@ -124,7 +137,11 @@ final class Esquema
                     'entidad'            => "VARCHAR(160) NOT NULL DEFAULT ''",
                     'departamento'       => "VARCHAR(80) NOT NULL DEFAULT ''",
                     'municipio'          => "VARCHAR(80) NOT NULL DEFAULT ''",
-                    'rol'                => "ENUM('participante','visitante','expositor','organizador','prensa') NOT NULL DEFAULT 'participante'",
+                    // «staff» da acceso a la plataforma —ver y acreditar—, así
+                    // que solo lo asigna un administrador desde la ficha. El
+                    // formulario público no lo acepta ni enviándolo a mano:
+                    // ver Persona::ROLES_PUBLICOS.
+                    'rol'                => "ENUM('participante','visitante','expositor','organizador','prensa','staff') NOT NULL DEFAULT 'participante'",
                     'comparte_telefono'  => 'TINYINT(1) NOT NULL DEFAULT 1',
                     // Métodos de acceso distintos del código por correo.
                     // Van aquí y no en una tabla aparte porque son uno por
@@ -199,6 +216,11 @@ final class Esquema
                     'registrado_en' => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
                     'via'           => "ENUM('qr_dia','carnet_operador','manual') NOT NULL DEFAULT 'qr_dia'",
                     'operador_id'   => 'INT UNSIGNED NULL',
+                    // Quién selló: alguien del equipo (tabla usuario) o una
+                    // persona con perfil Staff (tabla persona). Sin esto,
+                    // operador_id sería un número sin tabla a la que apuntar y
+                    // el usuario 7 y el staff 7 se confundirían en los reportes.
+                    'operador_tipo' => "ENUM('equipo','staff') NOT NULL DEFAULT 'equipo'",
                     'ip'            => 'VARBINARY(16) NULL',
                 ],
                 'llaves' => [
@@ -619,11 +641,14 @@ final class Esquema
 
         $estado = [];
         foreach (Bd::filasDirecto(
-            'SELECT COLUMN_NAME, IS_NULLABLE FROM information_schema.COLUMNS
+            'SELECT COLUMN_NAME, IS_NULLABLE, COLUMN_TYPE FROM information_schema.COLUMNS
               WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
             [$prefijo . $nombre]
         ) as $fila) {
-            $estado[(string) $fila['COLUMN_NAME']] = (string) $fila['IS_NULLABLE'];
+            $estado[(string) $fila['COLUMN_NAME']] = [
+                'nulable' => (string) $fila['IS_NULLABLE'],
+                'tipo'    => (string) $fila['COLUMN_TYPE'],
+            ];
         }
 
         $hechas = [];
@@ -632,14 +657,21 @@ final class Esquema
             if ($actual === null) {
                 continue;   // la columna no existe todavía; ya la agregó el paso anterior
             }
-            if ($ajuste['si'] === 'no_nulable' && $actual !== 'NO') {
-                continue;   // ya es nulable: nada que hacer
+
+            $hace = match ($ajuste['si']) {
+                'no_nulable'    => $actual['nulable'] === 'NO',
+                'falta_en_tipo' => !str_contains($actual['tipo'], (string) ($ajuste['busca'] ?? '')),
+                default         => false,
+            };
+            if (!$hace) {
+                continue;   // ya está como tiene que estar
             }
 
             Bd::ejecutarBruto(
                 "ALTER TABLE `$prefijo$nombre` MODIFY COLUMN `{$ajuste['columna']}` {$ajuste['tipo']}"
             );
-            $hechas[] = $ajuste['columna'] . ' (nulable)';
+            $hechas[] = $ajuste['columna']
+                . ($ajuste['si'] === 'no_nulable' ? ' (nulable)' : ' (tipo)');
         }
         return $hechas;
     }

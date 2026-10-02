@@ -153,17 +153,18 @@ final class Escaneo
             ], 404);
         }
 
-        // equipoOperativo() y no usuarioActual(): esta ruta no lleva guardia
-        // —la abre la cámara de un teléfono sin contexto— y comprueba el rol
-        // por su cuenta. Con usuarioActual() entraban cuentas suspendidas y
-        // cuentas con el segundo factor a medio hacer, y lo que hay al otro
-        // lado es la cédula de una persona.
-        $usuario = Guardia::equipoOperativo();
+        // acreditador() y no usuarioActual(): esta ruta no lleva guardia —la
+        // abre la cámara de un teléfono sin contexto— y decide por su cuenta.
+        // Con usuarioActual() entraban cuentas suspendidas y cuentas con el
+        // segundo factor a medio hacer, y lo que hay al otro lado es la cédula
+        // de una persona. Devuelve también al Staff, que acredita en la puerta
+        // con su propio acceso de asistente.
+        $acreditador = Guardia::acreditador();
         $yo = Guardia::personaActual();
 
-        // --- El equipo lo escanea: acreditar el ingreso ---------------------
-        if ($usuario !== null && Guardia::tieneRol($usuario, 'operador')) {
-            $this->pantallaAcreditacion($credencial, $usuario);
+        // --- Lo escanea quien acredita: sellar el ingreso -------------------
+        if ($acreditador !== null) {
+            $this->pantallaAcreditacion($credencial, $acreditador);
         }
 
         // --- Otro asistente lo escanea: intercambio de contacto -------------
@@ -200,12 +201,14 @@ final class Escaneo
         ]);
     }
 
-    /** Vista del operador: los datos de la persona y el botón de sellar. */
-    private function pantallaAcreditacion(array $credencial, array $usuario): never
+    /** Vista de quien acredita: los datos de la persona y el botón de sellar. */
+    private function pantallaAcreditacion(array $credencial, array $acreditador): never
     {
         // Ver una ficha es leer datos personales de alguien, aunque no se selle
         // nada: queda registrado igual que el sellado.
-        Bitacora::registrar('credencial_consultada', 'persona', (int) $credencial['persona_id']);
+        Bitacora::registrar('credencial_consultada', 'persona', (int) $credencial['persona_id'], [
+            'miró' => $acreditador['tipo'],
+        ]);
 
         $evento = App::eventoActivo();
         $jornada = $evento ? Evento::jornadaDeHoy((int) $evento['id']) : null;
@@ -213,13 +216,14 @@ final class Escaneo
 
         Respuesta::vista('admin/acreditar', [
             'titulo'      => 'Acreditar asistente',
-            'pantalla'    => 'admin-escaner',
+            'pantalla'    => 'acreditar',
             'credencial'  => $credencial,
             'documento'   => Persona::documento($credencial),
             'jornada'     => $jornada,
             'yaTiene'     => $yaTiene,
             'historial'   => Asistencia::historial((int) $credencial['persona_id'], (int) $credencial['evento_id']),
-            'escaneosHoy' => Asistencia::escaneosDeHoy((int) $usuario['id']),
+            'acreditador' => $acreditador,
+            'escaneosHoy' => Asistencia::escaneosDeHoy($acreditador['id'], $acreditador['tipo']),
         ]);
     }
 
@@ -280,13 +284,18 @@ final class Escaneo
         Respuesta::redirigir('/contactos', 'Contacto agregado: ' . $credencial['nombre']);
     }
 
-    /** El operador confirma la acreditación. */
+    /** Quien acredita confirma el ingreso. */
     public function sellarAsistencia(Peticion $peticion, array $parametros): void
     {
-        $usuario = Guardia::usuarioActual();
+        // El guardia de la ruta ya dejó pasar solo a quien puede, pero se vuelve
+        // a preguntar quién es: de aquí sale la firma del sello, y tomarla de
+        // usuarioActual() dejaba los de un Staff sin autor.
+        $acreditador = Guardia::acreditador();
+        $vuelta = $acreditador !== null && $acreditador['tipo'] === 'staff' ? '/acreditar' : '/admin/escaner';
+
         $credencial = Credencial::porToken((string) $parametros['token']);
         if (!$credencial) {
-            Respuesta::redirigir('/admin/escaner', 'Credencial no reconocida.', 'warn');
+            Respuesta::redirigir($vuelta, 'Credencial no reconocida.', 'warn');
         }
 
         // Aquí no vale redirigir a crear el evento: quien pulsa este botón está
@@ -294,7 +303,7 @@ final class Escaneo
         // motivo, que es la pantalla desde la que vino.
         $evento = App::eventoActivo();
         if (!$evento) {
-            Respuesta::redirigir('/admin/escaner',
+            Respuesta::redirigir($vuelta,
                 'No hay ningún evento activo, así que no se puede registrar el ingreso.', 'warn');
         }
 
@@ -305,18 +314,19 @@ final class Escaneo
         $jornada = Evento::jornadaDeHoy((int) $evento['id']);
 
         if (!$jornada) {
-            Respuesta::redirigir('/admin/escaner',
+            Respuesta::redirigir($vuelta,
                 'Hoy no hay ninguna jornada programada para este evento.', 'warn');
         }
         if ((int) $credencial['evento_id'] !== (int) $evento['id']) {
-            Respuesta::redirigir('/admin/escaner', 'Esa credencial pertenece a otro evento.', 'warn');
+            Respuesta::redirigir($vuelta, 'Esa credencial pertenece a otro evento.', 'warn');
         }
 
         $resultado = Asistencia::sellar(
             (int) $credencial['persona_id'],
             $jornada,
             'carnet_operador',
-            (int) $usuario['id']
+            $acreditador['id'] ?? null,
+            (string) ($acreditador['tipo'] ?? 'equipo')
         );
 
         $mensaje = $resultado['repetida']
@@ -324,7 +334,71 @@ final class Escaneo
                 . ' (' . hora($resultado['cuando']) . ').'
             : 'Ingreso de ' . $credencial['nombre'] . ' registrado · día ' . $jornada['numero'] . '.';
 
-        Respuesta::redirigir('/admin/escaner', $mensaje, $resultado['repetida'] ? 'warn' : 'ok');
+        Respuesta::redirigir($vuelta, $mensaje, $resultado['repetida'] ? 'warn' : 'ok');
+    }
+
+    /* =====================================================================
+       Pantalla de la puerta
+       -------------------------------------------------------------------------
+       La abren el equipo desde /admin/escaner y el Staff desde /acreditar. Es
+       la misma, y por eso vive aquí y no en Admin: dejó de ser del backoffice
+       el día que una persona con perfil Staff pudo usarla.
+       ===================================================================== */
+
+    public function pantallaAcreditar(Peticion $peticion): void
+    {
+        $evento = App::eventoExigido();
+        $acreditador = Guardia::acreditador();
+
+        Respuesta::vista('admin/escaner', [
+            'titulo'      => 'Acreditar asistente',
+            'pantalla'    => 'acreditar',
+            'jornadas'    => Evento::jornadas((int) $evento['id']),
+            'jornadaHoy'  => Evento::jornadaDeHoy((int) $evento['id']),
+            'acreditador' => $acreditador,
+            'escaneosHoy' => $acreditador
+                ? Asistencia::escaneosDeHoy($acreditador['id'], $acreditador['tipo'])
+                : 0,
+        ]);
+    }
+
+    /**
+     * Búsqueda manual, para cuando el carnet no se puede leer.
+     *
+     * Es la salida cuando alguien perdió el teléfono, el código está rayado o
+     * simplemente llegó sin nada: se busca por nombre, correo o **número de
+     * identificación**. Devuelve pocos resultados y queda registrada: es una
+     * consulta de datos personales hecha a mano.
+     */
+    public function buscar(Peticion $peticion): void
+    {
+        $evento = App::eventoExigido();
+        $acreditador = Guardia::acreditador();
+        $vuelta = $acreditador !== null && $acreditador['tipo'] === 'staff' ? '/acreditar' : '/admin/escaner';
+        $texto = $peticion->campo('q');
+
+        if (mb_strlen($texto) < 3) {
+            Respuesta::redirigir($vuelta, 'Escribe al menos tres caracteres para buscar.', 'warn');
+        }
+
+        $encontradas = Persona::buscar((int) $evento['id'], ['texto' => $texto, 'limite' => 10]);
+        Bitacora::registrar('busqueda_manual', 'persona', null, [
+            'resultados' => count($encontradas),
+            'buscó'      => $acreditador['tipo'] ?? 'equipo',
+        ]);
+
+        Respuesta::vista('admin/escaner', [
+            'titulo'      => 'Acreditar asistente',
+            'pantalla'    => 'acreditar',
+            'jornadas'    => Evento::jornadas((int) $evento['id']),
+            'jornadaHoy'  => Evento::jornadaDeHoy((int) $evento['id']),
+            'acreditador' => $acreditador,
+            'escaneosHoy' => $acreditador
+                ? Asistencia::escaneosDeHoy($acreditador['id'], $acreditador['tipo'])
+                : 0,
+            'busqueda'    => $texto,
+            'encontradas' => $encontradas,
+        ]);
     }
 
     /* =====================================================================

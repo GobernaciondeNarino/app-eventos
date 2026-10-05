@@ -16,7 +16,7 @@ declare(strict_types=1);
 
 define('EVENTOS_TIC', true);
 define('RAIZ', __DIR__);
-define('APP_VERSION', '3.4.1');
+define('APP_VERSION', '3.4.2');
 define('ESQUEMA_VERSION', '1.0.0');
 
 if (PHP_VERSION_ID < 80100) {

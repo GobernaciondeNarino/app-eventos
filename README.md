@@ -313,7 +313,7 @@ el enrutado, las cookies, los testigos y los guardias, que es donde suelen estar
 Incluye 19 comprobaciones en el bloque específico de seguridad y otras tantas repartidas por
 los guardias de cada pantalla.
 
-Estado actual: **463 de 463** de extremo a extremo, **77** del asistente de instalación,
+Estado actual: **478 de 478** de extremo a extremo, **77** del asistente de instalación,
 **28** del segundo factor contra los vectores del RFC 6238, **22** del hash de contraseñas,
 **19** del correo saliente, **19** de la dirección del visitante detrás del proxy, **21** de la
 fotografía del carnet, **61** de los adjuntos del expositor, **17** del saneado de logos SVG,

@@ -2607,6 +2607,44 @@ $pdo->exec("UPDATE {$BD['prefijo']}evento_dia SET fecha = '" . $fechaOriginal . 
              WHERE id = " . (int) $jornadaDeHoy['id']);
 
 /* =========================================================================
+   El menú y las rutas, que no se separen
+   -------------------------------------------------------------------------
+   Una pantalla que existe pero que no está en el menú es una pantalla que no
+   existe: solo la encuentra quien ya sabe su dirección. Pasó con «Carnets»,
+   que estuvo una versión entera accesible únicamente escribiendo la URL,
+   porque en la navegación se puso solo para el staff. Las pruebas no lo
+   vieron porque entraban por la dirección directa, que es justo lo que una
+   persona no hace.
+   ========================================================================= */
+titulo('Menú del equipo');
+
+// La subcarpeta sale de la dirección de la prueba: la plataforma funciona igual
+// colgando de la raíz que de /cumbreAI, y los enlaces la llevan dentro.
+$sub = rtrim((string) (parse_url($BASE, PHP_URL_PATH) ?: ''), '/');
+
+$html = $admin->get('/admin');
+foreach ([
+    '/admin/escaner'    => 'Escanear carnet',
+    '/admin/registros'  => 'Registros',
+    '/carnets'          => 'Carnets',
+    '/admin/qr-dias'    => 'QR por día',
+    '/admin/expositores' => 'Expositores',
+    '/admin/organizadores' => 'Organizadores',
+    '/admin/eventos'    => 'Eventos',
+    '/admin/identidad'  => 'Identidad',
+] as $ruta => $etiqueta) {
+    comprobar('el menú lleva a ' . $etiqueta,
+        str_contains($html, 'href="' . $sub . $ruta . '"'), $sub . $ruta);
+}
+
+// Y al revés: que cada entrada del menú abra de verdad.
+foreach (['/admin/escaner', '/admin/registros', '/carnets', '/admin/qr-dias',
+          '/admin/expositores', '/admin/organizadores', '/admin/eventos'] as $ruta) {
+    $admin->get($ruta, false);
+    comprobar('y ' . $ruta . ' abre', $admin->codigo === 200, (string) $admin->codigo);
+}
+
+/* =========================================================================
    La base atrasada respecto al código
    -------------------------------------------------------------------------
    Es lo que pasa en cada actualización: se suben los archivos y la base no se

@@ -81,6 +81,10 @@ if ($usuario !== null) {
         ['clave' => 'panel', 'etiqueta' => 'Panel', 'icono' => 'panel', 'ruta' => '/admin', 'rol' => 'consulta'],
         ['clave' => 'admin-escaner', 'etiqueta' => 'Escanear carnet', 'icono' => 'scan', 'ruta' => '/admin/escaner', 'rol' => 'operador'],
         ['clave' => 'admin-registros', 'etiqueta' => 'Registros', 'icono' => 'table', 'ruta' => '/admin/registros', 'rol' => 'consulta'],
+        // Mismo rol que el guardia 'acreditar' pide al equipo. Faltaba: la
+        // pantalla existía y solo se llegaba escribiendo la dirección, porque
+        // en la navegación estaba únicamente para el staff.
+        ['clave' => 'carnets', 'etiqueta' => 'Carnets', 'icono' => 'card', 'ruta' => '/carnets', 'rol' => 'operador'],
         ['clave' => 'admin-qr', 'etiqueta' => 'QR por día', 'icono' => 'grid', 'ruta' => '/admin/qr-dias', 'rol' => 'operador'],
         ['clave' => 'admin-expositores', 'etiqueta' => 'Expositores', 'icono' => 'mic', 'ruta' => '/admin/expositores', 'rol' => 'administrador'],
         ['clave' => 'admin-organizadores', 'etiqueta' => 'Organizadores', 'icono' => 'users', 'ruta' => '/admin/organizadores', 'rol' => 'administrador'],

@@ -213,7 +213,10 @@ registro y lo sube.
 
 ### 4.4 Bajarlos
 
-En el diálogo de cada propuesta, bajo «Documentos de respaldo». Se descargan en vez de abrirse
+En **Administración → Expositores**, se pulsa la propuesta y se abre su hoja de revisión: los
+dos archivos están ahí, en el bloque **«Documentos de respaldo»**, con el formato y el peso al
+lado. No hay una pantalla aparte de anexos; van con la propuesta a la que pertenecen, que es
+donde se decide sobre ellos. Se descargan en vez de abrirse
 dentro de la página, y llegan con un nombre legible —`Hoja-de-vida-Lucia-Villota-Erazo.pdf`—
 en lugar del que tienen en el disco del servidor.
 
@@ -285,7 +288,8 @@ porque la plataforma lo mandaría primero a llenar su nombre y su identificació
 
 ## 6. Imprimir los carnets
 
-En **Carnets**, que ven el equipo y el Staff.
+En **Carnets**, en el menú de Administración —entre *Registros* y *QR por día*—. La misma
+entrada la ve el Staff en su propio grupo.
 
 ### 6.1 La tanda
 

@@ -10,6 +10,8 @@
 defined('EVENTOS_TIC') || exit;
 
 $err = static fn(string $clave): string => (string) ($errores[$clave] ?? '');
+
+guiones('claves.js');
 ?>
 <div class="view view--narrow stack stack--5" style="max-width:480px;margin:auto">
 
@@ -59,7 +61,7 @@ $err = static fn(string $clave): string => (string) ($errores[$clave] ?? '');
         <label class="label" for="clave">Contraseña</label>
         <input class="input<?= $err('clave') ? ' is-invalid' : '' ?>" type="password"
                id="clave" name="clave" autocomplete="new-password"
-               minlength="<?= e((string) $claveMinima) ?>" maxlength="200" required>
+               minlength="<?= e((string) $claveMinima) ?>" maxlength="200" required data-clave-nueva>
         <?php if ($err('clave')): ?><span class="error"><?= e($err('clave')) ?></span><?php endif; ?>
         <span class="help">Mínimo <?= e((string) $claveMinima) ?> caracteres.</span>
       </div>
@@ -67,8 +69,11 @@ $err = static fn(string $clave): string => (string) ($errores[$clave] ?? '');
       <div class="field">
         <label class="label" for="clave2">Repítela</label>
         <input class="input<?= $err('clave2') ? ' is-invalid' : '' ?>" type="password"
-               id="clave2" name="clave2" autocomplete="new-password" maxlength="200" required>
+               id="clave2" name="clave2" autocomplete="new-password" maxlength="200" required data-clave-repetir>
         <?php if ($err('clave2')): ?><span class="error"><?= e($err('clave2')) ?></span><?php endif; ?>
+        <!-- Lo escribe claves.js mientras se teclea. Nace vacío: sin JavaScript
+             no aparece nada y el servidor valida igual. -->
+        <span class="campo-estado" data-clave-estado role="status" aria-live="polite"></span>
       </div>
 
       <label class="row" style="align-items:flex-start;gap:11px;cursor:pointer;flex-wrap:nowrap">

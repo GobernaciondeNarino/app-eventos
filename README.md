@@ -303,8 +303,8 @@ node pruebas/pantallas.js                 # escritorio
 ANCHO=390 node pruebas/pantallas.js       # móvil
 
 # Y lo que solo se ve al interactuar: pestañas, ficha en diálogo, portada del
-# celular en una columna, y el lector decodificando un código que pinta la
-# propia plataforma.
+# celular en una columna, las dos contraseñas comprobándose mientras se
+# escriben, y el lector decodificando un código que pinta la propia plataforma.
 node pruebas/interacciones.js
 ```
 
@@ -318,7 +318,7 @@ Estado actual: **478 de 478** de extremo a extremo, **77** del asistente de inst
 **19** del correo saliente, **19** de la dirección del visitante detrás del proxy, **21** de la
 fotografía del carnet, **61** de los adjuntos del expositor, **17** del saneado de logos SVG,
 **198** casos de QR idénticos entre PHP y JavaScript, **161** entre JavaScript y la referencia,
-**13** del lector de QR, **81** de interacción en navegador, y las 16 pantallas limpias en
+**13** del lector de QR, **93** de interacción en navegador, y las 16 pantallas limpias en
 escritorio, tableta y móvil.
 
 Las pruebas nacieron de errores reales, y por eso cubren lo que cubren: una instalación que se

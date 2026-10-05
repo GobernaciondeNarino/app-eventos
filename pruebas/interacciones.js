@@ -307,6 +307,36 @@ function titulo(t) {
   comprobar('quien no expone puede enviar el formulario',
     await p4.locator('form').first().evaluate(f => f.checkValidity() || !f.querySelector(':invalid[type=file]')));
 
+  /* ---- Y lo mismo en el formulario de registro ----
+     Aquí importa el doble: al repintarse con un error, el navegador vacía los
+     campos de archivo, así que una contraseña mal repetida costaba volver a
+     elegir la foto y los adjuntos. */
+  const estadoReg = p4.locator('[data-clave-estado]');
+  if ((await estadoReg.count()) === 0) {
+    comprobar('el registro trae el aviso de las contraseñas', false,
+      'no está: ¿se apagó el método de clave?');
+  } else {
+    const minReg = parseInt(await p4.locator('#clave').getAttribute('minlength'), 10);
+    const claveReg = 'y'.repeat(Math.max(minReg, 10));
+
+    await p4.locator('#clave').fill(claveReg);
+    await p4.locator('#clave2').fill(claveReg + 'z');
+    comprobar('en el registro también avisa al vuelo si no coinciden',
+      /no coinciden/i.test(await estadoReg.innerText()), (await estadoReg.innerText()).trim());
+
+    await p4.locator('#clave2').fill(claveReg);
+    comprobar('y lo confirma cuando cuadran',
+      /coinciden/i.test(await estadoReg.innerText())
+      && !/no coinciden/i.test(await estadoReg.innerText()));
+
+    // Dejarlas en blanco sigue siendo válido: en «mis datos» significa «no la
+    // cambies». El aviso no puede inventarse un error ahí.
+    await p4.locator('#clave').fill('');
+    await p4.locator('#clave2').fill('');
+    comprobar('con las dos en blanco no se inventa un error',
+      (await estadoReg.innerText()).trim() === '', (await estadoReg.innerText()).trim());
+  }
+
   comprobar('sin errores de consola en el registro', erroresRegistro.length === 0,
     erroresRegistro.slice(0, 2).join(' | '));
 
@@ -326,6 +356,45 @@ function titulo(t) {
     && (await p4.locator('#clave').count()) === 1
     && (await p4.locator('#clave2').count()) === 1
     && (await p4.locator('#habeas').count()) === 1);
+
+  /* ---- Las dos contraseñas, comprobadas mientras se escriben ----
+     Antes había que llenar todo, pulsar guardar y esperar la recarga para
+     enterarse de que la repetición no coincidía. */
+  const estado = p4.locator('[data-clave-estado]');
+  comprobar('el aviso de las contraseñas nace vacío',
+    (await estado.innerText()).trim() === '');
+
+  const minimo = parseInt(await p4.locator('#clave').getAttribute('minlength'), 10);
+  await p4.locator('#clave').fill('ab');
+  comprobar('mientras falta largo, dice cuánto falta',
+    /faltan/i.test(await estado.innerText()), (await estado.innerText()).trim());
+
+  const buena = 'x'.repeat(Math.max(minimo, 10));
+  await p4.locator('#clave').fill(buena);
+  comprobar('con el largo cumplido y sin repetir todavía, no regaña',
+    (await estado.innerText()).trim() === '', (await estado.innerText()).trim());
+
+  await p4.locator('#clave2').fill(buena.slice(0, -1) + 'z');
+  comprobar('al repetirla distinta lo dice sin recargar la página',
+    /no coinciden/i.test(await estado.innerText()), (await estado.innerText()).trim());
+  comprobar('y marca el campo como inválido',
+    (await p4.locator('#clave2').getAttribute('aria-invalid')) === 'true');
+
+  // Y no deja gastar un viaje al servidor que ya se sabe que va a fallar.
+  const urlAntes = p4.url();
+  await p4.locator('button[type=submit]').first().click();
+  await p4.waitForTimeout(400);
+  comprobar('y no deja enviar el formulario con dos distintas', p4.url() === urlAntes);
+
+  await p4.locator('#clave2').fill(buena);
+  comprobar('al cuadrar, lo confirma en el momento',
+    /coinciden/i.test(await estado.innerText())
+    && !/no coinciden/i.test(await estado.innerText()), (await estado.innerText()).trim());
+  comprobar('y quita la marca de inválido',
+    (await p4.locator('#clave2').getAttribute('aria-invalid')) === null);
+
+  comprobar('el aviso se anuncia a un lector de pantalla',
+    (await estado.getAttribute('aria-live')) === 'polite');
 
   /* =====================================================================
      Panel: pestañas y ficha

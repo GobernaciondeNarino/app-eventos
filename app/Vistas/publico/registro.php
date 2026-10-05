@@ -31,7 +31,7 @@ $hayPropuesta = $v('tema') !== '' || !empty($valores['expositor']);
 $erroresOpcionales = ['municipio', 'departamento', 'rango_edad', 'genero', 'etnia', 'discapacidad'];
 $abrirOpcional = (bool) array_intersect($erroresOpcionales, array_keys($errores));
 
-guiones('foto.js', 'preregistro.js');
+guiones('foto.js', 'preregistro.js', 'claves.js');
 ?>
 <!-- enctype: sin esto el navegador manda solo los nombres de los archivos y
      $_FILES llega vacío, así que la foto se perdía sin ningún error visible. -->
@@ -280,15 +280,18 @@ guiones('foto.js', 'preregistro.js');
             </label>
             <input class="input<?= $err('clave') ? ' is-invalid' : '' ?>" type="password"
                    id="clave" name="clave" autocomplete="new-password"
-                   minlength="<?= e((string) $claveMinima) ?>" maxlength="200">
+                   minlength="<?= e((string) $claveMinima) ?>" maxlength="200" data-clave-nueva>
             <?php if ($err('clave')): ?><span class="error"><?= e($err('clave')) ?></span><?php endif; ?>
             <span class="help">Mínimo <?= e((string) $claveMinima) ?> caracteres.</span>
           </div>
           <div class="field">
             <label class="label" for="clave2">Repítela</label>
             <input class="input<?= $err('clave2') ? ' is-invalid' : '' ?>" type="password"
-                   id="clave2" name="clave2" autocomplete="new-password" maxlength="200">
+                   id="clave2" name="clave2" autocomplete="new-password" maxlength="200" data-clave-repetir>
             <?php if ($err('clave2')): ?><span class="error"><?= e($err('clave2')) ?></span><?php endif; ?>
+            <!-- Lo escribe claves.js mientras se teclea. Nace vacío: sin
+                 JavaScript no aparece nada y el servidor valida igual. -->
+            <span class="campo-estado" data-clave-estado role="status" aria-live="polite"></span>
           </div>
         </div>
       </div>

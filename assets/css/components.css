@@ -107,6 +107,17 @@
 }
 .input.is-invalid { border-color: var(--c-danger); }
 
+/* Aviso que se escribe solo mientras la persona teclea: si las dos contraseñas
+   coinciden, si falta largo. Nace vacío y sin color —sin JavaScript se queda
+   así— y el guion le pone el modificador que toque. */
+.campo-estado {
+  display: block; min-height: 1em;
+  font-family: var(--f-mono); font-size: var(--fs-mono-sm);
+  letter-spacing: .04em; color: var(--c-muted);
+}
+.campo-estado--ok { color: var(--c-accent); }
+.campo-estado--mal { color: var(--c-danger); }
+
 /* Interruptor */
 .switch {
   cursor: pointer; border: 1px solid var(--a-28); width: 52px; height: 26px;

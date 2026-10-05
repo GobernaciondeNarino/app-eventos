@@ -3,7 +3,11 @@
  * Panel del evento.
  * @var array $resumen @var array $porJornada @var array $municipios
  * @var array $bitacora @var array $pendientes
- * @var bool $esquemaPendiente @var string $motivoEsquema @var string $versionEsquema
+ *
+ * El aviso de «la base está atrasada» ya no vive aquí: desde la 3.4 lo pinta la
+ * plantilla en todas las pantallas del equipo y del staff, porque el camino que
+ * de verdad duele no es entrar al panel, es entrar directo a una pantalla que
+ * estrena columna y verla fallar.
  */
 defined('EVENTOS_TIC') || exit;
 
@@ -25,28 +29,6 @@ $maxMunicipio = max(1, max(array_map(static fn($m) => (int) $m['n'], $municipios
       <a class="btn btn--sm btn--primary" href="<?= e(u('/admin/escaner')) ?>">Escanear carnet</a>
     </div>
   </div>
-
-  <?php if ($esquemaPendiente): ?>
-    <!-- Se actualiza el código de la plataforma copiando archivos, pero la
-         base no se entera sola. Este aviso es lo que faltaba para que quien
-         administra sepa que hay algo que hacer, y pueda hacerlo desde aquí. -->
-    <div class="notice notice--warn">
-      <span class="notice__icon" aria-hidden="true">▲</span>
-      <span class="stack" style="gap:9px;flex:1">
-        <strong>La base de datos está atrasada respecto al código</strong>
-        <span class="help" style="margin:0"><?= e($motivoEsquema) ?></span>
-        <span class="help" style="margin:0">
-          Al actualizar solo se agregan las tablas y columnas que falten para la versión
-          <?= e($versionEsquema) ?>. No se borra ni se cambia nada de lo que ya hay, así que
-          se puede hacer con el evento en curso.
-        </span>
-        <form method="post" action="<?= e(u('/admin/actualizar-esquema')) ?>">
-          <?= testigo() ?>
-          <button class="btn btn--sm btn--primary" type="submit">Actualizar la base de datos</button>
-        </form>
-      </span>
-    </div>
-  <?php endif; ?>
 
   <div class="grid-4">
     <?php

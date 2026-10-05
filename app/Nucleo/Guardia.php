@@ -57,6 +57,18 @@ final class Guardia
      */
     private static function acreditar(Peticion $peticion): void
     {
+        // Antes que nada: si la base se quedó atrás del código, estas pantallas
+        // consultan columnas que todavía no existen y responden 500. En la
+        // puerta de un evento, con fila detrás, un 500 sin explicación es lo
+        // peor que puede pasar. Se dice qué falta y quién lo arregla.
+        [$atrasada, $motivo] = \App\Esquema::revisionPendiente();
+        if ($atrasada) {
+            Respuesta::error(503, 'Falta actualizar la base de datos',
+                $motivo . ' Mientras no se actualice, esta pantalla no puede funcionar: '
+                . 'consulta columnas que todavía no existen. Quien administra la plataforma lo '
+                . 'resuelve desde el panel, con el botón «Actualizar la base de datos».');
+        }
+
         // Con sesión del equipo se le aplica el guardia del equipo completo, no
         // una comprobación de rol a secas. Ahí viven el segundo factor
         // pendiente, la contraseña que puso otra persona y la cuenta

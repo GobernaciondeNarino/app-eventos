@@ -2548,29 +2548,118 @@ comprobar('el filtro por perfil llega hasta la impresión',
    ========================================================================= */
 titulo('Buscar por identificación');
 
+// Digitar el documento completo tiene que dejar en el mismo sitio que leer el
+// QR: la ficha de acreditación, con el botón de registrar el ingreso. Quien
+// llega sin carnet no puede acreditarse en más pasos que quien lo trae.
 $html = $admin->post('/admin/escaner/buscar', ['q' => '1085234567']);
 comprobar('el número de identificación completo encuentra a su dueña',
     str_contains($html, 'María Fernanda Zambrano'), substr(strip_tags($html), 0, 140));
+comprobar('y lleva directo a la ficha de acreditación, como el QR',
+    str_contains($html, 'Carnet reconocido'), substr(strip_tags($html), 0, 140));
+// Aquí el evento está corrido una semana, así que hoy no hay jornada y la ficha
+// lo dice en vez de ofrecer un botón que no sellaría nada. Que el botón sale
+// cuando sí la hay se comprueba más abajo, sellando de verdad.
+comprobar('y si hoy no hay jornada lo dice, en vez de ofrecer un botón inútil',
+    str_contains($html, 'no hay ninguna jornada programada'), substr(strip_tags($html), 0, 140));
 
 $html = $admin->post('/admin/escaner/buscar', ['q' => '1.085.234.567']);
 comprobar('con puntos también, que es como está impreso en la cédula',
-    str_contains($html, 'María Fernanda Zambrano'));
+    str_contains($html, 'Carnet reconocido') && str_contains($html, 'María Fernanda Zambrano'));
 
 // Los últimos dígitos no sirven, y la pantalla lo dice: buscar por una parte
 // exigiría descifrar la tabla entera en cada búsqueda.
 $html = $admin->post('/admin/escaner/buscar', ['q' => '234567']);
 comprobar('una parte del número no encuentra a nadie',
     !str_contains($html, 'María Fernanda Zambrano'));
-comprobar('y la pantalla avisa de que hay que escribirlo completo',
-    str_contains($html, 'escribirlo completo'));
+comprobar('y la pantalla avisa de que hay que escribirla entera',
+    str_contains($html, 'escribirla entera'));
 
+// Por nombre sí sale la lista: con varias coincidencias, elegir es de quien
+// está en la puerta y no de la plataforma.
 $html = $admin->post('/admin/escaner/buscar', ['q' => 'Zambrano']);
 comprobar('por nombre sigue funcionando con una parte',
     str_contains($html, 'María Fernanda Zambrano'));
+comprobar('y por nombre sí muestra la lista para elegir',
+    !str_contains($html, 'Carnet reconocido'));
 
 $html = $puerta->post('/acreditar/buscar', ['q' => '1085234567']);
-comprobar('el staff busca por identificación desde su propia pantalla',
-    str_contains($html, 'María Fernanda Zambrano'), substr(strip_tags($html), 0, 140));
+comprobar('el staff acredita por identificación desde su propia pantalla',
+    str_contains($html, 'Carnet reconocido') && str_contains($html, 'María Fernanda Zambrano'),
+    substr(strip_tags($html), 0, 140));
+
+// Y que el ingreso quede sellado de verdad por ese camino, que es el punto.
+$pdo->exec("UPDATE {$BD['prefijo']}evento_dia SET fecha = '" . date('Y-m-d') . "'
+             WHERE id = " . (int) $jornadaDeHoy['id']);
+$idMaria = (int) $pdo->query("SELECT id FROM {$BD['prefijo']}persona
+                               WHERE correo = 'mzambrano@narino.gov.co'")->fetchColumn();
+$pdo->exec("DELETE FROM {$BD['prefijo']}asistencia WHERE persona_id = $idMaria");
+
+$html = $puerta->post('/acreditar/buscar', ['q' => '1085234567']);
+preg_match('#/c/([a-f0-9]{32})/asistencia#', $html, $mSello);
+comprobar('la ficha a la que llega trae el formulario para sellar', isset($mSello[1]));
+if (isset($mSello[1])) {
+    $puerta->post('/c/' . $mSello[1] . '/asistencia', []);
+    comprobar('digitando la identificación se registra la asistencia del día',
+        (int) $pdo->query("SELECT COUNT(*) FROM {$BD['prefijo']}asistencia
+                            WHERE persona_id = $idMaria")->fetchColumn() === 1);
+}
+$pdo->exec("UPDATE {$BD['prefijo']}evento_dia SET fecha = '" . $fechaOriginal . "'
+             WHERE id = " . (int) $jornadaDeHoy['id']);
+
+/* =========================================================================
+   La base atrasada respecto al código
+   -------------------------------------------------------------------------
+   Es lo que pasa en cada actualización: se suben los archivos y la base no se
+   entera sola. El aviso vivía solo en el panel, así que quien entraba directo a
+   una pantalla que estrena columna la veía fallar con un 500 y sin explicación.
+   Y en la puerta de un evento, con fila detrás, eso es lo peor que puede pasar.
+   ========================================================================= */
+titulo('Base atrasada');
+
+// Se quita la columna que estrena la 1.6.0 y se anota una versión vieja: es
+// exactamente el estado de quien copió los archivos y no pulsó el botón.
+$pdo->exec("ALTER TABLE {$BD['prefijo']}asistencia DROP COLUMN operador_tipo");
+$pdo->exec("DELETE FROM {$BD['prefijo']}migracion");
+$pdo->exec("INSERT INTO {$BD['prefijo']}migracion (version, aplicada_en, descripcion)
+            VALUES ('1.5.0', NOW(), 'base atrasada a propósito')");
+
+$html = $admin->get('/admin');
+comprobar('el panel avisa de que la base está atrasada',
+    str_contains($html, 'atrasada respecto al código'));
+
+// Lo nuevo: el aviso sale también donde se va a usar, no solo en el panel.
+foreach (['/admin/registros' => 'los registros',
+          '/carnets'         => 'los carnets',
+          '/admin/qr-dias'   => 'los códigos del día'] as $ruta => $queEs) {
+    $html = $admin->get($ruta);
+    comprobar('y también en ' . $queEs,
+        str_contains($html, 'atrasada respecto al código'), (string) $admin->codigo);
+}
+
+$admin->get('/admin/escaner', false);
+comprobar('la pantalla de la puerta no responde 500, responde 503',
+    $admin->codigo === 503, (string) $admin->codigo);
+comprobar('y dice qué falta y quién lo arregla',
+    str_contains($admin->cuerpo, 'Actualizar la base de datos'));
+
+// Y la acción que estrena un valor del enum tampoco revienta.
+$idAlguien = (int) $pdo->query("SELECT id FROM {$BD['prefijo']}persona
+                                 WHERE documento_huella IS NOT NULL LIMIT 1")->fetchColumn();
+$html = $admin->post('/admin/registros/perfil', ['persona' => (string) $idAlguien, 'rol' => 'staff']);
+comprobar('poner el perfil Staff avisa en vez de fallar',
+    str_contains($html, 'Falta actualizar la base de datos'), substr(strip_tags($html), 0, 140));
+
+// Y el botón del panel lo arregla, que es el camino que se le dice a la gente.
+$admin->get('/admin');
+$admin->post('/admin/actualizar-esquema', []);
+$html = $admin->get('/admin');
+comprobar('el botón del panel pone la base al día',
+    !str_contains($html, 'atrasada respecto al código'));
+comprobar('vuelve la columna que faltaba',
+    count($pdo->query("SHOW COLUMNS FROM {$BD['prefijo']}asistencia
+                        LIKE 'operador_tipo'")->fetchAll()) === 1);
+$admin->get('/admin/escaner', false);
+comprobar('y la pantalla de la puerta vuelve a abrir', $admin->codigo === 200, (string) $admin->codigo);
 
 /* =========================================================================
    10 · Cierre de sesión

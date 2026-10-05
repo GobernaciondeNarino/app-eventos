@@ -55,6 +55,38 @@ $nombreEvento = $evento['nombre'] ?? 'Plataforma de Eventos TIC';
     <?php require __DIR__ . '/parciales/barra-superior.php'; ?>
 
     <main class="main" id="contenido">
+      <?php if (!empty($esquemaAtrasado)): ?>
+        <!-- La base se quedó atrás del código. Va aquí y no solo en el panel
+             porque el camino que de verdad duele es otro: se suben los archivos
+             nuevos, se entra directo a una pantalla que estrena columna, y la
+             pantalla falla sin decir por qué. Lo ven el equipo y el staff; a un
+             asistente no se le enseña, que no puede hacer nada con eso. -->
+        <div class="view view--wide" style="padding-bottom:0">
+          <div class="notice notice--warn">
+            <span class="notice__icon" aria-hidden="true">▲</span>
+            <span class="stack" style="gap:8px;flex:1">
+              <strong>La base de datos está atrasada respecto al código</strong>
+              <span class="help" style="margin:0"><?= e((string) ($esquemaMotivo ?? '')) ?></span>
+              <span class="help" style="margin:0">
+                Hasta que se actualice, las pantallas que estrenan columnas pueden fallar.
+                Se agregan solo las tablas y columnas que falten para la versión
+                <?= e((string) ($esquemaVersion ?? '')) ?>; no se borra ni se cambia nada de lo
+                que ya hay, así que se puede hacer con el evento en curso.
+              </span>
+              <?php if ($usuario !== null && App\Nucleo\Guardia::puede('administrador')): ?>
+                <form method="post" action="<?= e(u('/admin/actualizar-esquema')) ?>">
+                  <?= testigo() ?>
+                  <button class="btn btn--sm btn--primary" type="submit">Actualizar la base de datos</button>
+                </form>
+              <?php else: ?>
+                <span class="help" style="margin:0">
+                  Avísale a quien administra la plataforma: se actualiza desde el panel.
+                </span>
+              <?php endif; ?>
+            </span>
+          </div>
+        </div>
+      <?php endif; ?>
       <?= $contenido ?>
     </main>
   </div>

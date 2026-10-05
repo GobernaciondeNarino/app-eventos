@@ -24,7 +24,7 @@ escribió para eso.
 | Auditoría | Bitácora de solo inserción |
 | Cabeceras y exposición de archivos | En `.htaccess` y también desde PHP |
 
-Lo verifica `pruebas/extremo-a-extremo.php`: 448 comprobaciones sobre un servidor real, 19 de
+Lo verifica `pruebas/extremo-a-extremo.php`: 463 comprobaciones sobre un servidor real, 19 de
 ellas en el bloque específico de seguridad y otras tantas repartidas por los guardias de cada
 pantalla, más las suites de correo, segundo factor, saneado de SVG, fotografía, adjuntos del
 expositor y detección de proxy.
@@ -735,7 +735,7 @@ conviene decirlo con claridad en la pantalla de privacidad.
 ## 6. Verificación
 
 ```bash
-php pruebas/extremo-a-extremo.php      # 448 comprobaciones sobre un servidor real
+php pruebas/extremo-a-extremo.php      # 463 comprobaciones sobre un servidor real
 php pruebas/instalacion.php            # el asistente, y qué se ve cuando falla
 php pruebas/claves.php                 # parámetros de Argon2id y rehash
 php pruebas/smtp.php                   # el cliente SMTP contra un servidor real

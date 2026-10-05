@@ -386,8 +386,13 @@ restauró no es una copia.
      `config/permitir-reinstalar`, entra a `/instalar`, elige el modo **Actualizar** —que
      conserva los datos— y borra el archivo al terminar.
 
-4. Comprueba en `/admin` que el aviso desapareció, y en `/instalar/diagnostico` que las
-   tablas están completas.
+4. Comprueba que el aviso desapareció. Desde la 3.4.1 sale en **todas** las pantallas del
+   equipo y del staff, no solo en el panel: mientras esté puesto, las que estrenan columnas no
+   funcionan, y la de acreditar responde 503 explicando por qué en vez de un error sin
+   sentido. En `/instalar/diagnostico` se ve además si las tablas están completas.
+
+   **Si subiste los archivos y no ves ningún cambio en la plataforma, mira primero ese aviso.**
+   Es la causa más común: el código nuevo está, pero la base no se enteró.
 
 ---
 

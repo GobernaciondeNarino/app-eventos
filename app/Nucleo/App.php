@@ -319,10 +319,29 @@ final class App
 
         Respuesta::compartir('evento', $evento);
         Respuesta::compartir('tema', Tema::del($evento['id'] ?? 0));
-        Respuesta::compartir('persona', Guardia::personaActual());
-        Respuesta::compartir('usuario', Guardia::usuarioActual());
+        $persona = Guardia::personaActual();
+        $usuario = Guardia::usuarioActual();
+
+        Respuesta::compartir('persona', $persona);
+        Respuesta::compartir('usuario', $usuario);
         Respuesta::compartir('aviso', Aviso::tomar());
         Respuesta::compartir('rutaActual', self::peticion()->ruta());
+
+        // ¿La base se quedó atrás del código? El aviso sale en todas las
+        // pantallas de quien puede hacer algo al respecto, no solo en el panel.
+        //
+        // Antes vivía únicamente en /admin, y eso dejaba el peor camino posible:
+        // se suben los archivos nuevos, se entra directo a una pantalla que
+        // estrena columna, y la pantalla responde 500 sin decir por qué. Pasó
+        // con la de acreditar, que es justo la que se usa en la puerta.
+        //
+        // Solo se calcula para el equipo y para el staff —son dos consultas a
+        // information_schema— porque son los únicos que pueden actuar sobre él.
+        $puedeVerlo = $usuario !== null || \App\Modelos\Persona::esStaff($persona);
+        [$pendiente, $motivo] = $puedeVerlo ? \App\Esquema::revisionPendiente() : [false, ''];
+        Respuesta::compartir('esquemaAtrasado', $pendiente);
+        Respuesta::compartir('esquemaMotivo', $motivo);
+        Respuesta::compartir('esquemaVersion', \App\Esquema::VERSION);
     }
 
     /**

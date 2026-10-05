@@ -323,10 +323,15 @@ la persona llegó sin nada— está la búsqueda a mano, debajo del lector.
 Se busca por **número de identificación**, nombre, correo o entidad. Con una diferencia que la
 pantalla explica:
 
-| Por | Cómo |
-|---|---|
-| **Identificación** | Completa. Con puntos o sin ellos, da igual, pero entera |
-| Nombre, correo, entidad, municipio | Basta con una parte |
+| Por | Cómo | A dónde lleva |
+|---|---|---|
+| **Identificación** | Completa. Con puntos o sin ellos, da igual, pero entera | **Directo a registrar el ingreso**, igual que leer el QR |
+| Nombre, correo, entidad, municipio | Basta con una parte | A la lista, para elegir |
+
+Que digitar la cédula lleve directo a la misma pantalla que el QR es deliberado: quien llega
+sin carnet y sin teléfono tiene que poder acreditarse en los mismos pasos que quien lo trae, y
+no en uno más por el camino. Con un nombre que da varias coincidencias sí sale la lista,
+porque ahí elegir es de quien está en la puerta y no de la plataforma.
 
 El número hay que escribirlo completo porque está cifrado en la base: lo que se compara es una
 huella, y una huella o coincide entera o no coincide. Buscar por los últimos cuatro dígitos

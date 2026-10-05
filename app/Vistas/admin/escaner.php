@@ -59,9 +59,10 @@ $rutaBuscar = $esStaff ? '/acreditar/buscar' : '/admin/escaner/buscar';
       <div class="card__body stack stack--3">
         <p class="help">
           Cuando el teléfono se quedó sin batería, el código está rayado o la persona llegó
-          sin nada. Por <strong>número de identificación</strong> hay que escribirlo completo:
-          está cifrado en la base y solo se puede comparar exacto. Por nombre, correo o
-          entidad basta con una parte.
+          sin nada. <strong>Digitar la identificación completa lleva directo a registrar el
+          ingreso</strong>, igual que leer el QR: hay que escribirla entera porque está
+          cifrada en la base y solo se puede comparar exacta. Por nombre, correo o entidad
+          basta con una parte, y entonces sale la lista para elegir.
         </p>
         <div class="row" style="flex-wrap:nowrap">
           <label class="sr-only" for="q">Identificación, nombre o correo</label>

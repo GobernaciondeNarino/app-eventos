@@ -387,6 +387,21 @@ final class Escaneo
             'buscó'      => $acreditador['tipo'] ?? 'equipo',
         ]);
 
+        // Digitar el documento completo lleva directo a la ficha de
+        // acreditación, que es donde deja el QR. Para eso está: quien llega sin
+        // carnet y sin teléfono tiene que poder acreditarse en los mismos pasos
+        // que quien lo trae, y no en uno más por el camino.
+        //
+        // Solo cuando el documento coincide exacto y es una sola persona: un
+        // nombre con varias coincidencias sigue mostrando la lista, porque ahí
+        // la elección es de quien está en la puerta.
+        $porDocumento = Persona::porDocumento((int) $evento['id'], $texto);
+        if ($porDocumento !== null && count($encontradas) === 1
+            && (int) $encontradas[0]['id'] === (int) $porDocumento['id']) {
+            $credencial = Credencial::asegurar((int) $porDocumento['id']);
+            Respuesta::redirigir('/c/' . $credencial['token']);
+        }
+
         Respuesta::vista('admin/escaner', [
             'titulo'      => 'Acreditar asistente',
             'pantalla'    => 'acreditar',

@@ -700,11 +700,34 @@ final class Esquema
     public static function versionInstalada(): ?string
     {
         try {
-            $v = Bd::valor('SELECT version FROM {migracion} ORDER BY aplicada_en DESC LIMIT 1');
-            return $v === null ? null : (string) $v;
+            $filas = Bd::filas('SELECT version FROM {migracion}');
         } catch (\Throwable) {
             return null;
         }
+        if ($filas === []) {
+            return null;
+        }
+
+        // La más alta, no la más reciente.
+        //
+        // Antes era «ORDER BY aplicada_en DESC LIMIT 1», y eso falla justo
+        // cuando más duele: dos filas escritas en el mismo segundo —una
+        // actualización inmediatamente después de otra— empatan, y con un empate
+        // el orden que devuelve la base es indeterminado. Si gana la vieja, el
+        // aviso de «la base está atrasada» se queda puesto para siempre y pulsar
+        // el botón no lo quita, porque la fila nueva ya existe.
+        //
+        // La pregunta que de verdad se hace aquí es «qué versión está aplicada»,
+        // y eso se responde comparando versiones. version_compare además ordena
+        // bien 1.10 frente a 1.9, que como texto quedarían al revés.
+        $mayor = null;
+        foreach ($filas as $fila) {
+            $v = (string) $fila['version'];
+            if ($mayor === null || version_compare($v, $mayor, '>')) {
+                $mayor = $v;
+            }
+        }
+        return $mayor;
     }
 
     /**
@@ -720,7 +743,21 @@ final class Esquema
      *
      * @return array{0: bool, 1: string}
      */
+    /** @var array{0:bool,1:string}|null Respuesta de revisionPendiente() en esta petición. */
+    private static ?array $revision = null;
+
     public static function revisionPendiente(): array
+    {
+        // Se consulta information_schema dos veces, y desde la 3.4 esto lo
+        // pregunta cada pantalla del equipo y no solo el panel. Una vez por
+        // petición es suficiente: el esquema no cambia a mitad de una.
+        if (self::$revision !== null) {
+            return self::$revision;
+        }
+        return self::$revision = self::revisar();
+    }
+
+    private static function revisar(): array
     {
         try {
             $faltan = array_values(array_diff(self::nombres(), self::existentes()));

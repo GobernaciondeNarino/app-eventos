@@ -44,12 +44,11 @@ final class Admin
     {
         $evento = App::eventoExigido();
 
-        // Si el código subió de versión y la base se quedó atrás, el panel lo
-        // dice arriba del todo. Antes no lo decía nadie: la plataforma
-        // funcionaba a medias —una pantalla nueva contra una tabla que no
-        // existe— y el fallo aparecía en la puerta del evento.
-        [$esquemaPendiente, $motivoEsquema] = \App\Esquema::revisionPendiente();
-
+        // El aviso de «la base está atrasada» lo pinta la plantilla, en todas
+        // las pantallas del equipo y del staff. Vivía solo aquí, y eso dejaba
+        // suelto el camino que de verdad duele: subir los archivos nuevos,
+        // entrar directo a una pantalla que estrena columna, y verla fallar sin
+        // que nada explique por qué.
         Respuesta::vista('admin/panel', [
             'titulo'      => 'Panel',
             'pantalla'    => 'panel',
@@ -58,9 +57,6 @@ final class Admin
             'municipios'  => Evento::porMunicipio((int) $evento['id']),
             'bitacora'    => Bitacora::recientes(12),
             'pendientes'  => $this->pendientes((int) $evento['id']),
-            'esquemaPendiente' => $esquemaPendiente && Guardia::puede('administrador'),
-            'motivoEsquema'    => $motivoEsquema,
-            'versionEsquema'   => \App\Esquema::VERSION,
         ]);
     }
 
@@ -329,6 +325,16 @@ final class Admin
         $nuevo = $peticion->campo('rol');
         if (!in_array($nuevo, Persona::ROLES, true)) {
             Respuesta::redirigir('/admin/registros/' . $id, 'Ese perfil no existe.', 'warn');
+        }
+
+        // «staff» es un valor del ENUM de la columna, y una base atrasada no lo
+        // tiene: el UPDATE fallaría con «Data truncated» y la pantalla con un
+        // 500. Se dice qué falta en vez de dejar que reviente.
+        [$atrasada] = \App\Esquema::revisionPendiente();
+        if ($atrasada && $nuevo === 'staff') {
+            Respuesta::redirigir('/admin/registros/' . $id,
+                'Falta actualizar la base de datos: el perfil Staff todavía no existe en ella. '
+                . 'Pulsa «Actualizar la base de datos» en el panel y vuelve a intentarlo.', 'warn');
         }
 
         $anterior = (string) $persona['rol'];

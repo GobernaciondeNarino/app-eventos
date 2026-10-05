@@ -26,9 +26,11 @@ $roles = ['administrador' => 'Administrador', 'operador' => 'Operador de acceso'
 ?>
 <div class="view view--wide stack stack--4">
 
+  <?php $pestana = 'cuenta'; require __DIR__ . '/../parciales/pestanas-configuracion.php'; ?>
+
   <div class="stack stack--2">
-    <span class="kicker">Mi cuenta</span>
-    <h1>Configuración</h1>
+    <span class="kicker">Configuración</span>
+    <h1>Mi cuenta</h1>
     <p class="help">Tu acceso al panel: la verificación en dos pasos y la contraseña.</p>
   </div>
 

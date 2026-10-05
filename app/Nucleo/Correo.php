@@ -26,7 +26,7 @@ defined('EVENTOS_TIC') || exit;
  *                para que la plataforma siga siendo utilizable en vez de
  *                fallar al primer código de acceso.
  *
- * Se configura desde Administración → Correo, que además comprueba la conexión
+ * Se configura desde Configuración → Acceso y correo, que además comprueba la conexión
  * y explica cada código de error del servidor. Ver docs/config-mail.md.
  */
 final class Correo
@@ -100,7 +100,10 @@ final class Correo
             Registro::aviso('Correo no enviado (modo registro)', [
                 'para'   => $destinatario,
                 'asunto' => $asunto,
-                'texto'  => mb_substr($cuerpoTexto, 0, 500),
+                // El texto entero, hasta un límite holgado: es el modo de
+                // pruebas y de diagnóstico, y cortarlo a la mitad escondía
+                // justo el final del mensaje —las observaciones, el enlace—.
+                'texto'  => mb_substr($cuerpoTexto, 0, 3000),
             ]);
             return true;
         }
@@ -921,7 +924,7 @@ final class Correo
                 '<p style="margin:0 0 16px">Si estás leyendo esto, la plataforma puede enviar '
                 . 'correo: los códigos de acceso y los carnets van a llegar.</p>'
                 . '<p style="margin:0;font-size:14px;color:#556">Enviado el ' . htmlspecialchars($cuando)
-                . ' desde Administración → Correo.</p>'),
+                . ' desde Configuración → Acceso y correo.</p>'),
             "La configuración de correo funciona. Enviado el $cuando."
         );
     }
@@ -1127,6 +1130,114 @@ final class Correo
             "Tu código para entrar al panel es $codigo. Vence en 10 minutos y sirve una sola vez. "
             . 'Si no fuiste tú, alguien escribió tu contraseña correcta: cámbiala y avisa a la administración.'
         );
+    }
+
+    /**
+     * La decisión sobre una propuesta de exposición, para quien la envió.
+     *
+     * Va en los tres casos —aprobada, devuelta, rechazada— con lo que el comité
+     * cambió de la propuesta y sus observaciones. Antes la decisión solo se
+     * veía entrando a la plataforma, y nadie entra a mirar si no sabe que hay
+     * algo que mirar.
+     *
+     * @param array<int, string> $cambios en palabras, uno por línea
+     * @param array{dia: int, fecha: string, hora: string, salon: string}|null $agenda
+     */
+    public static function decisionPropuesta(
+        string $destinatario,
+        string $nombre,
+        string $evento,
+        string $decision,
+        string $titulo,
+        string $observacion,
+        array $cambios,
+        ?array $agenda,
+        string $enlace
+    ): bool {
+        $h = static fn(string $t): string => htmlspecialchars($t, ENT_QUOTES, 'UTF-8');
+
+        [$asunto, $encabezado, $explicacion, $boton] = match ($decision) {
+            'aprobada' => [
+                'Tu propuesta fue aprobada: ' . $titulo,
+                'Tu propuesta fue aprobada',
+                'El comité aprobó tu exposición y ya está publicada en la agenda del evento. Tu carnet '
+                    . 'sale con el rótulo de expositor.',
+                'Ver la agenda',
+            ],
+            'observada' => [
+                'Tu propuesta tiene observaciones: ' . $titulo,
+                'Tu propuesta necesita ajustes',
+                'El comité revisó tu exposición y te pide algunos ajustes antes de decidir. Entra a tu '
+                    . 'registro, corrige lo que te piden y vuelve a enviarla marcando «Voy a exponer».',
+                'Ir a mi registro',
+            ],
+            default => [
+                'Sobre tu propuesta: ' . $titulo,
+                'Tu propuesta no fue seleccionada',
+                'Gracias por proponer una exposición. Esta vez el comité no la incluyó en la agenda. Tu '
+                    . 'registro como participante sigue activo, y tu carnet también.',
+                'Ir a mi registro',
+            ],
+        };
+
+        $bloques = '<p style="margin:0 0 16px">Hola, ' . $h($nombre) . '.</p>'
+            . '<p style="margin:0 0 16px">' . $h($explicacion) . '</p>'
+            . '<p style="margin:0 0 16px;font-size:17px;font-weight:700;color:#0C2E3C">«' . $h($titulo) . '»</p>';
+        $texto = [$encabezado, '', 'Hola, ' . $nombre . '.', '', $explicacion, '', '«' . $titulo . '»'];
+
+        if ($agenda !== null) {
+            $filas = [
+                'Día'   => 'Día ' . $agenda['dia'] . ' · ' . self::fechaLarga($agenda['fecha']),
+                'Hora'  => $agenda['hora'],
+                'Salón' => $agenda['salon'] !== '' ? $agenda['salon'] : 'Te lo confirma la organización',
+            ];
+            $bloques .= '<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 16px;'
+                . 'border:1px solid #C9DCE8;width:100%">';
+            $texto[] = '';
+            foreach ($filas as $k => $valor) {
+                $bloques .= '<tr><td style="padding:8px 12px;font-size:13px;color:#556;width:90px">' . $h($k) . '</td>'
+                    . '<td style="padding:8px 12px;font-size:15px;color:#0B2534"><strong>' . $h($valor) . '</strong></td></tr>';
+                $texto[] = $k . ': ' . $valor;
+            }
+            $bloques .= '</table>';
+        }
+
+        if ($cambios !== []) {
+            $bloques .= '<p style="margin:0 0 8px;font-weight:700">Cambios en tu exposición</p>'
+                . '<ul style="margin:0 0 16px;padding-left:20px">';
+            array_push($texto, '', 'Cambios en tu exposición:');
+            foreach ($cambios as $cambio) {
+                $bloques .= '<li style="margin:0 0 4px">' . $h($cambio) . '</li>';
+                $texto[] = '- ' . $cambio;
+            }
+            $bloques .= '</ul>';
+        }
+
+        if (trim($observacion) !== '') {
+            $bloques .= '<p style="margin:0 0 8px;font-weight:700">Observaciones del comité</p>'
+                . '<p style="margin:0 0 16px;padding:12px 14px;background:#F4F8FB;border-left:3px solid #0C2E3C">'
+                . nl2br($h($observacion)) . '</p>';
+            array_push($texto, '', 'Observaciones del comité:', $observacion);
+        }
+
+        $bloques .= '<p style="margin:0"><a href="' . $h($enlace) . '" style="display:inline-block;padding:12px 18px;'
+            . 'background:#0C2E3C;color:#E4F7FD;text-decoration:none;font-weight:700">' . $h($boton) . '</a></p>';
+        array_push($texto, '', $boton . ': ' . $enlace);
+
+        return self::enviar($destinatario, $asunto, self::plantilla($evento, $encabezado, $bloques), implode("\n", $texto));
+    }
+
+    /** 2026-09-15 → «martes 15 de septiembre», sin depender de la configuración regional del servidor. */
+    private static function fechaLarga(string $iso): string
+    {
+        $marca = strtotime($iso);
+        if ($marca === false) {
+            return $iso;
+        }
+        $dias = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+        $meses = ['', 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto',
+                  'septiembre', 'octubre', 'noviembre', 'diciembre'];
+        return $dias[(int) date('w', $marca)] . ' ' . (int) date('j', $marca) . ' de ' . $meses[(int) date('n', $marca)];
     }
 
     /**

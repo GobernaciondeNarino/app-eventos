@@ -32,9 +32,9 @@ salir, **nadie podía entrar**. No fue un problema de correo: fue un punto únic
 **Recomendación firme:** deja encendidos al menos **dos** métodos, y que uno sea el **QR de
 acceso**, que no depende de red, ni de terceros, ni de que la persona recuerde nada.
 
-Se configura en **Administración → Autenticación**, que está organizada por pestañas: una por
-método, con su configuración y sus instrucciones juntas. Cada pestaña guarda lo suyo, así que
-tocar WhatsApp no altera lo que tengas puesto en SMS.
+Se configura en **Administración → Configuración → Acceso y correo**, que está organizada por
+pestañas: una por método, con su configuración y sus instrucciones juntas. Cada pestaña guarda
+lo suyo, así que tocar WhatsApp no altera lo que tengas puesto en SMS.
 
 Desde la versión 3.2 una instalación nueva viene con **correo, QR y contraseña encendidos**.
 Es deliberado: ninguno de los tres depende de un tercero ni cuesta dinero, y que la
@@ -126,7 +126,7 @@ Cada quien puede retirar sus dispositivos desde su carnet, y un administrador de
 
 ### 3.2 En la plataforma
 
-**Administración → Autenticación → Envío de mensajes**
+**Administración → Configuración → Acceso y correo → Envío de mensajes**
 
 | Campo | Valor |
 |---|---|
@@ -259,7 +259,8 @@ nc -zv smtp.gmail.com 587
 - **No conecta** → el bloqueo es del proveedor. Pídele que abra 587 y 465, o usa la API (§ 6 de
   `config-mail.md`).
 
-Y desde el navegador: **Administración → Autenticación → Probar la salida de red**. Eso corre
+Y desde el navegador: **Administración → Configuración → Acceso y correo → Probar la salida de
+red**. Eso corre
 **como el usuario de PHP**, que es el que importa. Si ahí sale `Connection refused` y por SSH
 conecta, está confirmado.
 
@@ -345,7 +346,8 @@ Sin plantilla, el primer mensaje a alguien que nunca escribió será rechazado.
 
 ### 6.4 En la plataforma
 
-**Administración → Autenticación** → marcar *WhatsApp* → completar proveedor, cuenta y token.
+**Administración → Configuración → Acceso y correo** → marcar *WhatsApp* → completar proveedor,
+cuenta y token.
 El teléfono de cada persona sale de su preregistro; se acepta en cualquier formato y se
 normaliza a `+57…`.
 

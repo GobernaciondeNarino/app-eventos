@@ -147,7 +147,7 @@ final class Cuenta
 
         Respuesta::vista('admin/cuenta', [
             'titulo'       => 'Configuración',
-            'pantalla'     => 'cuenta',
+            'pantalla'     => 'configuracion',
             'cuenta'       => $usuario,
             'estado2fa'    => Usuario::estadoSegundoFactor($usuario),
             'obligatorio'  => Usuario::exigeSegundoFactor($usuario)

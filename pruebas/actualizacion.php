@@ -88,6 +88,17 @@ $CONFIG_ANTES = Config::todo();
 Bd::conectar();
 $P = Bd::prefijo();
 
+// instalacion.php, que suele correr justo antes, termina escribiendo
+// config/config.php desde la consola, y puede hacerlo en el mismo segundo en
+// que el servidor de pruebas guardó en opcache la versión anterior. opcache
+// compara la fecha del archivo, que va en segundos: con la misma fecha no lo
+// vuelve a leer, y el servidor seguía con otra llave de cifrado. Los dos
+// primeros caminos fallaban entonces al entrar, sin que fuera culpa suya. Una
+// fecha nueva y la espera de siempre lo ponen al día.
+sleep(1);
+touch(RAIZ . '/config/config.php');
+esperarAlServidor();
+
 echo "Actualización de una instalación en producción · desde $PARTIDA\n" . str_repeat('=', 62) . "\n";
 
 /* =========================================================================
@@ -194,6 +205,16 @@ function sembrar(): array
     insertarComoEra('asistencia', [
         'persona_id' => $personas[0], 'evento_dia_id' => $dias[0], 'via' => 'qr_dia',
     ]);
+
+    // La caracterización, en las columnas cortas de entonces. La 1.8.0 las
+    // ensancha para las opciones que se configuran por evento.
+    $caracterizacion = ['genero' => 'F', 'rango_edad' => '29-40', 'etnia' => 'Indigena', 'discapacidad' => 'No'];
+    insertarComoEra('persona_caracterizacion', ['persona_id' => $personas[1]] + $caracterizacion);
+
+    // Una columna que alguien agrandó a mano en el servidor. Actualizar
+    // ensancha lo que se quedó corto, pero nunca estrecha lo que ya es más ancho.
+    Bd::ejecutarBruto('ALTER TABLE `' . Bd::prefijo() . "persona_caracterizacion`
+                       MODIFY COLUMN `discapacidad` VARCHAR(100) NOT NULL DEFAULT ''");
     insertarComoEra('propuesta', [
         'persona_id' => $personas[0], 'titulo' => 'Charla de producción', 'categoria' => 'Gobierno digital',
         'detalle' => 'Una propuesta que ya estaba enviada antes de actualizar.',
@@ -203,6 +224,8 @@ function sembrar(): array
         'evento' => $eventoId, 'admin' => $adminId, 'secreto' => $secreto, 'clave' => $clave,
         'correo_admin' => 'prod.admin@narino.gov.co',
         'documentos' => array_combine($personas, $documentos),
+        'pasaporte' => $personas[2],
+        'caracterizada' => $personas[1], 'caracterizacion' => $caracterizacion,
         'conteos' => cuentas(),
     ];
 }
@@ -255,6 +278,31 @@ function verificar(string $camino, array $s, string $llave): void
         [$P . 'persona']
     );
     comprobar("[$camino] el perfil admite Staff", str_contains($tipoRol, "'staff'"), $tipoRol);
+
+    // Las columnas que la 1.8.0 ensancha: lo guardado sigue igual.
+    $tipos = [];
+    foreach (Bd::filas(
+        "SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE FROM information_schema.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (?, ?)",
+        [$P . 'persona', $P . 'persona_caracterizacion']
+    ) as $fila) {
+        $tipos[substr((string) $fila['TABLE_NAME'], strlen($P)) . '.' . $fila['COLUMN_NAME']] = strtolower((string) $fila['COLUMN_TYPE']);
+    }
+    comprobar("[$camino] el tipo de documento admite los que se agreguen", ($tipos['persona.tipo_documento'] ?? '') === 'varchar(12)',
+        $tipos['persona.tipo_documento'] ?? '');
+    comprobar("[$camino] y el pasaporte sigue siendo pasaporte",
+        Bd::valor('SELECT tipo_documento FROM {persona} WHERE id = ?', [$s['pasaporte']]) === 'PP');
+    comprobar("[$camino] la caracterización tiene espacio para las opciones nuevas",
+        ($tipos['persona_caracterizacion.genero'] ?? '') === 'varchar(60)'
+        && ($tipos['persona_caracterizacion.etnia'] ?? '') === 'varchar(60)'
+        && ($tipos['persona_caracterizacion.rango_edad'] ?? '') === 'varchar(40)',
+        json_encode($tipos, JSON_UNESCAPED_UNICODE));
+    comprobar("[$camino] la columna agrandada a mano no se estrecha",
+        ($tipos['persona_caracterizacion.discapacidad'] ?? '') === 'varchar(100)', $tipos['persona_caracterizacion.discapacidad'] ?? '');
+    $caracterizacion = Bd::fila('SELECT genero, rango_edad, etnia, discapacidad FROM {persona_caracterizacion} WHERE persona_id = ?',
+        [$s['caracterizada']]);
+    comprobar("[$camino] y la caracterización guardada no cambió", $caracterizacion === $s['caracterizacion'],
+        json_encode($caracterizacion, JSON_UNESCAPED_UNICODE));
 
     // Nada se perdió.
     comprobar("[$camino] no se perdió ningún registro", cuentas() === $s['conteos'],

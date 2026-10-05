@@ -132,10 +132,18 @@ final class Persona
      * puerta, y la ficha de acreditación existe para comparar contra el
      * documento físico.
      */
-    public static function registroCompleto(array $persona): bool
+    public static function registroCompleto(array $persona, ?bool $exigeDocumento = null): bool
     {
-        return trim((string) ($persona['nombre'] ?? '')) !== ''
-            && ($persona['documento_huella'] ?? null) !== null;
+        if (trim((string) ($persona['nombre'] ?? '')) === '') {
+            return false;
+        }
+        // La identificación cuenta solo si el formulario de su evento la exige:
+        // desde la 3.7 se puede dejar opcional o quitar, y entonces el carnet
+        // sale con el nombre.
+        $exigeDocumento ??= isset($persona['evento_id'])
+            ? Formulario::delEvento((int) $persona['evento_id'])->obligatorio('documento')
+            : true;
+        return !$exigeDocumento || ($persona['documento_huella'] ?? null) !== null;
     }
 
     /**
@@ -205,8 +213,11 @@ final class Persona
 
             $campos = [
                 'nombre'            => mb_substr(trim((string) $datos['nombre']), 0, 160),
-                'tipo_documento'    => in_array($datos['tipo_documento'] ?? 'CC', ['CC', 'CE', 'TI', 'PP'], true)
-                                        ? $datos['tipo_documento'] : 'CC',
+                // La lista de tipos la configura cada evento y la valida el
+                // formulario; aquí solo se cuida la forma, por si algo llega
+                // sin pasar por él.
+                'tipo_documento'    => preg_match('/^[A-Z0-9]{1,12}$/', (string) ($datos['tipo_documento'] ?? ''))
+                                        ? (string) $datos['tipo_documento'] : 'CC',
                 'documento_cifrado' => $documento === '' ? null : Cripto::cifrar($documento),
                 'documento_huella'  => $huella,
                 'telefono'          => mb_substr(trim((string) ($datos['telefono'] ?? '')), 0, 32),
@@ -243,7 +254,10 @@ final class Persona
             // nombre ni identificación no sirve de nada en la puerta, y
             // emitirlo antes deja credenciales huérfanas de quien creó su
             // acceso y no volvió.
-            $credencial = self::registroCompleto($campos) ? Credencial::asegurar($id) : null;
+            $credencial = self::registroCompleto(
+                $campos,
+                Formulario::delEvento($eventoId)->obligatorio('documento')
+            ) ? Credencial::asegurar($id) : null;
 
             Bitacora::registrar($nueva ? 'registro' : 'registro_actualizado', 'persona', $id, [
                 'rol' => $campos['rol'],
@@ -257,10 +271,10 @@ final class Persona
     private static function guardarCaracterizacion(int $personaId, array $datos): void
     {
         $campos = [
-            'genero'       => mb_substr((string) ($datos['genero'] ?? ''), 0, 20),
-            'rango_edad'   => mb_substr((string) ($datos['rango_edad'] ?? ''), 0, 12),
-            'etnia'        => mb_substr((string) ($datos['etnia'] ?? ''), 0, 40),
-            'discapacidad' => mb_substr((string) ($datos['discapacidad'] ?? ''), 0, 40),
+            'genero'       => mb_substr((string) ($datos['genero'] ?? ''), 0, 60),
+            'rango_edad'   => mb_substr((string) ($datos['rango_edad'] ?? ''), 0, 40),
+            'etnia'        => mb_substr((string) ($datos['etnia'] ?? ''), 0, 60),
+            'discapacidad' => mb_substr((string) ($datos['discapacidad'] ?? ''), 0, 60),
         ];
 
         // Si no diligenció nada, no se crea la fila: una tabla de datos

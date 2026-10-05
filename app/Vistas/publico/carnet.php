@@ -95,7 +95,7 @@ guiones('carnet.js');
               }
               ?>
             </div>
-            <span class="carnet__code"><?= e($persona['tipo_documento'] . ' ' . documento($documento)) ?></span>
+            <span class="carnet__code"><?= e(identificacion($persona['tipo_documento'], $documento) ?: $credencial['codigo']) ?></span>
           </div>
         </div>
 
@@ -158,7 +158,7 @@ guiones('carnet.js');
         <?php foreach ([
           ['Credencial', $credencial['codigo']],
           ['Perfil', etiquetaRol($rol)],
-          ['Documento', $persona['tipo_documento'] . ' ' . documento($documento)],
+          ['Documento', identificacion($persona['tipo_documento'], $documento) ?: 'No registrado'],
           ['Correo', $persona['correo']],
           ['Municipio', $persona['municipio'] ?: 'Sin registrar'],
           ['Entidad', $persona['entidad'] ?: 'Independiente'],

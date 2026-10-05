@@ -2,11 +2,12 @@
 
 Qué se puede cambiar una vez creado, quién puede tocar qué, y qué no tiene vuelta atrás:
 eventos y jornadas, las propuestas de los expositores, el perfil Staff, la impresión de
-carnets, la acreditación en la puerta, y la verificación en dos pasos del equipo.
+carnets, la acreditación en la puerta, la verificación en dos pasos del equipo y el formulario
+de registro.
 
-Todo lo de aquí está en **Administración → Eventos**, **QR por día**, **Expositores** y
-**Registros**, y exige el rol **administrador** salvo donde se diga otra cosa. Las dos
-secciones del final —imprimir carnets y acreditar— las comparten el equipo y el Staff.
+Todo lo de aquí está en **Administración → Eventos**, **QR por día**, **Expositores**,
+**Registros** y **Configuración**, y exige el rol **administrador** salvo donde se diga otra
+cosa. Imprimir carnets y acreditar lo comparten el equipo y el Staff.
 
 ---
 
@@ -169,7 +170,7 @@ Pulsar una propuesta abre todo lo que hace falta para decidir, sin salir de la p
 | **La propuesta** | Título, categoría, detalle, día preferido, duración y requerimientos |
 | **Quién la presenta** | Foto, perfil, correo, teléfono, identificación, entidad, territorio, cuándo se registró y cuándo envió la propuesta. Y un enlace a la **ficha completa**, con sus ingresos y su carnet |
 | **Documentos de respaldo** | La hoja de vida y la exposición, para bajar |
-| **Validar la participación** | La decisión, con el día, la hora y el salón que se le asignan |
+| **Validar la participación** | La decisión, con el día, la hora y el salón que se le asignan, los ajustes a la propuesta y el aviso por correo |
 
 Los datos de la persona van aquí y no en otra pantalla a propósito: decidir sobre una propuesta
 es decidir sobre quién la presenta, y tener que abrir la ficha en otra pestaña para ver de qué
@@ -190,7 +191,35 @@ imprime con lo que diga el perfil.
 **Ninguna es definitiva.** Se puede volver a entrar y cambiarla; al dejar de estar aprobada, la
 charla se quita de la agenda.
 
-### 4.3 Los dos documentos son obligatorios
+### 4.3 El correo al expositor
+
+Con cualquiera de las tres decisiones, **le llega un correo a quien presentó la propuesta**. La
+casilla «Avisar a … por correo», encima de los botones, viene marcada; se desmarca para corregir
+algo sin escribirle —por ejemplo, cambiar el salón de una charla ya aprobada y avisada—.
+
+| Decisión | Asunto | Qué dice |
+|---|---|---|
+| Aprobar | «Tu propuesta fue aprobada: …» | El título con el que queda, el día, la hora y el salón, y el enlace a la agenda |
+| Devolver | «Tu propuesta tiene observaciones: …» | Lo que tiene que corregir y el enlace a su registro, para mandarla otra vez |
+| Rechazar | «Sobre tu propuesta: …» | Que no fue seleccionada, con el motivo si se escribió |
+
+En los tres casos van **las observaciones** del cuadro de texto y **los cambios** que se le
+hicieron a la propuesta (abajo), cada uno en su línea: «Título: «A» pasa a ser «B»»,
+«Duración: de 40 a 60 minutos», «Día: pediste el día 1; quedó el día 2 (2 sep 2026)». Esta
+última solo va si el formulario le preguntó el día preferido.
+
+Si el correo no sale, la decisión se guarda igual y la pantalla lo dice en amarillo: decidir no
+depende del correo. Si el correo saliente no está configurado, la casilla lo advierte antes de
+pulsar. Cada decisión queda en la bitácora, con los cambios y si se avisó.
+
+### 4.4 Ajustar la propuesta al decidir
+
+En el mismo bloque se pueden corregir **el título, la categoría y la duración** antes de aprobar
+—un título demasiado largo para el programa, una charla de 60 minutos que solo cabe en 40—. Lo
+que se cambie se guarda en la propuesta, sale así en la agenda, y se le cuenta al expositor en el
+correo. Sin cambios, no se menciona nada.
+
+### 4.5 Los dos documentos son obligatorios
 
 Quien marca «voy a exponer» en el formulario **tiene que** adjuntar su **hoja de vida** (PDF) y
 su **exposición** (PDF o PPTX). Los ve solo el equipo que revisa las propuestas; no se publican
@@ -211,7 +240,7 @@ verde lo que llegó y en gris lo que no. Si ves alguna en gris es de antes de qu
 obligatorios. Devuélvela con observaciones pidiendo el documento: el expositor entra a su
 registro y lo sube.
 
-### 4.4 Bajarlos
+### 4.6 Bajarlos
 
 En **Administración → Expositores**, se pulsa la propuesta y se abre su hoja de revisión: los
 dos archivos están ahí, en el bloque **«Documentos de respaldo»**, con el formato y el peso al
@@ -223,7 +252,7 @@ en lugar del que tienen en el disco del servidor.
 Que se bajen y no se abran incrustados es deliberado: un PDF puede traer sus propios guiones, y
 estos los subió alguien de fuera de la entidad.
 
-### 4.5 Después de aprobar
+### 4.7 Después de aprobar
 
 El expositor **sigue pudiendo cambiar sus archivos** cuando su propuesta ya está aprobada y
 agendada. Es justo cuando la mayoría tiene la presentación definitiva lista, y cambiar el
@@ -233,7 +262,7 @@ Lo que ya **no** puede cambiar desde el formulario es el tema, la categoría ni 
 publicados. El formulario se lo dice con un aviso, para que nadie edite el detalle, guarde, y
 no entienda por qué no pasó nada.
 
-### 4.6 Si un expositor dice que no puede subir su presentación
+### 4.8 Si un expositor dice que no puede subir su presentación
 
 Casi siempre es el límite de PHP del servidor, no la plataforma. Mira el diagnóstico del
 instalador (`/instalar/diagnostico`), fila **Tamaño máximo de subida**: si aparece en amarillo,
@@ -370,14 +399,15 @@ el reloj del teléfono:
 Debajo del campo del código, **«Enviar un código a mi correo»**. Llega un código de seis
 dígitos que vence en diez minutos y sirve una sola vez. Solo se ofrece después de escribir la
 contraseña, nunca en su lugar, y solo si el correo saliente está configurado. Al entrar así,
-la plataforma lleva a **Configuración** para que vuelvas a dejar la aplicación en orden.
+la plataforma lleva a **Configuración → Mi cuenta** para que vuelvas a dejar la aplicación en
+orden.
 
 Si el mensaje te llega sin haberlo pedido, alguien escribió tu contraseña correcta: cámbiala.
 
-### 8.3 Configuración: restablecer el código QR
+### 8.3 Mi cuenta: restablecer el código QR
 
-**Administración → Configuración**, para todo el equipo. Sirve cuando se cambió de teléfono,
-se borró la aplicación, o el código no funciona:
+**Administración → Configuración → Mi cuenta**, para todo el equipo. Sirve cuando se cambió de
+teléfono, se borró la aplicación, o el código no funciona:
 
 1. Escribe tu contraseña actual y pulsa **Restablecer: generar un código QR nuevo**.
 2. Escanéalo con la aplicación (o escribe a mano el código que aparece al lado).
@@ -394,13 +424,130 @@ Desde ahí mismo se cambia la contraseña.
 Si perdió el teléfono y el código por correo no le llega, una cuenta administradora puede
 quitarle la verificación desde **Organizadores → Restablecer 2FA**. Se le cierran las sesiones
 y, al entrar con su contraseña, escanea un QR nuevo. La tuya propia se restablece en
-Configuración, no desde ahí. Queda en la bitácora.
+Configuración → Mi cuenta, no desde ahí. Queda en la bitácora.
 
 Por consola, quien tenga acceso al servidor: `php herramientas/cuenta.php sin-2fa --correo=…`.
 
 ---
 
-## 9. Antes de abrir al público
+## 9. Configuración
+
+Desde la versión 3.7, todo lo que se ajusta una vez y no se toca a diario está en una sola
+entrada del menú, **Administración → Configuración**, con cuatro pestañas:
+
+| Pestaña | Qué se configura | Quién |
+|---|---|---|
+| **Registro** | El formulario de registro del evento activo: campos, listas y banner | Administrador |
+| **Identidad** | Colores, tipografía y logo del evento, con la revisión de contraste | Administrador |
+| **Acceso y correo** | Las formas de entrar de los asistentes y el envío de correo | Administrador |
+| **Mi cuenta** | La verificación en dos pasos y la contraseña de quien está dentro | Todo el equipo |
+
+Las direcciones de antes —`/admin/identidad`, `/admin/autenticacion`, `/admin/cuenta`— siguen
+funcionando: un enlace guardado o un correo viejo no se rompen. Quien no es administrador entra
+directo a *Mi cuenta*, que es lo único de aquí que le corresponde.
+
+### 9.1 Registro: qué campos se piden
+
+Cada campo del formulario tiene tres estados posibles:
+
+| Estado | En el formulario |
+|---|---|
+| **Obligatorio** | Aparece con asterisco y no se puede enviar vacío |
+| **Opcional** | Aparece y se puede dejar en blanco |
+| **Oculto** | No aparece |
+
+Los que se configuran: identificación (tipo y número), teléfono, perfil de asistencia,
+fotografía, entidad, rango de edad, departamento y municipio, género, grupo étnico,
+discapacidad, la propuesta de exposición y, dentro de ella, el día preferido, la duración y los
+requerimientos técnicos. Cuando a un campo no le cabe ser obligatorio —el perfil, la casilla
+de exponer— las opciones son *Visible* u *Oculto*.
+
+Tres cosas no se pueden cambiar, y la pantalla dice por qué:
+
+- **El correo, el nombre y la autorización de tratamiento de datos se piden siempre.** Sin
+  correo no hay forma de entrar, sin nombre no hay carnet, y sin autorización la Ley 1581 no deja
+  guardar nada.
+- **El género, la pertenencia étnica y la discapacidad se pueden pedir, nunca exigir.** Son datos
+  sensibles, y el artículo 6 de la Ley 1581 deja al titular la libertad de no responderlos. Aunque
+  alguien manipule el envío para marcarlos obligatorios, el servidor no lo acepta.
+- **El perfil Staff no se ofrece nunca en el formulario** (sección 5).
+
+**La identificación se puede dejar opcional u oculta** —un taller abierto, una charla para
+colegios—. Quien se registra sin ella recibe su carnet igual, que sale con su código en lugar del
+número. Lo que se pierde, y la pantalla lo advierte: no se le puede acreditar en la puerta por su
+número, ni detectar si se registró dos veces.
+
+**La fotografía, si se vuelve obligatoria,** se revisa con los demás campos: un archivo que no
+sirve —una foto HEIC del iPhone, una de más de 6 MB— se dice en el momento y no se guarda nada.
+Opcional, como viene de fábrica, el registro se guarda igual y solo se avisa que la foto no
+entró. Con la foto obligatoria tampoco se ofrece «quitar la foto actual».
+
+### 9.2 Registro: qué opciones trae cada lista
+
+En *Opciones de las listas*, cada lista desplegable se abre y se cambia:
+
+| Lista | Cómo se edita |
+|---|---|
+| Tipos de documento | Activar o apagar cada uno, cambiar cómo se muestra, y agregar otros con su sigla —«PPT», Permiso por Protección Temporal—. La sigla es lo que sale en el carnet. La cédula y la tarjeta de identidad se validan como solo números; los demás admiten letras |
+| Perfiles de asistencia | Cuáles se ofrecen. *Participante* va siempre |
+| Género, grupo étnico, discapacidad | Activar, apagar, cambiar el texto y agregar. «Prefiero no responder» no se puede apagar |
+| Rangos de edad, categorías de las propuestas | Una opción por línea, en el orden en que se muestran |
+| Departamentos y municipios | Un departamento por línea y, debajo, sus municipios con un guion: «Nariño» y en la siguiente «- Pasto» |
+| Duraciones de las exposiciones | En minutos, separadas por comas: «20, 40, 60» |
+
+**Las opciones de fábrica no se borran, se apagan.** Hay registros que las tienen guardadas, y
+borrarlas dejaría esos datos sin nombre en los reportes.
+
+### 9.3 Lo que ya está registrado no cambia
+
+Cambiar el formulario no toca a nadie que ya se registró:
+
+- **Se guarda el valor, no la posición.** Una opción que se quite de una lista sigue apareciendo
+  en los datos de quien la eligió, en su ficha y en la exportación.
+- **Si alguien vuelve a editar su registro**, su opción guardada sigue ahí aunque ya no se
+  ofrezca, para que no tenga que cambiarla por obligación.
+- **Un campo que se oculta conserva lo que ya tenía.** Ocultar el teléfono no borra el teléfono
+  de quien ya lo dio; simplemente no se le vuelve a preguntar.
+
+### 9.4 El banner
+
+Una imagen ancha arriba del formulario, antes del primer campo, con un título y un texto corto
+si se quiere —«Inscripciones abiertas hasta el 30 de octubre»—.
+
+- JPG, PNG o WEBP, de hasta 6 MB. **1600 × 400 px** se ve bien en el computador y en el celular;
+  una más grande se reduce sola.
+- La imagen se vuelve a dibujar en el servidor, como la fotografía del carnet: lo que se guarda
+  es una imagen limpia, sin los metadatos ni nada escondido del archivo original.
+- **La descripción** es lo que oye quien usa un lector de pantalla. Conviene escribirla.
+- La casilla *Mostrar el banner* lo enciende y lo apaga sin perder la imagen. *Quitar esta
+  imagen* la borra del servidor.
+
+### 9.5 Volver al de fábrica
+
+Con el formulario cambiado aparece, abajo, **«Volver al formulario de fábrica»**: los campos y
+las listas vuelven a ser los de la plataforma —los mismos que tenía el evento antes de
+configurarlo—. El banner se conserva, porque se puso a propósito. Pide confirmación y queda en
+la bitácora, igual que cada vez que se guarda.
+
+Cada evento tiene su propio formulario. Al crear uno nuevo arranca con el de fábrica, aunque el
+anterior estuviera configurado.
+
+### 9.6 Cuando a alguien le falta un dato
+
+Si quien se registra pulsa *Completar registro* —o *Guardar cambios*— con un campo obligatorio
+vacío, **el formulario no se envía y se abre una ventana**: «Tu registro no fue guardado. Por
+favor registra los datos completos», con la lista de lo que falta. Su botón, *Completar los
+datos*, lleva al primer campo pendiente, y abre la sección plegada si estaba ahí dentro.
+
+Lo mismo cuando el envío llega al servidor y algo no pasa —una cédula con letras, un correo
+repetido—: la página vuelve con la ventana abierta y los errores dentro. Lo que se había escrito
+se conserva.
+
+Lo obligatorio es lo de la sección 9.1: la ventana sigue a la configuración del evento.
+
+---
+
+## 10. Antes de abrir al público
 
 Una lista corta para no llevarse sorpresas:
 
@@ -411,5 +558,7 @@ Una lista corta para no llevarse sorpresas:
 3. **Imprime los pliegos después de fijar las fechas.** Cambiar la fecha no invalida el código,
    pero regenerarlo sí: si vas a regenerar, hazlo antes de imprimir.
 4. **Deja el evento bueno activo** y los demás desactivados.
-5. **Comprueba el tamaño máximo de subida** en el diagnóstico, si esperas exposiciones. Es lo
+5. **Revisa el formulario** en *Configuración → Registro* y ábrelo con «Ver el formulario»
+   desde una ventana privada: es lo que va a ver la gente.
+6. **Comprueba el tamaño máximo de subida** en el diagnóstico, si esperas exposiciones. Es lo
    único de esta lista que se arregla fuera de la plataforma, y por tanto lo que más tarda.

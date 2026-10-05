@@ -3071,6 +3071,363 @@ if ($tokenDelStaff !== '') {
 }
 
 /* =========================================================================
+   12 · Configuración → Registro
+   -------------------------------------------------------------------------
+   Cada evento decide qué pide su formulario: qué campos, cuáles obligatorios,
+   qué opciones trae cada lista y si arriba va un banner. Lo que se prueba
+   aquí es que lo decidido llegue al formulario público y a la validación del
+   servidor, y que nada de eso borre lo que la gente ya había registrado.
+   ========================================================================= */
+titulo('Configuración del formulario de registro');
+
+defined('EVENTOS_TIC') || define('EVENTOS_TIC', true);
+require_once $RAIZ . '/app/Datos.php';
+require_once $RAIZ . '/app/Modelos/Persona.php';
+require_once $RAIZ . '/app/Modelos/Formulario.php';
+
+$P = $BD['prefijo'];
+$configAntesForm = leerConfig($RAIZ);
+ajustarConfig($RAIZ, ['modo_correo' => 'registro']);
+$eventoId = (int) $pdo->query("SELECT id FROM {$P}evento WHERE activo = 1 ORDER BY id LIMIT 1")->fetchColumn();
+
+/** campos[x] y listas[x][0][y] como los manda un navegador en multipart. */
+$aplanar = static function (array $datos, string $prefijo = '') use (&$aplanar): array {
+    $salida = [];
+    foreach ($datos as $clave => $valor) {
+        $nombre = $prefijo === '' ? (string) $clave : $prefijo . '[' . $clave . ']';
+        if (is_array($valor)) {
+            $salida += $aplanar($valor, $nombre);
+        } else {
+            $salida[$nombre] = (string) $valor;
+        }
+    }
+    return $salida;
+};
+
+/** Lo que manda la pantalla de configuración tal como viene de fábrica. */
+$listasDeFabrica = static function (): array {
+    $listas = [];
+    foreach (App\Modelos\Formulario::LISTAS as $clave => $def) {
+        $valor = App\Modelos\Formulario::listaPorDefecto($clave);
+        $listas[$clave] = match ($def['clase']) {
+            'codigos'    => array_map(static fn(array $o): array => ['valor' => $o['valor'], 'etiqueta' => $o['etiqueta'], 'activo' => '1'], $valor),
+            'perfiles'   => array_keys(array_filter($valor)),
+            'territorio' => App\Modelos\Formulario::territorioComoTexto($valor),
+            'minutos'    => implode(', ', $valor),
+            default      => implode("\n", $valor),
+        };
+    }
+    return $listas;
+};
+$camposDeFabrica = array_map(static fn(array $d): string => $d['defecto'], App\Modelos\Formulario::CAMPOS);
+
+$jefa = new Cliente($BASE);
+$jefa->get('/admin/entrar');
+$jefa->post('/admin/entrar', ['correo' => 'aerazo@narino.gov.co', 'clave' => 'una frase larga y facil de recordar']);
+
+// ---- El módulo y sus pestañas ---------------------------------------------
+$html = $jefa->get('/admin');
+$base = (string) parse_url($BASE, PHP_URL_PATH);
+comprobar('el menú tiene «Configuración»', str_contains($html, 'href="' . $base . '/admin/configuracion"'));
+comprobar('e Identidad y Autenticación ya no van sueltas en el menú',
+    !preg_match('#class="navlink[^"]*"\s+href="[^"]*/admin/(identidad|autenticacion)"#', $html));
+$jefa->get('/admin/configuracion', false);
+comprobar('Configuración abre en la pestaña Registro',
+    $jefa->codigo === 303 && str_contains($jefa->cabecera('Location'), '/admin/configuracion/registro'),
+    $jefa->codigo . ' → ' . $jefa->cabecera('Location'));
+$html = $jefa->get('/admin/configuracion/registro');
+comprobar('con sus cuatro pestañas',
+    str_contains($html, 'tabs--enlaces') && str_contains($html, '>Registro<') && str_contains($html, '>Identidad<')
+    && str_contains($html, '>Acceso y correo<') && str_contains($html, '>Mi cuenta<'));
+foreach (['/admin/identidad' => 'Identidad del evento', '/admin/autenticacion' => 'Acceso y correo', '/admin/cuenta' => 'Mi cuenta'] as $ruta => $rotulo) {
+    $html = $jefa->get($ruta);
+    comprobar("«{$rotulo}» es una pestaña de Configuración, en su dirección de siempre",
+        $jefa->codigo === 200 && str_contains($html, 'tabs--enlaces') && str_contains($html, $rotulo));
+}
+// Quien no es administrador llega a su cuenta, ve solo esa pestaña, y no
+// alcanza la configuración del registro ni escribiendo la dirección.
+$puerta = new Cliente($BASE);
+$puerta->get('/admin/entrar');
+$puerta->post('/admin/entrar', ['correo' => 'puerta@narino.gov.co', 'clave' => 'una clave mia y bien larga']);
+$puerta->get('/admin/configuracion', false);
+comprobar('a un operador, Configuración lo lleva a su cuenta',
+    $puerta->codigo === 303 && str_contains($puerta->cabecera('Location'), '/admin/cuenta'),
+    $puerta->codigo . ' → ' . $puerta->cabecera('Location'));
+$html = $puerta->get('/admin/cuenta');
+comprobar('donde ve solo la pestaña «Mi cuenta»',
+    str_contains($html, 'tabs--enlaces') && str_contains($html, '>Mi cuenta<')
+    && !str_contains($html, '/admin/configuracion/registro"') && !str_contains($html, '/admin/autenticacion"'));
+$puerta->get('/admin/configuracion/registro', false);
+comprobar('y no llega a la configuración del registro', $puerta->codigo !== 200, (string) $puerta->codigo);
+
+$html = $jefa->get('/admin/configuracion/registro');
+comprobar('el formulario de fábrica: todos los campos y las listas de siempre',
+    str_contains($html, 'usa el formulario de fábrica') && str_contains($html, 'Cédula de ciudadanía'));
+
+// Alguien que se registra con el formulario de fábrica, para ver después que
+// ocultar un campo no le borra lo que ya había dado.
+$paula = new Cliente($BASE);
+$paula->get('/registro');
+$paula->post('/registro', [
+    'correo' => 'pmontenegro@narino.gov.co', 'nombre' => 'Paula Montenegro Erazo',
+    'tipo_documento' => 'CC', 'documento' => '27155331', 'telefono' => '+57 301 555 0101',
+    'rol' => 'participante', 'entidad' => 'Gobernación de Nariño', 'etnia' => 'Indígena',
+    'genero' => 'F', 'discapacidad' => 'No', 'habeas' => '1',
+]);
+$idPaula = (int) $pdo->query("SELECT id FROM {$P}persona WHERE correo = 'pmontenegro@narino.gov.co'")->fetchColumn();
+comprobar('alguien se registra con el formulario de fábrica', $idPaula > 0);
+
+// ---- Guardar una configuración --------------------------------------------
+$campos = ['telefono' => 'oculto', 'entidad' => 'obligatorio', 'etnia' => 'oculto',
+           // Manipulado a mano: un dato sensible no se puede exigir.
+           'genero' => 'obligatorio'] + $camposDeFabrica;
+$listas = $listasDeFabrica();
+$listas['tipo_documento'][] = ['codigo' => 'ppt', 'etiqueta' => 'Permiso por Protección Temporal', 'activo' => '1'];
+$listas['categoria'] .= "\nRobótica educativa";
+
+$imagen = imagecreatetruecolor(1600, 400);
+imagefilledrectangle($imagen, 0, 0, 1600, 400, imagecolorallocate($imagen, 12, 46, 60));
+ob_start();
+imagepng($imagen);
+$png = (string) ob_get_clean();
+
+$jefa->get('/admin/configuracion/registro');
+$html = $jefa->subir('/admin/configuracion/registro', $aplanar([
+    'accion' => 'guardar', 'campos' => $campos, 'listas' => $listas,
+    'banner_activo' => '1', 'banner_titulo' => 'Inscripciones abiertas',
+    'banner_texto' => 'Del 1 al 3 de septiembre en Pasto.', 'banner_alt' => 'Afiche de la cumbre',
+]), ['banner_imagen' => ['nombre' => 'banner.png', 'tipo' => 'image/png', 'contenido' => $png]]);
+comprobar('la configuración se guarda', str_contains($html, 'Formulario guardado'), substr(strip_tags($html), 0, 200));
+
+$fila = $pdo->query("SELECT * FROM {$P}evento_formulario WHERE evento_id = $eventoId")->fetch(PDO::FETCH_ASSOC) ?: [];
+$guardados = json_decode((string) ($fila['campos'] ?? ''), true) ?: [];
+comprobar('queda en la tabla del formulario del evento', ($guardados['telefono'] ?? '') === 'oculto' && ($guardados['entidad'] ?? '') === 'obligatorio');
+comprobar('un dato sensible no se puede volver obligatorio aunque se mande a mano', ($guardados['genero'] ?? '') === 'opcional');
+comprobar('el banner queda con su imagen', (string) ($fila['banner_imagen'] ?? '') !== '' && (int) ($fila['banner_activo'] ?? 0) === 1);
+$listasGuardadas = json_decode((string) ($fila['listas'] ?? ''), true) ?: [];
+comprobar('de las listas se guarda solo lo que cambió: las demás siguen a la plataforma',
+    array_keys($listasGuardadas) === ['tipo_documento', 'categoria'], implode(', ', array_keys($listasGuardadas)));
+
+// ---- El formulario público --------------------------------------------------
+$visita = new Cliente($BASE);
+$html = $visita->get('/registro');
+comprobar('el banner sale arriba del formulario, con su título',
+    str_contains($html, 'registro-banner') && str_contains($html, 'Inscripciones abiertas') && str_contains($html, 'Afiche de la cumbre'));
+preg_match('#src="([^"]*/medios/banner/\d+\?v=[^"]+)"#', $html, $m);
+$imagenBanner = new Cliente($BASE);
+$imagenBanner->get(html_entity_decode($m[1] ?? '/medios/banner/0'));
+comprobar('y la imagen se sirve a cualquiera, regenerada',
+    $imagenBanner->codigo === 200 && str_contains($imagenBanner->cabecera('Content-Type'), 'image/'),
+    $imagenBanner->codigo . ' ' . $imagenBanner->cabecera('Content-Type'));
+
+// El de un evento que no es el activo —un borrador que puede no estar
+// anunciado— no lo ve cualquiera.
+$pdo->exec("INSERT INTO {$P}evento (nombre, fecha_inicio, estado) VALUES ('Evento sin anunciar', CURDATE(), 'borrador')");
+$borrador = (int) $pdo->lastInsertId();
+$pdo->prepare("INSERT INTO {$P}evento_formulario (evento_id, banner_activo, banner_imagen, banner_tipo) VALUES (?, 1, ?, ?)")
+    ->execute([$borrador, (string) $fila['banner_imagen'], (string) $fila['banner_tipo']]);
+$ajeno = new Cliente($BASE);
+$ajeno->get('/medios/banner/' . $borrador);
+$jefa->get('/medios/banner/' . $borrador);
+comprobar('el banner de un evento que no es el activo solo lo ve el equipo',
+    $ajeno->codigo === 404 && $jefa->codigo === 200, $ajeno->codigo . ' / ' . $jefa->codigo);
+$pdo->exec("DELETE FROM {$P}evento WHERE id = $borrador");
+comprobar('el campo oculto no está', !str_contains($html, 'name="telefono"') && !str_contains($html, 'name="etnia"'));
+comprobar('el obligatorio lleva su asterisco y el atributo que lee el aviso',
+    (bool) preg_match('#name="entidad"[^>]*required#', $html));
+comprobar('el tipo de documento nuevo está en la lista', str_contains($html, 'value="PPT"'));
+comprobar('y la categoría nueva', str_contains($html, 'Robótica educativa'));
+comprobar('el encabezado dice qué es obligatorio', str_contains($html, 'Son obligatorios el correo, el nombre, la identificación y la entidad'));
+
+// ---- Registro incompleto: no se guarda, y se dice ---------------------------
+$nadie = new Cliente($BASE);
+$nadie->get('/registro');
+$html = $nadie->post('/registro', [
+    'correo' => 'sinentidad@narino.gov.co', 'nombre' => 'Persona Sin Entidad',
+    'tipo_documento' => 'CC', 'documento' => '1085999001', 'rol' => 'participante', 'habeas' => '1',
+]);
+comprobar('sin la entidad obligatoria, no se guarda',
+    (int) $pdo->query("SELECT COUNT(*) FROM {$P}persona WHERE correo = 'sinentidad@narino.gov.co'")->fetchColumn() === 0);
+comprobar('y la ventana «tu registro no fue guardado» se abre sola',
+    str_contains($html, 'Tu registro no fue guardado') && str_contains($html, 'data-abrir-al-cargar'));
+comprobar('con lo que falta', str_contains($html, 'Escribe tu entidad u organización'));
+
+// ---- Con el tipo de documento nuevo -----------------------------------------
+$ppt = new Cliente($BASE);
+$ppt->get('/registro');
+$html = $ppt->post('/registro', [
+    'correo' => 'yramirez@narino.gov.co', 'nombre' => 'Yulimar Ramírez Pérez',
+    'tipo_documento' => 'PPT', 'documento' => '5x99812', 'rol' => 'participante',
+    'entidad' => 'Fundación Frontera', 'habeas' => '1',
+]);
+comprobar('se registra con el permiso por protección temporal', str_contains($html, 'Registro completo'), substr(strip_tags($html), 0, 160));
+comprobar('y el carnet lo muestra con sus letras', str_contains($html, 'PPT 5X99812'));
+
+// ---- Ocultar un campo no borra lo que ya estaba -----------------------------
+$paula->get('/registro');
+$paula->post('/registro', [
+    'nombre' => 'Paula Montenegro Erazo', 'tipo_documento' => 'CC', 'documento' => '27155331',
+    'rol' => 'participante', 'entidad' => 'Gobernación de Nariño — TIC', 'genero' => 'F', 'discapacidad' => 'No',
+]);
+$dePaula = $pdo->query("SELECT p.telefono, p.entidad, c.etnia FROM {$P}persona p
+                         LEFT JOIN {$P}persona_caracterizacion c ON c.persona_id = p.id WHERE p.id = $idPaula")->fetch(PDO::FETCH_ASSOC) ?: [];
+comprobar('quien ya tenía teléfono lo conserva aunque el campo ahora esté oculto',
+    ($dePaula['telefono'] ?? '') === '+57 301 555 0101', json_encode($dePaula, JSON_UNESCAPED_UNICODE));
+comprobar('y su grupo étnico también', ($dePaula['etnia'] ?? '') === 'Indígena');
+comprobar('lo que sí está en el formulario se actualiza', ($dePaula['entidad'] ?? '') === 'Gobernación de Nariño — TIC');
+
+// ---- Identificación opcional ------------------------------------------------
+$jefa->get('/admin/configuracion/registro');
+$jefa->subir('/admin/configuracion/registro', $aplanar([
+    'accion' => 'guardar', 'campos' => ['documento' => 'opcional'] + $campos, 'listas' => $listas,
+    'banner_activo' => '1', 'banner_titulo' => 'Inscripciones abiertas',
+]), []);
+$sinCedula = new Cliente($BASE);
+$sinCedula->get('/registro');
+$html = $sinCedula->post('/registro', [
+    'correo' => 'sincedula@narino.gov.co', 'nombre' => 'Asistente Sin Cédula', 'tipo_documento' => 'CC',
+    'documento' => '', 'rol' => 'participante', 'entidad' => 'Colegio INEM', 'habeas' => '1',
+]);
+comprobar('con la identificación opcional, se registra sin ella', str_contains($html, 'Registro completo'), substr(strip_tags($html), 0, 160));
+comprobar('y su carnet sale con el nombre, sin «CC —»', str_contains($html, 'Asistente Sin Cédula') && !str_contains($html, 'CC —'));
+
+// ---- Fotografía obligatoria ---------------------------------------------------
+// Obligatoria, la foto se revisa con los demás campos: un archivo que no sirve
+// no puede terminar en un registro guardado con un carnet sin foto.
+$jefa->get('/admin/configuracion/registro');
+$jefa->subir('/admin/configuracion/registro', $aplanar([
+    'accion' => 'guardar', 'campos' => ['foto' => 'obligatorio', 'documento' => 'opcional'] + $campos, 'listas' => $listas,
+    'banner_activo' => '1', 'banner_titulo' => 'Inscripciones abiertas',
+]), []);
+$conFoto = new Cliente($BASE);
+$conFoto->get('/registro');
+$datosConFoto = [
+    'correo' => 'confoto@narino.gov.co', 'nombre' => 'Asistente Con Foto', 'tipo_documento' => 'CC',
+    'documento' => '', 'rol' => 'participante', 'entidad' => 'Colegio INEM', 'habeas' => '1',
+];
+$fotoDe = static fn(): string => (string) $pdo->query(
+    "SELECT foto FROM {$P}persona WHERE correo = 'confoto@narino.gov.co'"
+)->fetchColumn();
+$html = $conFoto->subir('/registro', $datosConFoto, []);
+comprobar('con la foto obligatoria, sin foto no se guarda', $fotoDe() === '' && str_contains($html, 'Sube tu fotografía'),
+    substr(strip_tags($html), 0, 160));
+$html = $conFoto->subir('/registro', $datosConFoto, [
+    'foto' => ['nombre' => 'foto.jpg', 'tipo' => 'image/jpeg', 'contenido' => 'esto no es una imagen'],
+]);
+comprobar('ni con un archivo que no sirve: se dice antes de guardar nada',
+    (int) $pdo->query("SELECT COUNT(*) FROM {$P}persona WHERE correo = 'confoto@narino.gov.co'")->fetchColumn() === 0
+    && str_contains($html, 'formato que podamos usar'), substr(strip_tags($html), 0, 160));
+$imagen = imagecreatetruecolor(600, 600);
+imagefilledrectangle($imagen, 0, 0, 600, 600, imagecolorallocate($imagen, 200, 120, 80));
+ob_start();
+imagejpeg($imagen, null, 85);
+$jpg = (string) ob_get_clean();
+$html = $conFoto->subir('/registro', $datosConFoto, ['foto' => ['nombre' => 'foto.jpg', 'tipo' => 'image/jpeg', 'contenido' => $jpg]]);
+comprobar('con una foto que sirve, se registra con ella', str_contains($html, 'Registro completo') && $fotoDe() !== '',
+    substr(strip_tags($html), 0, 160));
+comprobar('y no se ofrece quitarla, porque el evento la pide',
+    !str_contains($conFoto->get('/registro'), 'name="quitar_foto"'));
+
+// ---- Volver al de fábrica -----------------------------------------------------
+$jefa->get('/admin/configuracion/registro');
+$html = $jefa->post('/admin/configuracion/registro', ['accion' => 'restablecer']);
+comprobar('se puede volver al formulario de fábrica', str_contains($html, 'volvió a ser el de fábrica'));
+$html = (new Cliente($BASE))->get('/registro');
+comprobar('y el teléfono vuelve a aparecer', str_contains($html, 'name="telefono"') && !str_contains($html, 'value="PPT"'));
+comprobar('el banner se conserva al restablecer', str_contains($html, 'registro-banner'));
+$html = $jefa->get('/admin/configuracion/registro');
+comprobar('y la pantalla dice que el formulario es el de fábrica, aunque tenga banner',
+    str_contains($html, 'usa el formulario de fábrica') && !str_contains($html, 'Volver al formulario de fábrica'));
+$jefa->subir('/admin/configuracion/registro', $aplanar([
+    'accion' => 'guardar', 'campos' => $camposDeFabrica, 'listas' => $listasDeFabrica(), 'quitar_banner' => '1',
+]), []);
+$html = (new Cliente($BASE))->get('/registro');
+comprobar('y se apaga y se quita cuando se quiere', !str_contains($html, 'registro-banner'));
+$fila = $pdo->query("SELECT campos, listas FROM {$P}evento_formulario WHERE evento_id = $eventoId")->fetch(PDO::FETCH_ASSOC) ?: [];
+comprobar('guardar sin cambiar campos ni listas no los congela',
+    array_key_exists('campos', $fila) && $fila['campos'] === null && $fila['listas'] === null);
+
+// Una fila tocada a mano en la base no deja el registro sin opciones: lo que no
+// tiene forma se ignora y queda la lista de fábrica.
+$pdo->prepare("UPDATE {$P}evento_formulario SET listas = ? WHERE evento_id = ?")->execute([json_encode([
+    'tipo_documento' => [['valor' => 'CC', 'etiqueta' => 'Cédula', 'activo' => false]],   // ninguna activa
+    'rango_edad'     => [['no' => 'es texto']],
+    'ubicacion'      => ['Nariño' => []],
+], JSON_UNESCAPED_UNICODE), $eventoId]);
+$html = (new Cliente($BASE))->get('/registro');
+comprobar('una configuración dañada a mano en la base no deja el registro sin opciones',
+    str_contains($html, 'Cédula de ciudadanía') && str_contains($html, '26–35') && str_contains($html, 'Putumayo'));
+$pdo->exec("UPDATE {$P}evento_formulario SET listas = NULL WHERE evento_id = $eventoId");
+comprobar('la imagen quitada se borra del disco',
+    glob($RAIZ . '/almacen/logos/banner-' . $eventoId . '-*') === []);
+
+/* =========================================================================
+   13 · El correo al expositor con la decisión
+   ========================================================================= */
+titulo('Correo al expositor');
+
+$ultimoCorreo = static function () use ($RAIZ): string {
+    $archivos = glob($RAIZ . '/almacen/registro/*.log.php') ?: [];
+    sort($archivos);
+    $lineas = array_filter(explode("\n", (string) @file_get_contents((string) end($archivos))),
+        static fn(string $l): bool => str_contains($l, 'Correo no enviado'));
+    return (string) end($lineas);
+};
+
+$deLucia = $pdo->query("SELECT pr.* FROM {$P}propuesta pr JOIN {$P}persona p ON p.id = pr.persona_id
+                         WHERE p.correo = 'lvillota@narino.gov.co' ORDER BY pr.id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+$idLucia = (int) $deLucia['id'];
+
+$jefa->get('/admin/expositores');
+$html = $jefa->post('/admin/expositores/decidir', [
+    'propuesta' => (string) $idLucia, 'decision' => 'aprobada', 'avisar' => '1',
+    'titulo' => 'IA en el aula rural de Nariño', 'categoria' => (string) $deLucia['categoria'],
+    'duracion' => '60', 'dia' => '2', 'hora' => '10:30', 'salon' => 'Auditorio Galeras',
+    'observacion' => 'Trae tu presentación en una memoria por si falla la red.',
+]);
+comprobar('al aprobar se le avisa por correo', str_contains($html, 'Se le avisó por correo'), substr(strip_tags($html), 0, 200));
+$correo = $ultimoCorreo();
+comprobar('el correo dice que fue aprobada, con el título nuevo',
+    str_contains($correo, 'Tu propuesta fue aprobada: IA en el aula rural de Nariño'), mb_substr($correo, 0, 300));
+comprobar('con los cambios que hizo el comité',
+    str_contains($correo, 'Título:') && str_contains($correo, 'Duración: de'));
+comprobar('con el horario y el salón', str_contains($correo, '10:30') && str_contains($correo, 'Auditorio Galeras'));
+comprobar('y con las observaciones', str_contains($correo, 'Trae tu presentación'));
+$ahora = $pdo->query("SELECT titulo, duracion_min FROM {$P}propuesta WHERE id = $idLucia")->fetch(PDO::FETCH_ASSOC);
+comprobar('los cambios quedan en la propuesta',
+    $ahora['titulo'] === 'IA en el aula rural de Nariño' && (int) $ahora['duracion_min'] === 60);
+
+$jefa->get('/admin/expositores');
+$jefa->post('/admin/expositores/decidir', [
+    'propuesta' => (string) $idLucia, 'decision' => 'observada', 'avisar' => '1',
+    'observacion' => 'Falta la hoja de vida actualizada.',
+]);
+comprobar('al devolverla también se le avisa, con lo que tiene que corregir',
+    str_contains($ultimoCorreo(), 'Tu propuesta tiene observaciones') && str_contains($ultimoCorreo(), 'Falta la hoja de vida'));
+
+$jefa->get('/admin/expositores');
+$jefa->post('/admin/expositores/decidir', [
+    'propuesta' => (string) $idLucia, 'decision' => 'rechazada', 'avisar' => '1',
+    'observacion' => 'El cupo de la categoría se llenó.',
+]);
+comprobar('y al rechazarla', str_contains($ultimoCorreo(), 'Sobre tu propuesta') && str_contains($ultimoCorreo(), 'no fue seleccionada'));
+
+$antesDelSilencio = $ultimoCorreo();
+$jefa->get('/admin/expositores');
+$jefa->post('/admin/expositores/decidir', [
+    'propuesta' => (string) $idLucia, 'decision' => (string) $deLucia['estado'] === 'aprobada' ? 'aprobada' : 'observada',
+    'observacion' => 'Se deja como estaba.',
+    'titulo' => (string) $deLucia['titulo'], 'duracion' => (string) $deLucia['duracion_min'],
+]);
+comprobar('sin la casilla de avisar, no sale ningún correo', $ultimoCorreo() === $antesDelSilencio);
+// Se deja la propuesta como estaba para lo que venga después.
+$pdo->exec("UPDATE {$P}propuesta SET estado = " . $pdo->quote((string) $deLucia['estado'])
+    . ', titulo = ' . $pdo->quote((string) $deLucia['titulo']) . ', duracion_min = ' . (int) $deLucia['duracion_min']
+    . " WHERE id = $idLucia");
+
+ajustarConfig($RAIZ, ['modo_correo' => $configAntesForm['modo_correo'] ?? null]);
+
+/* =========================================================================
    Resultado
    ========================================================================= */
 echo "\n" . str_repeat('─', 62) . "\n";

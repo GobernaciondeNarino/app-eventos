@@ -116,7 +116,9 @@ final class Bitacora
             // Acciones de antes de la 3.2, para que la bitácora vieja se siga
             // leyendo con palabras y no con identificadores.
             'preregistro'        => 'Nuevo registro',
-            'propuesta_decidida' => "$quien resolvió una propuesta de exposición",
+            'propuesta_decidida' => "$quien resolvió una propuesta de exposición" . (!empty($detalle['avisado']) ? ' y se le avisó por correo' : ''),
+            'formulario_guardado' => "$quien cambió el formulario de registro",
+            'formulario_restablecido' => "$quien devolvió el formulario de registro al de fábrica",
             'token_dia_rotado'   => "$quien regeneró el código de un día",
             'identidad_guardada' => "$quien cambió la identidad del evento",
             'exportacion'        => "$quien exportó registros" . (($detalle['sensible'] ?? false) ? ' con caracterización' : ''),

@@ -79,7 +79,8 @@ aplicaciones menos seguras**).
 
 ## 3. Configurar en la plataforma
 
-**Administración → Correo** (solo rol administrador).
+**Administración → Configuración → Acceso y correo** (solo rol administrador). Hasta la 3.6 era
+una entrada propia del menú, *Correo*; la dirección `/admin/correo` sigue funcionando.
 
 | Campo | Valor |
 |---|---|
@@ -150,7 +151,7 @@ correo no es el eslabón débil ahí.
 
 ## 5. Cuando algo falla
 
-**Administración → Correo** enseña, en este orden:
+**Configuración → Acceso y correo** enseña, en este orden:
 
 1. **Estado de la configuración** — lo que está mal *antes* de tocar la red: modo equivocado,
    puerto que no cuadra con la seguridad, contraseña que no parece de aplicación, remitente que
@@ -228,7 +229,7 @@ se quiere no intentar IPv6 siquiera, hay una casilla **«Usar solo IPv4»** en l
 
 ### El botón «Probar la salida de red»
 
-En **Administración → Correo**, debajo de «Probar ahora». No manda ningún correo: resuelve el
+En **Configuración → Acceso y correo**, debajo de «Probar ahora». No manda ningún correo: resuelve el
 nombre y prueba a abrir los puertos **587, 465 y 25**, por IPv4 y por IPv6, con espera corta.
 Devuelve una tabla y una conclusión:
 
@@ -418,8 +419,8 @@ plesk bin server_pref --show-outgoing-messages
 
 ### Qué usuario hay que autorizar
 
-El que aparece en **Administración → Correo → Probar la salida de red → Cómo está PHP en este
-servidor**, campo **«usuario de PHP»**. También:
+El que aparece en **Configuración → Acceso y correo → Probar la salida de red → Cómo está PHP
+en este servidor**, campo **«usuario de PHP»**. También:
 
 ```bash
 ps -o user,cmd -C php-fpm | head
@@ -486,7 +487,7 @@ Si levantar la regla del cortafuegos se demora —una entidad pública puede tar
 aprobar un cambio así—, hay una vía que no depende de nadie: **entregar por HTTPS al puerto
 443**, el mismo por el que este servidor sirve la web. Ninguna regla de correo lo bloquea.
 
-**Administración → Correo → Modo de envío → «API por HTTPS»**.
+**Configuración → Acceso y correo → Modo de envío → «API por HTTPS»**.
 
 | Proveedor | Capa gratuita | Clave en |
 |---|---|---|

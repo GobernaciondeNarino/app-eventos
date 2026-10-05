@@ -644,6 +644,8 @@ final class Admin
             'conteos'    => $conteos,
             'estado'     => $estado,
             'jornadas'   => Evento::jornadas((int) $evento['id']),
+            'formulario' => \App\Modelos\Formulario::delEvento((int) $evento['id']),
+            'correoListo' => Correo::disponible(),
             // La ruta ya exige administrador, pero la comprobación se deja
             // escrita para que mover el guardia no destape el documento sin
             // que nadie se dé cuenta.
@@ -658,6 +660,7 @@ final class Admin
     public function decidirPropuesta(Peticion $peticion): void
     {
         $evento = App::eventoExigido();
+        $formulario = \App\Modelos\Formulario::delEvento((int) $evento['id']);
         $id = $peticion->entero('propuesta');
         $decision = $peticion->campo('decision');
         $observacion = mb_substr($peticion->campo('observacion'), 0, 1000);
@@ -667,7 +670,7 @@ final class Admin
         }
 
         $propuesta = Bd::fila(
-            'SELECT pr.* FROM {propuesta} pr
+            'SELECT pr.*, p.nombre AS expositor, p.correo FROM {propuesta} pr
                JOIN {persona} p ON p.id = pr.persona_id
               WHERE pr.id = ? AND p.evento_id = ?',
             [$id, (int) $evento['id']]
@@ -681,15 +684,21 @@ final class Admin
                 'Escribe la observación antes de devolver la propuesta.', 'warn');
         }
 
-        $usuario = Guardia::usuarioActual();
+        // Los ajustes que hace el comité al revisarla: el título, la
+        // categoría, la duración. Cada uno se aplica solo si cambió y es
+        // válido, y queda anotado para contárselo al expositor.
+        [$ajustes, $cambios] = $this->ajustesDePropuesta($peticion, $propuesta, $formulario);
 
-        Bd::transaccion(static function () use ($propuesta, $decision, $observacion, $usuario, $peticion, $evento): void {
+        $usuario = Guardia::usuarioActual();
+        $agenda = null;
+
+        Bd::transaccion(static function () use ($propuesta, $decision, $observacion, $usuario, $peticion, $evento, $ajustes, &$agenda): void {
             Bd::actualizar('propuesta', [
                 'estado'       => $decision,
                 'observacion'  => $observacion !== '' ? $observacion : null,
                 'revisada_por' => (int) $usuario['id'],
                 'revisada_en'  => date('Y-m-d H:i:s'),
-            ], 'id = :id', ['id' => $propuesta['id']]);
+            ] + $ajustes, 'id = :id', ['id' => $propuesta['id']]);
 
             if ($decision !== 'aprobada') {
                 Bd::ejecutar('DELETE FROM {charla} WHERE propuesta_id = ?', [$propuesta['id']]);
@@ -707,6 +716,7 @@ final class Admin
             if (!preg_match('/^\d{2}:\d{2}$/', $hora)) {
                 $hora = '09:00';
             }
+            $salon = mb_substr($peticion->campo('salon'), 0, 80);
 
             Bd::ejecutar(
                 'INSERT INTO {charla} (propuesta_id, evento_dia_id, hora_inicio, salon, publicada)
@@ -715,17 +725,101 @@ final class Admin
                                          hora_inicio = VALUES(hora_inicio),
                                          salon = VALUES(salon),
                                          publicada = 1',
-                [$propuesta['id'], $jornada['id'], $hora . ':00', mb_substr($peticion->campo('salon'), 0, 80)]
+                [$propuesta['id'], $jornada['id'], $hora . ':00', $salon]
             );
+            $agenda = [
+                'dia'   => (int) $jornada['numero'],
+                'fecha' => (string) $jornada['fecha'],
+                'hora'  => $hora,
+                'salon' => $salon,
+            ];
         });
 
-        Bitacora::registrar('propuesta_decidida', 'propuesta', (int) $propuesta['id'], ['decision' => $decision]);
+        // Si se le asignó otro día del que pidió, también es un cambio que
+        // tiene que saber: puede que ese día no pueda. Solo si el formulario
+        // le preguntó: oculto, el día guardado es el de omisión, no uno que
+        // haya elegido.
+        if ($agenda !== null && $formulario->visible('dia_preferido')
+            && $agenda['dia'] !== (int) $propuesta['dia_preferido']) {
+            $cambios[] = 'Día: pediste el día ' . (int) $propuesta['dia_preferido'] . '; quedó el día '
+                . $agenda['dia'] . ' (' . fecha($agenda['fecha']) . ').';
+        }
 
-        Respuesta::redirigir('/admin/expositores', match ($decision) {
+        // El aviso al expositor, en los tres casos. Se puede no mandar —una
+        // corrección de un error de tecleo no merece un correo—, pero va
+        // marcado de entrada: quien envió una propuesta espera saber qué pasó.
+        $avisar = $peticion->marcado('avisar');
+        $avisado = false;
+        if ($avisar) {
+            $avisado = Correo::decisionPropuesta(
+                (string) $propuesta['correo'],
+                (string) $propuesta['expositor'],
+                (string) $evento['nombre'],
+                $decision,
+                (string) ($ajustes['titulo'] ?? $propuesta['titulo']),
+                $observacion,
+                $cambios,
+                $agenda,
+                \App\Nucleo\Url::absoluta($decision === 'aprobada' ? '/agenda' : '/registro')
+            );
+            if (!$avisado) {
+                \App\Nucleo\Registro::error('No se pudo avisar al expositor de la decisión', [
+                    'propuesta_id' => (int) $propuesta['id'],
+                    'detalle'      => Correo::ultimoError(),
+                ]);
+            }
+        }
+
+        Bitacora::registrar('propuesta_decidida', 'propuesta', (int) $propuesta['id'], [
+            'decision' => $decision,
+            'cambios'  => count($cambios),
+            'avisado'  => $avisado,
+        ]);
+
+        $mensaje = match ($decision) {
             'aprobada'  => 'Propuesta aprobada y publicada en la agenda.',
             'observada' => 'Propuesta devuelta con observaciones.',
             default     => 'Propuesta rechazada.',
-        });
+        };
+        if ($avisar) {
+            $mensaje .= $avisado
+                ? ' Se le avisó por correo a ' . $propuesta['correo'] . '.'
+                : ' Pero no se pudo enviar el correo al expositor: revisa Configuración → Acceso y correo.';
+        }
+        Respuesta::redirigir('/admin/expositores', $mensaje, $avisar && !$avisado ? 'warn' : 'ok');
+    }
+
+    /**
+     * Lo que el comité cambió de la propuesta al revisarla.
+     *
+     * @return array{0: array<string, mixed>, 1: array<int, string>} [columnas a guardar, cambios en palabras]
+     */
+    private function ajustesDePropuesta(Peticion $peticion, array $propuesta, \App\Modelos\Formulario $formulario): array
+    {
+        $columnas = [];
+        $cambios = [];
+
+        $titulo = mb_substr(trim(preg_replace('/\s+/u', ' ', $peticion->campo('titulo')) ?? ''), 0, 200);
+        if ($titulo !== '' && mb_strlen($titulo) >= 5 && $titulo !== (string) $propuesta['titulo']) {
+            $columnas['titulo'] = $titulo;
+            $cambios[] = 'Título: «' . $propuesta['titulo'] . '» pasa a ser «' . $titulo . '».';
+        }
+
+        $categoria = $peticion->campo('categoria');
+        if ($categoria !== '' && $categoria !== (string) $propuesta['categoria']
+            && in_array($categoria, $formulario->texto('categoria', (string) $propuesta['categoria']), true)) {
+            $columnas['categoria'] = mb_substr($categoria, 0, 80);
+            $cambios[] = 'Categoría: «' . $propuesta['categoria'] . '» pasa a ser «' . $categoria . '».';
+        }
+
+        $duracion = $peticion->entero('duracion', (int) $propuesta['duracion_min']);
+        if ($duracion !== (int) $propuesta['duracion_min']
+            && in_array($duracion, $formulario->duraciones((int) $propuesta['duracion_min']), true)) {
+            $columnas['duracion_min'] = $duracion;
+            $cambios[] = 'Duración: de ' . (int) $propuesta['duracion_min'] . ' a ' . $duracion . ' minutos.';
+        }
+
+        return [$columnas, $cambios];
     }
 
     /* =====================================================================
@@ -815,7 +909,7 @@ final class Admin
 
         if ($id === (int) $yo['id']) {
             Respuesta::redirigir('/admin/cuenta',
-                'Tu propia verificación en dos pasos se restablece aquí, en Configuración.', 'warn');
+                'Tu propia verificación en dos pasos se restablece aquí, en Configuración → Mi cuenta.', 'warn');
         }
         $objetivo = Usuario::porId($id);
         if (!$objetivo) {
@@ -1022,7 +1116,7 @@ final class Admin
 
         Respuesta::vista('admin/identidad', [
             'titulo'      => 'Identidad',
-            'pantalla'    => 'admin-identidad',
+            'pantalla'    => 'configuracion',
             'temaEvento'  => $tema,
             'presets'     => Tema::PRESETS,
             'tipografias' => Tema::TIPOGRAFIAS,
@@ -1247,8 +1341,8 @@ final class Admin
     public function correo(Peticion $peticion): void
     {
         Respuesta::vista('admin/correo', [
-            'titulo'    => 'Autenticación',
-            'pantalla'  => 'admin-autenticacion',
+            'titulo'    => 'Acceso y correo',
+            'pantalla'  => 'configuracion',
             'metodos'      => \App\Nucleo\Autenticacion::activos(),
             'catalogo'     => \App\Nucleo\Autenticacion::METODOS,
             'preferido'    => \App\Nucleo\Autenticacion::preferido(),

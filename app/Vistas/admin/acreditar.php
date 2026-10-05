@@ -29,7 +29,7 @@ defined('EVENTOS_TIC') || exit;
         <?= e($credencial['nombre']) ?>
       </strong>
       <span class="mono" style="font-size:13px;color:var(--c-text)">
-        <?= e($credencial['tipo_documento']) ?> <?= e(documento($documento)) ?>
+        <?= e(identificacion($credencial['tipo_documento'], $documento) ?: 'Sin identificación registrada') ?>
       </span>
       <span class="mono" style="font-size:13px;color:var(--c-text)">
         <?= e($credencial['entidad'] ?: 'Independiente') ?><?= $credencial['municipio'] !== '' ? ' · ' . e($credencial['municipio']) : '' ?>

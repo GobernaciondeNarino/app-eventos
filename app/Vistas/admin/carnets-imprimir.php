@@ -73,7 +73,9 @@ $conFiltro = array_filter([
               </div>
               <div class="carnet-uno__datos">
                 <span class="carnet-uno__nombre"><?= e($p['nombre']) ?></span>
-                <span class="carnet-uno__dato"><?= e($p['tipo_documento'] . ' ' . documento($t['documento'])) ?></span>
+                <?php if (identificacion($p['tipo_documento'], $t['documento']) !== ''): ?>
+                  <span class="carnet-uno__dato"><?= e(identificacion($p['tipo_documento'], $t['documento'])) ?></span>
+                <?php endif; ?>
                 <span class="carnet-uno__dato"><?= e($p['entidad'] ?: 'Independiente') ?></span>
                 <?php if ((string) $p['municipio'] !== ''): ?>
                   <span class="carnet-uno__dato"><?= e($p['municipio']) ?></span>

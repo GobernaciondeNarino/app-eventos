@@ -45,6 +45,38 @@ final class Medios
     }
 
     /**
+     * El banner del formulario de registro. Público, como el formulario.
+     *
+     * El nombre del archivo sale de la base y no de la dirección: así no hay
+     * forma de pedir por aquí otro archivo de la carpeta.
+     */
+    public function banner(Peticion $peticion, array $parametros): void
+    {
+        $eventoId = (int) $parametros['evento'];
+
+        // El del evento activo lo ve cualquiera: va arriba del formulario
+        // público. El de otro —uno en borrador puede no estar anunciado—, solo
+        // el equipo. Con la misma respuesta que «no hay», para que contar ids
+        // no diga qué eventos tienen banner.
+        if ($eventoId !== (int) (App::eventoActivo()['id'] ?? 0)) {
+            $equipo = Guardia::equipoOperativo();
+            if ($equipo === null || !Guardia::tieneRol($equipo, 'consulta')) {
+                Respuesta::error(404, 'Sin banner', 'Este evento no tiene banner cargado.');
+            }
+        }
+
+        $fila = Bd::fila('SELECT banner_imagen, banner_tipo FROM {evento_formulario} WHERE evento_id = ?', [$eventoId]);
+        $archivo = (string) ($fila['banner_imagen'] ?? '');
+        if ($archivo === '') {
+            Respuesta::error(404, 'Sin banner', 'Este evento no tiene banner cargado.');
+        }
+        Respuesta::archivo(
+            RAIZ . '/almacen/logos/' . basename($archivo),
+            (string) ($fila['banner_tipo'] ?? '') ?: 'image/jpeg'
+        );
+    }
+
+    /**
      * La fotografía de una persona.
      *
      * La ve su dueño, el equipo organizador y el Staff. Nadie más: el id es un

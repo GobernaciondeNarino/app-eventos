@@ -55,27 +55,7 @@ final class Imagen
      */
     public static function guardarFoto(array $archivo, int $personaId, ?array $recorte = null): array
     {
-        self::validarSubida($archivo);
-
-        $finfo = new \finfo(FILEINFO_MIME_TYPE);
-        $tipoReal = (string) $finfo->file($archivo['tmp_name']);
-        if (!isset(self::TIPOS[$tipoReal])) {
-            throw new \DomainException(
-                'Esa foto no está en un formato que podamos usar. Sirven JPG, PNG y WEBP.'
-            );
-        }
-
-        if (!function_exists('imagecreatefromstring')) {
-            throw new \DomainException(
-                'Este servidor no tiene la extensión GD de PHP, que es la que procesa las '
-                . 'imágenes. Pídele al área de sistemas que la active.'
-            );
-        }
-
-        $original = @imagecreatefromstring((string) file_get_contents($archivo['tmp_name']));
-        if ($original === false) {
-            throw new \DomainException('La imagen está dañada o no se pudo leer. Prueba con otra.');
-        }
+        [$original, $tipoReal] = self::abrirFoto($archivo);
 
         try {
             $cuadrada = self::recortarCuadrado($original, $archivo['tmp_name'], $tipoReal, $recorte);
@@ -109,6 +89,21 @@ final class Imagen
         return [$nombre, 'image/jpeg'];
     }
 
+    /**
+     * ¿Sirve esta foto? Lo mismo que mira guardarFoto(), sin guardar nada.
+     *
+     * Para cuando el evento la exige: entonces tiene que fallar con los demás
+     * campos, antes de crear el registro, y no después con un «se guardó todo
+     * menos la foto» que deja el carnet sin ella.
+     *
+     * @throws \DomainException con un texto que se le puede enseñar a la persona
+     */
+    public static function revisarFoto(array $archivo): void
+    {
+        [$imagen] = self::abrirFoto($archivo);
+        imagedestroy($imagen);
+    }
+
     /** Borra la foto de una persona del disco. */
     public static function borrarFoto(string $nombre): void
     {
@@ -120,25 +115,140 @@ final class Imagen
         @unlink(RAIZ . '/almacen/fotos/' . basename($nombre));
     }
 
+    /**
+     * El banner del formulario de registro.
+     *
+     * Las mismas reglas que la foto —el tipo por el contenido, la imagen
+     * regenerada entera, sin SVG, el nombre puesto aquí— pero sin recorte: se
+     * conserva la proporción y solo se reduce si pasa de 1600 px de ancho, que
+     * es más de lo que ocupa en cualquier pantalla. Los PNG y WEBP salen en PNG
+     * para no perder la transparencia; las fotos, en JPEG.
+     *
+     * @return array{0: string, 1: string} [nombreArchivo, tipoMime]
+     * @throws \DomainException con un texto que se le puede enseñar a la persona
+     */
+    public static function guardarBanner(array $archivo, int $eventoId): array
+    {
+        self::validarSubida($archivo, 'La imagen');
+
+        $finfo = new \finfo(FILEINFO_MIME_TYPE);
+        $tipoReal = (string) $finfo->file($archivo['tmp_name']);
+        if (!isset(self::TIPOS[$tipoReal])) {
+            throw new \DomainException('El banner tiene que ser JPG, PNG o WEBP.');
+        }
+        if (!function_exists('imagecreatefromstring')) {
+            throw new \DomainException(
+                'Este servidor no tiene la extensión GD de PHP, que es la que procesa las '
+                . 'imágenes. Pídele al área de sistemas que la active.'
+            );
+        }
+
+        $original = @imagecreatefromstring((string) file_get_contents($archivo['tmp_name']));
+        if ($original === false) {
+            throw new \DomainException('La imagen está dañada o no se pudo leer. Prueba con otra.');
+        }
+
+        $imagen = self::enderezar($original, $archivo['tmp_name'], $tipoReal);
+        if ($imagen !== $original) {
+            imagedestroy($original);
+        }
+
+        $ancho = imagesx($imagen);
+        $alto = imagesy($imagen);
+        if ($ancho < 300 || $alto < 60) {
+            imagedestroy($imagen);
+            throw new \DomainException('La imagen es muy pequeña para un banner: usa una de al menos 1200 px de ancho.');
+        }
+
+        $conTransparencia = $tipoReal !== 'image/jpeg';
+        $escala = min(1.0, 1600 / $ancho);
+        $nuevoAncho = (int) round($ancho * $escala);
+        $nuevoAlto = (int) round($alto * $escala);
+
+        $destino = imagecreatetruecolor($nuevoAncho, $nuevoAlto);
+        if ($conTransparencia) {
+            imagealphablending($destino, false);
+            imagesavealpha($destino, true);
+            imagefill($destino, 0, 0, imagecolorallocatealpha($destino, 0, 0, 0, 127));
+        }
+        imagecopyresampled($destino, $imagen, 0, 0, 0, 0, $nuevoAncho, $nuevoAlto, $ancho, $alto);
+        imagedestroy($imagen);
+
+        $directorio = RAIZ . '/almacen/logos';
+        if (!is_dir($directorio)) {
+            @mkdir($directorio, 0750, true);
+        }
+        $nombre = 'banner-' . $eventoId . '-' . bin2hex(random_bytes(6)) . ($conTransparencia ? '.png' : '.jpg');
+        $ruta = $directorio . '/' . $nombre;
+
+        $escrita = $conTransparencia ? imagepng($destino, $ruta, 7) : imagejpeg($destino, $ruta, 85);
+        imagedestroy($destino);
+        if (!$escrita) {
+            throw new \DomainException('No se pudo guardar la imagen en el servidor. Revisa los permisos de almacen/logos.');
+        }
+        @chmod($ruta, 0640);
+
+        return [$nombre, $conTransparencia ? 'image/png' : 'image/jpeg'];
+    }
+
+    public static function borrarBanner(string $nombre): void
+    {
+        if ($nombre !== '' && str_starts_with(basename($nombre), 'banner-')) {
+            @unlink(RAIZ . '/almacen/logos/' . basename($nombre));
+        }
+    }
+
     /* =====================================================================
        Interno
        ===================================================================== */
 
-    private static function validarSubida(array $archivo): void
+    /**
+     * La foto subida, abierta: el tipo por su contenido y la imagen ya leída.
+     *
+     * @return array{0: \GdImage, 1: string} la imagen y su tipo real
+     * @throws \DomainException con un texto que se le puede enseñar a la persona
+     */
+    private static function abrirFoto(array $archivo): array
+    {
+        self::validarSubida($archivo);
+
+        $finfo = new \finfo(FILEINFO_MIME_TYPE);
+        $tipoReal = (string) $finfo->file($archivo['tmp_name']);
+        if (!isset(self::TIPOS[$tipoReal])) {
+            throw new \DomainException(
+                'Esa foto no está en un formato que podamos usar. Sirven JPG, PNG y WEBP.'
+            );
+        }
+
+        if (!function_exists('imagecreatefromstring')) {
+            throw new \DomainException(
+                'Este servidor no tiene la extensión GD de PHP, que es la que procesa las '
+                . 'imágenes. Pídele al área de sistemas que la active.'
+            );
+        }
+
+        $original = @imagecreatefromstring((string) file_get_contents($archivo['tmp_name']));
+        if ($original === false) {
+            throw new \DomainException('La imagen está dañada o no se pudo leer. Prueba con otra.');
+        }
+        return [$original, $tipoReal];
+    }
+
+    private static function validarSubida(array $archivo, string $que = 'La foto'): void
     {
         $error = (int) ($archivo['error'] ?? UPLOAD_ERR_NO_FILE);
 
         if ($error === UPLOAD_ERR_INI_SIZE || $error === UPLOAD_ERR_FORM_SIZE) {
             throw new \DomainException(
-                'La foto supera el tamaño máximo que admite el servidor ('
-                . ini_get('upload_max_filesize') . '). Hazle una foto más pequeña o recórtala.'
+                $que . ' supera el tamaño máximo que admite el servidor ('
+                . ini_get('upload_max_filesize') . '). Usa una más pequeña o recórtala.'
             );
         }
         if ($error !== UPLOAD_ERR_OK) {
-            throw new \DomainException('No se pudo recibir la foto. Inténtalo de nuevo.');
+            throw new \DomainException('No se pudo recibir ' . mb_strtolower($que) . '. Inténtalo de nuevo.');
         }
         if ((int) ($archivo['size'] ?? 0) > self::PESO_MAXIMO) {
-            throw new \DomainException('La foto pesa más de 6 MB. Reduce el tamaño e inténtalo de nuevo.');
+            throw new \DomainException($que . ' pesa más de 6 MB. Reduce el tamaño e inténtalo de nuevo.');
         }
         if (!is_uploaded_file((string) $archivo['tmp_name'])) {
             throw new \DomainException('El archivo no llegó por una subida válida.');

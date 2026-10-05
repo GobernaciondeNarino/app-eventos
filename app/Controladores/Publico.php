@@ -5,9 +5,9 @@ namespace App\Controladores;
 
 defined('EVENTOS_TIC') || exit;
 
-use App\Datos;
 use App\Modelos\Credencial;
 use App\Modelos\Evento;
+use App\Modelos\Formulario;
 use App\Modelos\Persona;
 use App\Nucleo\App;
 use App\Nucleo\Autenticacion;
@@ -68,6 +68,7 @@ final class Publico
     public function registro(Peticion $peticion): void
     {
         $evento = App::eventoExigido();
+        $formulario = Formulario::delEvento((int) $evento['id']);
 
         $yo = Guardia::personaActual();
         $errores = [];
@@ -77,8 +78,11 @@ final class Publico
         // no se le pueden volver a pedir cada vez que corrige un teléfono.
         $suPropuesta = $this->documentosDe($yo);
 
-        // Quien ya está identificado ve sus datos y puede corregirlos.
-        $valores = $yo ? [
+        // Lo que ya tiene guardado quien vuelve: lo que ve al entrar, lo que se
+        // conserva de los campos que el formulario de este evento no pide, y
+        // las opciones que se le siguen aceptando aunque ya no estén en la
+        // lista.
+        $actual = $yo ? [
             'correo'         => $yo['correo'],
             'nombre'         => $yo['nombre'],
             'tipo_documento' => $yo['tipo_documento'],
@@ -88,10 +92,17 @@ final class Publico
             'departamento'   => $yo['departamento'],
             'municipio'      => $yo['municipio'],
             'rol'            => $yo['rol'],
-        ] + Persona::caracterizacion((int) $yo['id']) : [];
+            'foto'           => Persona::tieneFoto($yo),
+        ] + Persona::caracterizacion((int) $yo['id']) + $suPropuesta['propuesta'] : [];
+
+        // Lo que ve en pantalla al entrar: sus datos, sin la propuesta. La
+        // propuesta no se precarga —como hasta ahora—: volver a mandarla la
+        // devuelve a «pendiente», y eso tiene que ser una decisión, no el
+        // efecto de corregir un teléfono.
+        $valores = array_diff_key($actual, $suPropuesta['propuesta'] + ['foto' => true]);
 
         if ($peticion->esPost()) {
-            $valores = $this->valoresEnviados($peticion);
+            $valores = $this->conservarOcultos($this->valoresEnviados($peticion), $formulario, $actual);
 
             // El correo de quien ya está identificado no se toca. En pantalla el
             // campo va en solo lectura, pero eso lo decide el navegador: un
@@ -103,7 +114,7 @@ final class Publico
             }
 
             $errores = $this->validarRegistro(
-                $valores, $peticion, $yo !== null, $suPropuesta['documentos']
+                $valores, $peticion, $yo !== null, $suPropuesta['documentos'], $formulario, $actual
             );
 
             // Un correo ya registrado no se puede tocar desde aquí.
@@ -208,9 +219,15 @@ final class Publico
             'pantalla'      => 'registro',
             'valores'       => $valores,
             'errores'       => $errores,
-            'departamentos' => Datos::departamentos(),
-            'municipios'    => Datos::municipiosDe((string) ($valores['departamento'] ?? '')),
-            'categorias'    => Datos::CATEGORIAS,
+            'formulario'    => $formulario,
+            'actual'        => $actual,
+            'departamentos' => $formulario->departamentos((string) ($actual['departamento'] ?? '')),
+            'municipios'    => $formulario->municipiosDe(
+                (string) ($valores['departamento'] ?? ''),
+                (string) ($valores['departamento'] ?? '') === (string) ($actual['departamento'] ?? '')
+                    ? (string) ($actual['municipio'] ?? '') : ''
+            ),
+            'categorias'    => $formulario->texto('categoria', (string) ($actual['categoria'] ?? '')),
             'jornadas'      => Evento::jornadas((int) $evento['id']),
             'yaRegistrado'  => $yo !== null,
             'completo'      => $completo,
@@ -310,6 +327,57 @@ final class Publico
     }
 
     /**
+     * Lo que el formulario de este evento no pide, se conserva.
+     *
+     * Un campo oculto no llega en el envío. Sin esto, guardar «mis datos» con
+     * el teléfono oculto lo borraba, y quitar la caracterización de un evento
+     * dejaba sin ella a todos los que la habían dado antes en cuanto
+     * corrigieran una coma.
+     */
+    private function conservarOcultos(array $v, Formulario $f, array $actual): array
+    {
+        $deAntes = static fn(string $clave, string $porDefecto = ''): string => (string) ($actual[$clave] ?? $porDefecto);
+
+        if (!$f->visible('documento')) {
+            $v['tipo_documento'] = $deAntes('tipo_documento', (string) array_key_first($f->opciones('tipo_documento')));
+            $v['documento'] = $deAntes('documento');
+        }
+        if (!$f->visible('telefono')) {
+            $v['telefono'] = $deAntes('telefono');
+        }
+        if (!$f->visible('rol')) {
+            $v['rol'] = $deAntes('rol', 'participante');
+        }
+        if (!$f->visible('entidad')) {
+            $v['entidad'] = $deAntes('entidad');
+        }
+        if (!$f->visible('ubicacion')) {
+            $v['departamento'] = $deAntes('departamento');
+            $v['municipio'] = $deAntes('municipio');
+        }
+        foreach (['rango_edad', 'genero', 'etnia', 'discapacidad'] as $clave) {
+            if (!$f->visible($clave)) {
+                $v[$clave] = $deAntes($clave);
+            }
+        }
+        if (!$f->visible('expositor')) {
+            // Sin la sección no se manda ninguna propuesta; la que ya hubiera
+            // se queda como está.
+            $v['expositor'] = false;
+        }
+        if (!$f->visible('dia_preferido')) {
+            $v['dia_preferido'] = (int) ($actual['dia_preferido'] ?? 1);
+        }
+        if (!$f->visible('duracion')) {
+            $v['duracion'] = (int) ($actual['duracion'] ?? ($f->duraciones()[0] ?? 40));
+        }
+        if (!$f->visible('requerimientos')) {
+            $v['requerimientos'] = $deAntes('requerimientos');
+        }
+        return $v;
+    }
+
+    /**
      * Validación del lado del servidor.
      *
      * La misma que hace el navegador, otra vez. Lo del navegador es comodidad
@@ -322,9 +390,12 @@ final class Publico
         array $v,
         Peticion $peticion,
         bool $identificado,
-        array $yaSubidos = []
+        array $yaSubidos,
+        Formulario $f,
+        array $actual
     ): array {
         $errores = [];
+        $deAntes = static fn(string $clave): string => (string) ($actual[$clave] ?? '');
 
         if (!$identificado && !filter_var($v['correo'], FILTER_VALIDATE_EMAIL)) {
             $errores['correo'] = 'Escribe un correo válido.';
@@ -336,50 +407,104 @@ final class Publico
             $errores['nombre'] = 'El nombre es demasiado largo.';
         }
 
-        $documento = Persona::normalizarDocumento($v['documento']);
-        if (strlen($documento) < 5 || strlen($documento) > 16) {
-            $errores['documento'] = 'El número de identificación debe tener entre 5 y 16 caracteres.';
-        }
-        // El pasaporte y la cédula de extranjería llevan letras; la cédula
-        // colombiana y la tarjeta de identidad, no.
-        if (in_array($v['tipo_documento'] ?? 'CC', ['CC', 'TI'], true)
-            && preg_match('/[^0-9]/', $documento)) {
-            $errores['documento'] = 'La cédula y la tarjeta de identidad son solo números.';
-        }
-
-        if ($v['telefono'] !== '') {
-            $digitos = preg_replace('/\D/', '', $v['telefono']) ?? '';
-            if (strlen($digitos) < 7 || strlen($digitos) > 15) {
-                $errores['telefono'] = 'Revisa el número de teléfono.';
+        // La identificación: obligatoria, opcional u oculta según el evento.
+        // Oculta, ni se mira: conservarOcultos() ya dejó la que hubiera.
+        if ($f->visible('documento')) {
+            $documento = Persona::normalizarDocumento($v['documento']);
+            if ($documento === '') {
+                if ($f->obligatorio('documento')) {
+                    $errores['documento'] = 'Escribe tu número de identificación.';
+                }
+            } elseif (strlen($documento) < 5 || strlen($documento) > 16) {
+                $errores['documento'] = 'El número de identificación debe tener entre 5 y 16 caracteres.';
+            } elseif (in_array($v['tipo_documento'] ?? 'CC', ['CC', 'TI'], true)
+                && preg_match('/[^0-9]/', $documento)) {
+                // El pasaporte, la cédula de extranjería y los permisos llevan
+                // letras; la cédula colombiana y la tarjeta de identidad, no.
+                $errores['documento'] = 'La cédula y la tarjeta de identidad son solo números.';
+            }
+            if (!$f->opcionValida('tipo_documento', (string) $v['tipo_documento'], $deAntes('tipo_documento'))) {
+                $errores['tipo_documento'] = 'Tipo de documento no válido.';
             }
         }
 
-        if (!in_array($v['tipo_documento'], array_keys(Datos::TIPOS_DOCUMENTO), true)) {
-            $errores['tipo_documento'] = 'Tipo de documento no válido.';
+        if ($f->visible('telefono')) {
+            if ($v['telefono'] === '') {
+                if ($f->obligatorio('telefono')) {
+                    $errores['telefono'] = 'Escribe un teléfono de contacto.';
+                }
+            } else {
+                $digitos = preg_replace('/\D/', '', $v['telefono']) ?? '';
+                if (strlen($digitos) < 7 || strlen($digitos) > 15) {
+                    $errores['telefono'] = 'Revisa el número de teléfono.';
+                }
+            }
         }
-        // Contra ROLES_PUBLICOS y no contra ROLES: «staff» da acceso a la
-        // plataforma y solo lo pone un administrador. Quitar la opción de la
-        // pantalla no sirve de nada por sí solo —un envío hecho a mano no pasa
-        // por ninguna pantalla—, así que la barrera está aquí y, por si alguien
-        // añade otra entrada mañana, también en Persona::rolAdmitido().
-        if (!in_array($v['rol'], Persona::ROLES_PUBLICOS, true)) {
+
+        // Contra los perfiles públicos que ofrece este evento, que nunca
+        // incluyen «staff»: ese perfil da acceso a la plataforma y solo lo pone
+        // un administrador. Quitar la opción de la pantalla no sirve de nada
+        // por sí solo —un envío hecho a mano no pasa por ninguna pantalla—, así
+        // que la barrera está aquí y, por si alguien añade otra entrada mañana,
+        // también en Persona::rolAdmitido().
+        if ($f->visible('rol') && !in_array($v['rol'], $f->perfiles($deAntes('rol')), true)) {
             $errores['rol'] = 'Perfil no válido.';
         }
-        if ($v['departamento'] !== '' && !in_array($v['departamento'], Datos::departamentos(), true)) {
-            $errores['departamento'] = 'Departamento no válido.';
+
+        if ($f->obligatorio('entidad') && trim($v['entidad']) === '') {
+            $errores['entidad'] = 'Escribe tu entidad u organización.';
         }
-        if ($v['municipio'] !== '' && !Datos::municipioValido($v['departamento'], $v['municipio'])) {
-            $errores['municipio'] = 'Ese municipio no corresponde al departamento elegido.';
+
+        if ($f->visible('ubicacion')) {
+            if ($v['departamento'] !== ''
+                && !in_array($v['departamento'], $f->departamentos($deAntes('departamento')), true)) {
+                $errores['departamento'] = 'Departamento no válido.';
+            }
+            if ($v['municipio'] !== '' && !$f->territorioValido($v['departamento'], $v['municipio'], $actual)) {
+                $errores['municipio'] = 'Ese municipio no corresponde al departamento elegido.';
+            }
+            if ($f->obligatorio('ubicacion') && ($v['departamento'] === '' || $v['municipio'] === '')) {
+                $errores['municipio'] = 'Elige tu departamento y tu municipio.';
+            }
         }
-        if ($v['rango_edad'] !== '' && !in_array($v['rango_edad'], Datos::RANGOS_EDAD, true)) {
-            $errores['rango_edad'] = 'Rango de edad no válido.';
+
+        if ($f->visible('rango_edad')) {
+            if ($v['rango_edad'] !== '' && !in_array($v['rango_edad'], $f->texto('rango_edad', $deAntes('rango_edad')), true)) {
+                $errores['rango_edad'] = 'Rango de edad no válido.';
+            }
+            if ($f->obligatorio('rango_edad') && $v['rango_edad'] === '') {
+                $errores['rango_edad'] = 'Elige tu rango de edad.';
+            }
+        }
+
+        // Los sensibles se validan contra su lista, pero nunca se exigen.
+        foreach (['genero', 'etnia', 'discapacidad'] as $clave) {
+            if ($f->visible($clave) && $v[$clave] !== '' && !$f->opcionValida($clave, $v[$clave], $deAntes($clave))) {
+                $errores[$clave] = 'Elige una opción de la lista.';
+            }
+        }
+
+        if ($f->obligatorio('foto')) {
+            $archivo = $peticion->archivo('foto');
+            // «Quitar la foto» gana sobre una subida (guardarFoto()), así que
+            // con la foto obligatoria tampoco se acepta.
+            if ($peticion->marcado('quitar_foto') || ($archivo === null && empty($actual['foto']))) {
+                $errores['foto'] = 'Sube tu fotografía: este evento la pide para el carnet.';
+            } elseif ($archivo !== null) {
+                // Obligatoria, tiene que servir antes de guardar nada.
+                try {
+                    Imagen::revisarFoto($archivo);
+                } catch (\DomainException $e) {
+                    $errores['foto'] = $e->getMessage();
+                }
+            }
         }
 
         if ($v['expositor']) {
             if (mb_strlen(trim($v['tema'])) < 5) {
                 $errores['tema'] = 'Describe el tema de tu exposición.';
             }
-            if (!in_array($v['categoria'], Datos::CATEGORIAS, true)) {
+            if (!in_array($v['categoria'], $f->texto('categoria', $deAntes('categoria')), true)) {
                 $errores['categoria'] = 'Elige una categoría de la lista.';
             }
             if (mb_strlen(trim($v['detalle'])) < 30) {
@@ -387,6 +512,13 @@ final class Publico
             }
             if (mb_strlen($v['detalle']) > 600) {
                 $errores['detalle'] = 'El detalle no puede pasar de 600 caracteres.';
+            }
+            if ($f->visible('duracion')
+                && !in_array((int) $v['duracion'], $f->duraciones((int) ($actual['duracion'] ?? 0)), true)) {
+                $errores['duracion'] = 'Elige una duración de la lista.';
+            }
+            if ($f->obligatorio('requerimientos') && trim($v['requerimientos']) === '') {
+                $errores['requerimientos'] = 'Cuéntanos qué necesitas para exponer.';
             }
 
             // Los dos adjuntos son obligatorios para quien va a exponer. El
@@ -471,7 +603,8 @@ final class Publico
             'categoria'      => mb_substr($v['categoria'], 0, 80),
             'detalle'        => mb_substr(trim($v['detalle']), 0, 600),
             'dia_preferido'  => max(1, min(30, (int) $v['dia_preferido'])),
-            'duracion_min'   => in_array((int) $v['duracion'], [20, 40, 60], true) ? (int) $v['duracion'] : 40,
+            // Las duraciones las configura cada evento y ya se validaron.
+            'duracion_min'   => max(5, min(480, (int) $v['duracion'])),
             'requerimientos' => mb_substr($v['requerimientos'], 0, 255),
         ];
 
@@ -553,13 +686,15 @@ final class Publico
      */
     private function documentosDe(?array $persona): array
     {
-        $vacio = ['documentos' => [], 'aprobada' => false];
+        $vacio = ['documentos' => [], 'aprobada' => false, 'propuesta' => []];
         if ($persona === null) {
             return $vacio;
         }
 
         $fila = Bd::fila(
-            'SELECT id, estado, hoja_vida, exposicion FROM {propuesta}
+            'SELECT id, estado, hoja_vida, exposicion, titulo, categoria, detalle, dia_preferido,
+                    duracion_min, requerimientos
+               FROM {propuesta}
               WHERE persona_id = ? ORDER BY id DESC LIMIT 1',
             [(int) $persona['id']]
         );
@@ -579,7 +714,21 @@ final class Publico
                 'url'     => u('/medios/documento/' . (int) $fila['id'] . '/' . $regla['ranura']),
             ];
         }
-        return ['documentos' => $subidos, 'aprobada' => $fila['estado'] === 'aprobada'];
+        return [
+            'documentos' => $subidos,
+            'aprobada'   => $fila['estado'] === 'aprobada',
+            // La propuesta, en los nombres del formulario: así quien vuelve ve
+            // lo que mandó, y lo que el evento ya no pide se conserva.
+            'propuesta'  => [
+                'expositor'      => true,
+                'tema'           => (string) $fila['titulo'],
+                'categoria'      => (string) $fila['categoria'],
+                'detalle'        => (string) $fila['detalle'],
+                'dia_preferido'  => (int) $fila['dia_preferido'],
+                'duracion'       => (int) $fila['duracion_min'],
+                'requerimientos' => (string) $fila['requerimientos'],
+            ],
+        ];
     }
 
     /** Municipios de un departamento, para el selector dependiente. */
@@ -588,7 +737,7 @@ final class Publico
         $departamento = (string) $parametros['departamento'];
         Respuesta::json([
             'departamento' => $departamento,
-            'municipios'   => Datos::municipiosDe($departamento),
+            'municipios'   => Formulario::delEvento((int) (App::eventoActivo()['id'] ?? 0))->municipiosDe($departamento),
         ]);
     }
 

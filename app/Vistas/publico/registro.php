@@ -2,16 +2,24 @@
 /**
  * Formulario de registro. Abierto al público, siempre.
  *
+ * Qué campos lleva y qué opciones trae cada lista lo decide Configuración →
+ * Registro, evento por evento (App\Modelos\Formulario).
+ *
  * @var array $valores @var array $errores @var array $departamentos
  * @var array $municipios @var array $categorias @var array $jornadas @var bool $yaRegistrado
  * @var bool $completo @var bool $pideClave @var int $claveMinima
  * @var bool $tieneClave @var string $foto @var array $documentos @var bool $agendada
  * @var bool $reelegir @var string $perfilFijo
+ * @var \App\Modelos\Formulario $formulario @var array $actual
  */
 defined('EVENTOS_TIC') || exit;
 
-use App\Datos;
 use App\Nucleo\Documento;
+
+$f = $formulario;
+/** El asterisco de los obligatorios, y el atributo que lee el aviso de registro incompleto. */
+$req = static fn(string $campo): string => $f->obligatorio($campo) ? ' <span class="req">*</span>' : '';
+$exige = static fn(string $campo): string => $f->obligatorio($campo) ? 'required' : '';
 
 // Si el correo vino por la portada, se precarga. Esto va ANTES de definir $v:
 // una función flecha captura las variables por valor, así que $v se quedaba con
@@ -27,28 +35,58 @@ $hayPropuesta = $v('tema') !== '' || !empty($valores['expositor']);
 // La caracterización arranca plegada: es opcional, son ocho campos, y puesta
 // por delante hace que el formulario parezca el triple de largo de lo que es.
 // Se abre sola si algo de dentro quedó con error, para que nadie tenga que
-// buscar a ciegas por qué no se guardó.
-$erroresOpcionales = ['municipio', 'departamento', 'rango_edad', 'genero', 'etnia', 'discapacidad'];
-$abrirOpcional = (bool) array_intersect($erroresOpcionales, array_keys($errores));
+// buscar a ciegas por qué no se guardó, y si el evento hizo obligatorio alguno
+// de sus campos: lo que se exige no puede estar escondido.
+$deCaracterizacion = ['entidad', 'rango_edad', 'ubicacion', 'genero', 'etnia', 'discapacidad'];
+$caracterizacionVisible = array_filter($deCaracterizacion, static fn(string $c): bool => $f->visible($c)) !== [];
+$caracterizacionExige = array_filter($deCaracterizacion, static fn(string $c): bool => $f->obligatorio($c)) !== [];
+$erroresOpcionales = ['municipio', 'departamento', 'rango_edad', 'genero', 'etnia', 'discapacidad', 'entidad'];
+$abrirOpcional = $caracterizacionExige || (bool) array_intersect($erroresOpcionales, array_keys($errores));
 
-guiones('foto.js', 'preregistro.js', 'claves.js');
+// Los errores que se le enseñan a la persona en el aviso de «no se guardó».
+$erroresVisibles = array_diff_key($errores, ['ofrecer_acceso' => true]);
+$banner = $f->banner();
+
+guiones('foto.js', 'preregistro.js', 'claves.js', 'registro-incompleto.js');
 ?>
 <!-- enctype: sin esto el navegador manda solo los nombres de los archivos y
      $_FILES llega vacío, así que la foto se perdía sin ningún error visible. -->
 <form class="view view--narrow stack stack--4" method="post" action="<?= e(u('/registro')) ?>"
-      enctype="multipart/form-data" novalidate>
+      enctype="multipart/form-data" novalidate data-registro>
   <?= testigo() ?>
+
+  <?php if ($banner !== null): ?>
+    <!-- El banner lo pone el evento desde Configuración → Registro. -->
+    <div class="registro-banner">
+      <?php if ($banner['imagen'] !== ''): ?>
+        <img class="registro-banner__imagen" src="<?= e(u($banner['imagen'], ['v' => $banner['version']])) ?>"
+             alt="<?= e($banner['alt']) ?>">
+      <?php endif; ?>
+      <?php if (trim($banner['titulo']) !== '' || trim($banner['texto']) !== ''): ?>
+        <div class="registro-banner__texto">
+          <?php /* Un párrafo y no un h2: el primer encabezado de la página es su h1. */ ?>
+          <?php if (trim($banner['titulo']) !== ''): ?><p class="registro-banner__titulo"><?= e($banner['titulo']) ?></p><?php endif; ?>
+          <?php if (trim($banner['texto']) !== ''): ?><p><?= nl2br(e($banner['texto'])) ?></p><?php endif; ?>
+        </div>
+      <?php endif; ?>
+    </div>
+  <?php endif; ?>
 
   <div class="stack stack--2">
     <span class="kicker">Fase 01 · Datos del participante</span>
     <h1><?= $yaRegistrado ? ($completo ? 'Mis datos' : 'Completa tu registro') : 'Formulario de registro' ?></h1>
     <p class="help">
-      <?php if (!$yaRegistrado): ?>
-        Solo nombre e identificación son obligatorios.
+      <?php if (!$yaRegistrado):
+        $palabras = $f->obligatoriosEnPalabras();
+        $ultima = array_pop($palabras);
+      ?>
+        Son obligatorios <?= e(implode(', ', $palabras) . ' y ' . $ultima) ?>.
       <?php elseif ($completo): ?>
         Puedes corregir lo que haga falta; el carnet se actualiza solo.
       <?php else: ?>
-        Ya tienes acceso. Con el nombre y la identificación te emitimos el carnet.
+        Ya tienes acceso. <?= $f->obligatorio('documento')
+            ? 'Con el nombre y la identificación te emitimos el carnet.'
+            : 'Con tu nombre te emitimos el carnet.' ?>
       <?php endif; ?>
     </p>
   </div>
@@ -63,8 +101,16 @@ guiones('foto.js', 'preregistro.js', 'claves.js');
     </div>
   <?php endif; ?>
 
-  <?php if ($err('general')): ?>
-    <div class="notice notice--danger"><span class="notice__icon">▲</span><span><?= e($err('general')) ?></span></div>
+  <?php if ($erroresVisibles !== []): ?>
+    <!-- Sin JavaScript esto es todo el aviso; con él, además se abre la
+         ventana de abajo. Lo que no se guardó no puede pasar inadvertido. -->
+    <div class="notice notice--danger" role="alert">
+      <span class="notice__icon" aria-hidden="true">▲</span>
+      <span>
+        <strong>Tu registro no fue guardado.</strong>
+        <?= e($err('general') !== '' ? $err('general') : 'Revisa los campos marcados en rojo y vuelve a enviarlo.') ?>
+      </span>
+    </div>
   <?php endif; ?>
 
   <?php if ($err('ofrecer_acceso')): ?>
@@ -83,7 +129,7 @@ guiones('foto.js', 'preregistro.js', 'claves.js');
 
   <!-- ================= Datos obligatorios ================= -->
   <section class="card">
-    <div class="card__head"><span>Datos obligatorios</span></div>
+    <div class="card__head"><span>Datos principales</span></div>
     <div class="card__body stack stack--4">
 
       <div class="field">
@@ -103,30 +149,41 @@ guiones('foto.js', 'preregistro.js', 'claves.js');
         <?php if ($err('nombre')): ?><span class="error"><?= e($err('nombre')) ?></span><?php endif; ?>
       </div>
 
-      <div class="grid-2" style="grid-template-columns:190px 1fr">
-        <div class="field">
-          <label class="label" for="tipo_documento">Tipo de documento <span class="req">*</span></label>
-          <select class="select" id="tipo_documento" name="tipo_documento">
-            <?php foreach (Datos::TIPOS_DOCUMENTO as $clave => $etiqueta): ?>
-              <option value="<?= e($clave) ?>" <?= $v('tipo_documento', 'CC') === $clave ? 'selected' : '' ?>><?= e($etiqueta) ?></option>
-            <?php endforeach; ?>
-          </select>
+      <?php if ($f->visible('documento')):
+        $tipos = $f->opciones('tipo_documento', (string) ($actual['tipo_documento'] ?? ''));
+        $tipoElegido = $v('tipo_documento', (string) array_key_first($tipos));
+      ?>
+        <div class="grid-2" style="grid-template-columns:190px 1fr">
+          <div class="field">
+            <label class="label" for="tipo_documento">Tipo de documento<?= $req('documento') ?></label>
+            <select class="select<?= $err('tipo_documento') ? ' is-invalid' : '' ?>" id="tipo_documento" name="tipo_documento">
+              <?php foreach ($tipos as $clave => $etiqueta): ?>
+                <option value="<?= e($clave) ?>" <?= $tipoElegido === (string) $clave ? 'selected' : '' ?>><?= e($etiqueta) ?></option>
+              <?php endforeach; ?>
+            </select>
+            <?php if ($err('tipo_documento')): ?><span class="error"><?= e($err('tipo_documento')) ?></span><?php endif; ?>
+          </div>
+          <div class="field">
+            <label class="label" for="documento">Número de identificación<?= $req('documento') ?></label>
+            <input class="input input--mono<?= $err('documento') ? ' is-invalid' : '' ?>" id="documento" name="documento"
+                   value="<?= e($v('documento')) ?>" placeholder="Sin puntos ni comas" <?= $exige('documento') ?>
+                   inputmode="<?= in_array($tipoElegido, ['CC', 'TI'], true) ? 'numeric' : 'text' ?>" data-documento>
+            <?php if ($err('documento')): ?><span class="error"><?= e($err('documento')) ?></span><?php endif; ?>
+          </div>
         </div>
-        <div class="field">
-          <label class="label" for="documento">Número de identificación <span class="req">*</span></label>
-          <input class="input input--mono<?= $err('documento') ? ' is-invalid' : '' ?>" id="documento" name="documento"
-                 value="<?= e($v('documento')) ?>" inputmode="numeric" placeholder="Sin puntos ni comas" required>
-          <?php if ($err('documento')): ?><span class="error"><?= e($err('documento')) ?></span><?php endif; ?>
-        </div>
-      </div>
+      <?php endif; ?>
 
+      <?php if ($f->visible('telefono') || $f->visible('rol')): ?>
       <div class="grid-2">
+        <?php if ($f->visible('telefono')): ?>
         <div class="field">
-          <label class="label" for="telefono">Teléfono de contacto</label>
+          <label class="label" for="telefono">Teléfono de contacto<?= $req('telefono') ?></label>
           <input class="input input--mono<?= $err('telefono') ? ' is-invalid' : '' ?>" id="telefono" name="telefono"
-                 type="tel" value="<?= e($v('telefono')) ?>" autocomplete="tel" placeholder="+57 300 000 0000">
+                 type="tel" value="<?= e($v('telefono')) ?>" autocomplete="tel" placeholder="+57 300 000 0000" <?= $exige('telefono') ?>>
           <?php if ($err('telefono')): ?><span class="error"><?= e($err('telefono')) ?></span><?php endif; ?>
         </div>
+        <?php endif; ?>
+        <?php if ($f->visible('rol')): ?>
         <div class="field">
           <label class="label" for="rol">Perfil de asistencia</label>
           <?php
@@ -149,10 +206,11 @@ guiones('foto.js', 'preregistro.js', 'claves.js');
               Te lo asignó la organización del evento, así que no se cambia desde aquí.
             </span>
           <?php else: ?>
-            <!-- La lista sale de ROLES_PUBLICOS, que es contra la que valida el
-                 servidor: escrita a mano aquí, una y otra podían separarse. -->
+            <!-- La lista sale de los perfiles públicos que ofrece este evento,
+                 que es contra la que valida el servidor: escrita a mano aquí,
+                 una y otra podían separarse. -->
             <select class="select" id="rol" name="rol">
-              <?php foreach (\App\Modelos\Persona::ROLES_PUBLICOS as $rol): ?>
+              <?php foreach ($f->perfiles((string) ($actual['rol'] ?? '')) as $rol): ?>
                 <option value="<?= e($rol) ?>" <?= $suyo === $rol ? 'selected' : '' ?>><?= e(etiquetaRol($rol)) ?></option>
               <?php endforeach; ?>
             </select>
@@ -163,7 +221,9 @@ guiones('foto.js', 'preregistro.js', 'claves.js');
             <?php if ($err('rol')): ?><span class="error"><?= e($err('rol')) ?></span><?php endif; ?>
           <?php endif; ?>
         </div>
+        <?php endif; ?>
       </div>
+      <?php endif; ?>
 
     </div>
   </section>
@@ -177,9 +237,10 @@ guiones('foto.js', 'preregistro.js', 'claves.js');
        El recorte lo ajusta la persona en el editor de abajo, que solo aparece
        si hay JavaScript. Si no lo hay, el campo funciona igual y el servidor
        recorta el centro. -->
+  <?php if ($f->visible('foto')): ?>
   <section class="card">
     <div class="card__head">
-      <span>Fotografía del carnet (opcional)</span>
+      <span>Fotografía del carnet<?= $f->obligatorio('foto') ? ' <span class="req">*</span>' : ' (opcional)' ?></span>
       <?php if ($foto !== ''): ?><span class="tag tag--ok">Ya tienes una</span><?php endif; ?>
     </div>
     <div class="card__body foto-campo" data-foto>
@@ -229,7 +290,9 @@ guiones('foto.js', 'preregistro.js', 'claves.js');
              archivo normal: sin JavaScript se muestra y funciona solo. -->
         <div class="field" data-foto-campo style="margin:0">
           <label class="label" for="foto">Foto (JPG, PNG o WEBP, máximo 6 MB)</label>
-          <input class="input" type="file" id="foto" name="foto" accept="image/*">
+          <input class="input<?= $err('foto') ? ' is-invalid' : '' ?>" type="file" id="foto" name="foto" accept="image/*"
+                 <?= $f->obligatorio('foto') && $foto === '' ? 'required' : '' ?>>
+          <?php if ($err('foto')): ?><span class="error"><?= e($err('foto')) ?></span><?php endif; ?>
         </div>
 
         <p class="help hidden" data-foto-error style="margin:0;color:var(--c-danger)"></p>
@@ -243,7 +306,7 @@ guiones('foto.js', 'preregistro.js', 'claves.js');
         <input type="hidden" name="foto_ancho" data-foto-ancho>
         <input type="hidden" name="foto_alto" data-foto-alto>
 
-        <?php if ($foto !== ''): ?>
+        <?php if ($foto !== '' && !$f->obligatorio('foto')): ?>
           <label class="row" style="gap:10px;cursor:pointer;flex-wrap:nowrap;align-items:flex-start">
             <input type="checkbox" name="quitar_foto" value="1"
                    style="width:18px;height:18px;margin-top:2px;flex:none;accent-color:var(--c-accent)">
@@ -257,6 +320,7 @@ guiones('foto.js', 'preregistro.js', 'claves.js');
       </div>
     </div>
   </section>
+  <?php endif; ?>
 
   <!-- ================= Contraseña ================= -->
   <?php if ($pideClave): ?>
@@ -299,80 +363,91 @@ guiones('foto.js', 'preregistro.js', 'claves.js');
   <?php endif; ?>
 
   <!-- ================= Caracterización ================= -->
+  <?php if ($caracterizacionVisible): ?>
   <section class="card">
     <div class="card__head">
-      <span>Fase 02 · Caracterización (opcional)</span>
+      <span>Fase 02 · Caracterización<?= $caracterizacionExige ? '' : ' (opcional)' ?></span>
       <button class="btn btn--sm" type="button" data-plegar="bloque-opcional"
               aria-expanded="<?= $abrirOpcional ? 'true' : 'false' ?>">
         <?= $abrirOpcional ? 'Ocultar' : 'Mostrar' ?>
       </button>
     </div>
     <div class="card__body stack stack--5<?= $abrirOpcional ? '' : ' hidden' ?>" id="bloque-opcional">
-      <p class="help">Nos permite reportar cobertura territorial y enfoque diferencial. Puedes omitirla por completo.</p>
+      <p class="help">
+        Nos permite reportar cobertura territorial y enfoque diferencial.
+        <?= $caracterizacionExige
+            ? 'Los marcados con * son obligatorios; el resto puedes omitirlo.'
+            : 'Puedes omitirla por completo.' ?>
+      </p>
 
       <div class="grid-2">
-        <div class="field">
-          <label class="label" for="genero">Género</label>
-          <select class="select" id="genero" name="genero">
-            <?php foreach (Datos::GENEROS as $clave => $etiqueta): ?>
-              <option value="<?= e($clave) ?>" <?= $v('genero') === $clave ? 'selected' : '' ?>><?= e($etiqueta) ?></option>
-            <?php endforeach; ?>
-          </select>
-        </div>
-        <div class="field">
-          <label class="label" for="discapacidad">¿Tiene alguna discapacidad?</label>
-          <select class="select" id="discapacidad" name="discapacidad">
-            <?php foreach (Datos::DISCAPACIDADES as $clave => $etiqueta): ?>
-              <option value="<?= e($clave) ?>" <?= $v('discapacidad', 'No') === $clave ? 'selected' : '' ?>><?= e($etiqueta) ?></option>
-            <?php endforeach; ?>
-          </select>
-        </div>
-        <div class="field">
-          <label class="label" for="etnia">Grupo étnico</label>
-          <select class="select" id="etnia" name="etnia">
-            <?php foreach (Datos::ETNIAS as $clave => $etiqueta): ?>
-              <option value="<?= e($clave) ?>" <?= $v('etnia', 'Ninguno') === $clave ? 'selected' : '' ?>><?= e($etiqueta) ?></option>
-            <?php endforeach; ?>
-          </select>
-        </div>
-        <div class="field">
-          <label class="label" for="entidad">Entidad u organización</label>
-          <input class="input" id="entidad" name="entidad" value="<?= e($v('entidad')) ?>"
-                 autocomplete="organization" placeholder="Ej. Alcaldía de Ipiales" maxlength="160">
-        </div>
+        <?php foreach ([
+          'genero'       => ['Género', ''],
+          'discapacidad' => ['¿Tiene alguna discapacidad?', 'No'],
+          'etnia'        => ['Grupo étnico', 'Ninguno'],
+        ] as $campo => [$rotulo, $porDefecto]):
+          if (!$f->visible($campo)) {
+              continue;
+          }
+          $opciones = $f->opciones($campo, (string) ($actual[$campo] ?? ''));
+          $elegido = $v($campo, array_key_exists($porDefecto, $opciones) ? $porDefecto : (string) array_key_first($opciones));
+        ?>
+          <div class="field">
+            <label class="label" for="<?= e($campo) ?>"><?= e($rotulo) ?></label>
+            <select class="select<?= $err($campo) ? ' is-invalid' : '' ?>" id="<?= e($campo) ?>" name="<?= e($campo) ?>">
+              <?php foreach ($opciones as $clave => $etiqueta): ?>
+                <option value="<?= e((string) $clave) ?>" <?= $elegido === (string) $clave ? 'selected' : '' ?>><?= e($etiqueta) ?></option>
+              <?php endforeach; ?>
+            </select>
+            <?php if ($err($campo)): ?><span class="error"><?= e($err($campo)) ?></span><?php endif; ?>
+          </div>
+        <?php endforeach; ?>
+        <?php if ($f->visible('entidad')): ?>
+          <div class="field">
+            <label class="label" for="entidad">Entidad u organización<?= $req('entidad') ?></label>
+            <input class="input<?= $err('entidad') ? ' is-invalid' : '' ?>" id="entidad" name="entidad" value="<?= e($v('entidad')) ?>"
+                   autocomplete="organization" placeholder="Ej. Alcaldía de Ipiales" maxlength="160" <?= $exige('entidad') ?>>
+            <?php if ($err('entidad')): ?><span class="error"><?= e($err('entidad')) ?></span><?php endif; ?>
+          </div>
+        <?php endif; ?>
       </div>
 
-      <div class="field">
-        <span class="label" id="rotulo-edad">Rango de edad</span>
-        <div class="row" role="group" aria-labelledby="rotulo-edad">
-          <?php foreach (Datos::RANGOS_EDAD as $rango): ?>
-            <label class="chip<?= $v('rango_edad') === $rango ? ' is-active' : '' ?>">
-              <input type="radio" name="rango_edad" value="<?= e($rango) ?>" class="sr-only"
-                     <?= $v('rango_edad') === $rango ? 'checked' : '' ?>>
-              <?= e($rango) ?>
-            </label>
-          <?php endforeach; ?>
+      <?php if ($f->visible('rango_edad')): ?>
+        <div class="field">
+          <span class="label" id="rotulo-edad">Rango de edad<?= $req('rango_edad') ?></span>
+          <div class="row" role="radiogroup" aria-labelledby="rotulo-edad">
+            <?php foreach ($f->texto('rango_edad', (string) ($actual['rango_edad'] ?? '')) as $rango): ?>
+              <label class="chip<?= $v('rango_edad') === $rango ? ' is-active' : '' ?>">
+                <input type="radio" name="rango_edad" value="<?= e($rango) ?>" class="sr-only"
+                       <?= $v('rango_edad') === $rango ? 'checked' : '' ?> <?= $exige('rango_edad') ?>>
+                <?= e($rango) ?>
+              </label>
+            <?php endforeach; ?>
+          </div>
+          <?php if ($err('rango_edad')): ?><span class="error"><?= e($err('rango_edad')) ?></span><?php endif; ?>
         </div>
-      </div>
+      <?php endif; ?>
 
+      <?php if ($f->visible('ubicacion')): ?>
       <div class="grid-2" style="align-items:end">
         <div class="field">
-          <label class="label" for="departamento">Departamento</label>
-          <select class="select" id="departamento" name="departamento"
-                  data-municipios="<?= e(u('/municipios/')) ?>">
+          <label class="label" for="departamento">Departamento<?= $req('ubicacion') ?></label>
+          <select class="select<?= $err('departamento') ? ' is-invalid' : '' ?>" id="departamento" name="departamento"
+                  data-municipios="<?= e(u('/municipios/')) ?>" <?= $exige('ubicacion') ?>>
             <option value="">Selecciona…</option>
             <?php foreach ($departamentos as $d): ?>
               <option value="<?= e($d) ?>" <?= $v('departamento') === $d ? 'selected' : '' ?>><?= e($d) ?></option>
             <?php endforeach; ?>
           </select>
+          <?php if ($err('departamento')): ?><span class="error"><?= e($err('departamento')) ?></span><?php endif; ?>
         </div>
         <div class="field">
           <div class="row" style="min-height:15px;gap:9px">
-            <label class="label" for="municipio">Municipio</label>
+            <label class="label" for="municipio">Municipio<?= $req('ubicacion') ?></label>
             <span class="kicker hidden" id="mun-cargando" style="font-size:10px"><span class="pulse"></span> consultando…</span>
           </div>
           <select class="select<?= $err('municipio') ? ' is-invalid' : '' ?>" id="municipio" name="municipio"
-                  <?= $municipios ? '' : 'disabled' ?>>
+                  <?= $municipios ? '' : 'disabled' ?> <?= $exige('ubicacion') ?>>
             <option value=""><?= $municipios ? 'Selecciona…' : 'Elige primero el departamento' ?></option>
             <?php foreach ($municipios as $m): ?>
               <option value="<?= e($m) ?>" <?= $v('municipio') === $m ? 'selected' : '' ?>><?= e($m) ?></option>
@@ -381,10 +456,13 @@ guiones('foto.js', 'preregistro.js', 'claves.js');
           <?php if ($err('municipio')): ?><span class="error"><?= e($err('municipio')) ?></span><?php endif; ?>
         </div>
       </div>
+      <?php endif; ?>
     </div>
   </section>
+  <?php endif; ?>
 
   <!-- ================= Perfil expositor ================= -->
+  <?php if ($f->visible('expositor')): ?>
   <section class="card">
     <div class="card__head">
       <span>Fase 03 · Perfil expositor</span>
@@ -418,12 +496,13 @@ guiones('foto.js', 'preregistro.js', 'claves.js');
           <div class="field">
             <label class="label" for="tema">Tema de la exposición <span class="req">*</span></label>
             <input class="input<?= $err('tema') ? ' is-invalid' : '' ?>" id="tema" name="tema"
-                   value="<?= e($v('tema')) ?>" maxlength="200" placeholder="Ej. Datos abiertos para decidir mejor">
+                   value="<?= e($v('tema')) ?>" maxlength="200" placeholder="Ej. Datos abiertos para decidir mejor"
+                   minlength="5" data-exige-expositor>
             <?php if ($err('tema')): ?><span class="error"><?= e($err('tema')) ?></span><?php endif; ?>
           </div>
           <div class="field">
             <label class="label" for="categoria">Categoría <span class="req">*</span></label>
-            <select class="select<?= $err('categoria') ? ' is-invalid' : '' ?>" id="categoria" name="categoria">
+            <select class="select<?= $err('categoria') ? ' is-invalid' : '' ?>" id="categoria" name="categoria" data-exige-expositor>
               <option value="">Selecciona…</option>
               <?php foreach ($categorias as $c): ?>
                 <option value="<?= e($c) ?>" <?= $v('categoria') === $c ? 'selected' : '' ?>><?= e($c) ?></option>
@@ -436,7 +515,7 @@ guiones('foto.js', 'preregistro.js', 'claves.js');
         <div class="field">
           <label class="label" for="detalle">Detalle de lo que vas a exponer <span class="req">*</span></label>
           <textarea class="textarea<?= $err('detalle') ? ' is-invalid' : '' ?>" id="detalle" name="detalle"
-                    rows="4" maxlength="600" data-contador="contador-detalle"
+                    rows="4" maxlength="600" minlength="30" data-exige-expositor data-contador="contador-detalle"
                     placeholder="Resumen que verán los asistentes en la agenda (máx. 600 caracteres)"><?= e($v('detalle')) ?></textarea>
           <div class="row row--between">
             <?php if ($err('detalle')): ?><span class="error"><?= e($err('detalle')) ?></span><?php else: ?><span></span><?php endif; ?>
@@ -444,7 +523,12 @@ guiones('foto.js', 'preregistro.js', 'claves.js');
           </div>
         </div>
 
+        <?php if ($f->visible('dia_preferido') || $f->visible('duracion') || $f->visible('requerimientos')):
+          $duraciones = $f->duraciones((int) ($actual['duracion'] ?? 0));
+          $duracionElegida = (int) $v('duracion', in_array(40, $duraciones, true) ? '40' : (string) ($duraciones[0] ?? 40));
+        ?>
         <div class="grid-3">
+          <?php if ($f->visible('dia_preferido')): ?>
           <div class="field">
             <label class="label" for="dia_preferido">Día preferido</label>
             <select class="select" id="dia_preferido" name="dia_preferido">
@@ -455,20 +539,31 @@ guiones('foto.js', 'preregistro.js', 'claves.js');
               <?php endforeach; ?>
             </select>
           </div>
+          <?php endif; ?>
+          <?php if ($f->visible('duracion')): ?>
           <div class="field">
             <label class="label" for="duracion">Duración</label>
-            <select class="select" id="duracion" name="duracion">
-              <?php foreach ([20 => '20 minutos', 40 => '40 minutos', 60 => '1 hora'] as $min => $etiqueta): ?>
-                <option value="<?= $min ?>" <?= (int) $v('duracion', '40') === $min ? 'selected' : '' ?>><?= e($etiqueta) ?></option>
+            <select class="select<?= $err('duracion') ? ' is-invalid' : '' ?>" id="duracion" name="duracion">
+              <?php foreach ($duraciones as $min): ?>
+                <option value="<?= $min ?>" <?= $duracionElegida === $min ? 'selected' : '' ?>>
+                  <?= e($min === 60 ? '1 hora' : ($min % 60 === 0 ? ($min / 60) . ' horas' : $min . ' minutos')) ?>
+                </option>
               <?php endforeach; ?>
             </select>
+            <?php if ($err('duracion')): ?><span class="error"><?= e($err('duracion')) ?></span><?php endif; ?>
           </div>
+          <?php endif; ?>
+          <?php if ($f->visible('requerimientos')): ?>
           <div class="field">
-            <label class="label" for="requerimientos">Requerimientos</label>
-            <input class="input" id="requerimientos" name="requerimientos"
-                   value="<?= e($v('requerimientos')) ?>" maxlength="255" placeholder="HDMI, internet…">
+            <label class="label" for="requerimientos">Requerimientos<?= $req('requerimientos') ?></label>
+            <input class="input<?= $err('requerimientos') ? ' is-invalid' : '' ?>" id="requerimientos" name="requerimientos"
+                   value="<?= e($v('requerimientos')) ?>" maxlength="255" placeholder="HDMI, internet…"
+                   <?= $f->obligatorio('requerimientos') ? 'data-exige-expositor' : '' ?>>
+            <?php if ($err('requerimientos')): ?><span class="error"><?= e($err('requerimientos')) ?></span><?php endif; ?>
           </div>
+          <?php endif; ?>
         </div>
+        <?php endif; ?>
 
         <!-- ---------- Los dos adjuntos ----------
              Van al final del bloque a propósito: son lo más pesado de
@@ -549,6 +644,7 @@ guiones('foto.js', 'preregistro.js', 'claves.js');
       </div>
     </div>
   </section>
+  <?php endif; ?>
 
   <!-- ================= Autorización ================= -->
   <?php if (!$yaRegistrado): ?>
@@ -556,7 +652,9 @@ guiones('foto.js', 'preregistro.js', 'claves.js');
       <div class="card__head"><span>Tratamiento de datos</span></div>
       <div class="card__body stack stack--3">
         <label class="row" style="align-items:flex-start;gap:11px;cursor:pointer">
-          <input type="checkbox" id="habeas" name="habeas" value="1" style="margin-top:3px;width:18px;height:18px;accent-color:var(--c-accent)">
+          <input type="checkbox" id="habeas" name="habeas" value="1" required
+                 style="margin-top:3px;width:18px;height:18px;accent-color:var(--c-accent)"
+                 data-rotulo="La autorización de tratamiento de datos">
           <span class="help" style="flex:1">
             Autorizo el tratamiento de mis datos personales por parte de la Gobernación de
             Nariño para la gestión de este evento, conforme a la Ley 1581 de 2012 y a la
@@ -576,3 +674,33 @@ guiones('foto.js', 'preregistro.js', 'claves.js');
     </div>
   </div>
 </form>
+
+<!-- ================= Registro sin guardar =================
+     La ventana que se abre cuando faltan datos: antes de enviar, si el
+     navegador ya ve que falta algo obligatorio (registro-incompleto.js), y
+     al volver del servidor, si el envío no se guardó. Con la lista de lo que
+     falta, y un botón que lleva al primer campo. -->
+<div class="modal hidden" id="modal-registro-incompleto" hidden
+     <?= $erroresVisibles !== [] ? 'data-abrir-al-cargar' : '' ?>>
+  <div class="modal__panel" role="alertdialog" aria-modal="true"
+       aria-labelledby="titulo-incompleto" aria-describedby="texto-incompleto">
+    <div class="modal__head">
+      <span>Registro sin guardar</span>
+      <button class="modal__close" type="button" data-cerrar-modal aria-label="Cerrar">&times;</button>
+    </div>
+    <div class="modal__body">
+      <h2 id="titulo-incompleto" style="font-size:22px;margin:0">Tu registro no fue guardado</h2>
+      <p id="texto-incompleto" style="margin:0">
+        Por favor registra los datos completos. Falta o hay que corregir:
+      </p>
+      <ul class="faltantes" data-faltantes>
+        <?php foreach ($erroresVisibles as $mensaje): ?>
+          <li><?= e((string) $mensaje) ?></li>
+        <?php endforeach; ?>
+      </ul>
+      <button class="btn btn--primary btn--block" type="button" data-cerrar-modal data-ir-al-primero>
+        Completar los datos
+      </button>
+    </div>
+  </div>
+</div>

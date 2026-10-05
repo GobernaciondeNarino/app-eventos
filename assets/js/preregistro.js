@@ -17,6 +17,19 @@
      lista. Antes el guion se iba aquí mismo si faltaba, y con él se iba también
      lo de abajo: los adjuntos del expositor dejaban de marcarse obligatorios. */
   var perfil = document.getElementById('rol');
+
+  /* El teclado del celular sigue al tipo de documento: solo números para la
+     cédula y la tarjeta de identidad, letras y números para el pasaporte, los
+     permisos de permanencia y los demás. Con el numérico fijo, un pasaporte no
+     se podía escribir desde el teléfono. */
+  var tipo = document.getElementById('tipo_documento');
+  var numero = document.querySelector('[data-documento]');
+  if (tipo && numero) {
+    tipo.addEventListener('change', function () {
+      numero.inputMode = (tipo.value === 'CC' || tipo.value === 'TI') ? 'numeric' : 'text';
+    });
+  }
+
   if (!casilla) return;
 
   /* Los dos adjuntos son obligatorios, pero solo para quien expone.
@@ -37,9 +50,16 @@
     });
   }
 
+  /* El evento puede no ofrecer el perfil «expositor» —se configura en
+     Configuración → Registro—. Ponérselo al selector sin esa opción lo deja en
+     blanco, y el envío rebota con «perfil no válido». */
+  function tieneOpcion(valor) {
+    return !!perfil && !!perfil.querySelector('option[value="' + valor + '"]');
+  }
+
   casilla.addEventListener('change', function () {
     if (perfil) {
-      if (casilla.checked && perfil.value === 'participante') {
+      if (casilla.checked && perfil.value === 'participante' && tieneOpcion('expositor')) {
         perfil.value = 'expositor';
       } else if (!casilla.checked && perfil.value === 'expositor') {
         perfil.value = 'participante';

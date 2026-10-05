@@ -60,11 +60,35 @@ function numero(int|float|string|null $n): string
     return number_format((float) $n, 0, ',', '.');
 }
 
-/** 1085234567 → 1.085.234.567 */
+/**
+ * 1085234567 → 1.085.234.567
+ *
+ * Con letras —pasaporte, PPT, cédula de extranjería— se deja como viene. Antes
+ * se quitaban las letras para poner los puntos, y un pasaporte «AB123456» se
+ * mostraba como «123.456»: otro número, en el carnet y en la puerta.
+ */
 function documento(?string $n): string
 {
-    $limpio = preg_replace('/\D/', '', (string) $n) ?? '';
+    $crudo = mb_strtoupper(trim((string) $n));
+    if ($crudo === '') {
+        return '—';
+    }
+    if (preg_match('/[A-Z]/u', $crudo)) {
+        return $crudo;
+    }
+    $limpio = preg_replace('/\D/', '', $crudo) ?? '';
     return $limpio === '' ? '—' : strrev(implode('.', str_split(strrev($limpio), 3)));
+}
+
+/**
+ * «CC 1.085.234.567», o nada si la persona no dio identificación.
+ *
+ * Desde la 3.7 el número se puede dejar opcional en el formulario, así que
+ * puede no haberlo: entonces no se pinta «CC —» en el carnet.
+ */
+function identificacion(?string $tipo, ?string $documento): string
+{
+    return trim((string) $documento) === '' ? '' : trim((string) $tipo . ' ' . documento($documento));
 }
 
 /** 2026-09-15 → 15 sep 2026 */

@@ -33,6 +33,7 @@ $iconos = [
     'salir'    => 'M9 5.5H5.5v13H9M14 8.5l3.5 3.5L14 15.5M17 12H9',
     'mail'     => 'M3.5 6h17v12h-17zM3.5 7l8.5 6 8.5-6',
     'llave'    => 'M14.5 9.5a3.5 3.5 0 1 1-3.4 4.4L4 20.5H2.5V18l6.6-6.6a3.5 3.5 0 0 1 5.4-1.9M16 8h.01',
+    'ajustes'  => 'M4 6.5h9M17 6.5h3M4 12h3M11 12h9M4 17.5h11M19 17.5h1M15 4.5v4M9 10v4M17 15.5v4',
 ];
 
 /** Dibuja un icono del juego de arriba. */
@@ -89,11 +90,10 @@ if ($usuario !== null) {
         ['clave' => 'admin-expositores', 'etiqueta' => 'Expositores', 'icono' => 'mic', 'ruta' => '/admin/expositores', 'rol' => 'administrador'],
         ['clave' => 'admin-organizadores', 'etiqueta' => 'Organizadores', 'icono' => 'users', 'ruta' => '/admin/organizadores', 'rol' => 'administrador'],
         ['clave' => 'admin-eventos', 'etiqueta' => 'Eventos', 'icono' => 'evento', 'ruta' => '/admin/eventos', 'rol' => 'administrador'],
-        ['clave' => 'admin-identidad', 'etiqueta' => 'Identidad', 'icono' => 'theme', 'ruta' => '/admin/identidad', 'rol' => 'administrador'],
-        ['clave' => 'admin-autenticacion', 'etiqueta' => 'Autenticación', 'icono' => 'llave', 'ruta' => '/admin/autenticacion', 'rol' => 'administrador'],
-        // La cuenta propia, para todo el equipo: contraseña y código QR de la
-        // verificación en dos pasos.
-        ['clave' => 'cuenta', 'etiqueta' => 'Configuración', 'icono' => 'user', 'ruta' => '/admin/cuenta', 'rol' => 'consulta'],
+        // Una sola entrada con pestañas: Registro, Identidad, Acceso y correo, y
+        // la cuenta propia. Identidad y Autenticación eran entradas sueltas
+        // hasta la 3.6; sus direcciones siguen funcionando.
+        ['clave' => 'configuracion', 'etiqueta' => 'Configuración', 'icono' => 'ajustes', 'ruta' => '/admin/configuracion', 'rol' => 'consulta'],
     ];
     foreach ($candidatos as $item) {
         if (Guardia::tieneRol($usuario, $item['rol'])) {

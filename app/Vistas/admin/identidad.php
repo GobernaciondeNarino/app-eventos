@@ -21,7 +21,11 @@ $campos = [
 ];
 guiones('identidad.js');
 ?>
-<form class="view view--wide split" method="post" action="<?= e(u('/admin/identidad')) ?>"
+<div class="view view--wide stack stack--4">
+
+<?php $pestana = 'identidad'; require __DIR__ . '/../parciales/pestanas-configuracion.php'; ?>
+
+<form class="split" method="post" action="<?= e(u('/admin/identidad')) ?>"
       enctype="multipart/form-data" style="align-items:start"
       data-presets='<?= e(json_encode(array_map(static fn($p) => $p['colores'], $presets), JSON_UNESCAPED_UNICODE)) ?>'>
   <?= testigo() ?>
@@ -29,7 +33,7 @@ guiones('identidad.js');
   <div class="stack stack--4">
 
     <div class="stack stack--2">
-      <span class="kicker">Administrador</span>
+      <span class="kicker">Configuración</span>
       <h1>Identidad del evento</h1>
       <p class="lead" style="max-width:58ch">
         Cada evento se personaliza sin tocar código: nombre, logo, paleta y tipografía se
@@ -214,3 +218,5 @@ guiones('identidad.js');
   </div>
 
 </form>
+
+</div>

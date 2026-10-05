@@ -355,7 +355,8 @@ Lo que hay que respaldar:
   la misma llave está cifrada la verificación en dos pasos de cada cuenta del equipo. Si el
   archivo se pierde, el asistente pide la llave anterior (la línea `'llave_cifrado' => '…'`
   de la copia) antes de seguir; ver 7.1.
-- **`almacen/logos` y `almacen/fotos`.**
+- **`almacen/logos` y `almacen/fotos`.** En `logos` están también los banners del formulario
+  de registro.
 
 Restaura la copia una vez antes del evento, en un entorno de prueba. Una copia que nunca se
 restauró no es una copia.
@@ -377,6 +378,12 @@ restauró no es una copia.
    Hasta la 3.5 había que pulsar un botón del panel, y eso tenía una trampa: para llegar al
    botón había que iniciar sesión, y con una base muy vieja el segundo factor fallaba antes
    de llegar. Ya no depende de eso.
+
+   La 3.7 agrega la tabla del formulario de registro de cada evento y ensancha cinco columnas
+   —el tipo de documento, para admitir siglas nuevas como PPT, y las cuatro de la
+   caracterización—. Lo guardado no cambia, y una columna que ya fuera más ancha —porque
+   alguien la agrandó a mano— se deja como está. Mientras nadie entre a **Configuración →
+   Registro**, el formulario es exactamente el de antes.
 
    Si el usuario de la base de datos no tiene permiso de `ALTER` —pasa en algunos
    alojamientos—, la actualización automática no puede hacerse: lo anota en el registro,
@@ -484,7 +491,7 @@ viven las cuentas. Con eso, el caso es uno de estos cuatro:
 |---|---|---|
 | `✕ cuentas administradoras activas: 0` | La instalación se interrumpió antes de crear la cuenta | El asistente se reabre solo en **modo reparación**: entra a `/cumbreAI/instalar`. O `cuenta.php crear` |
 | Hay cuenta, pero no recuerdas la contraseña | — | `php herramientas/cuenta.php clave --correo=…` |
-| Entra pero se queda pidiendo el código de seis dígitos | El segundo factor quedó en un teléfono que ya no está | En la misma pantalla, **«Enviar un código a mi correo»**; después, **Configuración** para escanear un QR nuevo. Sin correo: otra cuenta administradora, desde **Organizadores → Restablecer 2FA**, o `php herramientas/cuenta.php sin-2fa --correo=…` |
+| Entra pero se queda pidiendo el código de seis dígitos | El segundo factor quedó en un teléfono que ya no está | En la misma pantalla, **«Enviar un código a mi correo»**; después, **Configuración → Mi cuenta** para escanear un QR nuevo. Sin correo: otra cuenta administradora, desde **Organizadores → Restablecer 2FA**, o `php herramientas/cuenta.php sin-2fa --correo=…` |
 | «La configuración de tu verificación en dos pasos no se puede leer» | La llave de cifrado cambió (se perdió `config/config.php`, ver 7.1) | Código por correo desde esa pantalla; o lo mismo que la fila anterior |
 | `✕ tablas` o `✕ conexión` | La base no es la que cree, o le falta el esquema | Revisa `config/config.php` y repite el asistente en modo **Actualizar** |
 
@@ -565,7 +572,7 @@ impreso coincida con el actual.
 El bloqueo está puesto **por usuario**: root queda exento y el usuario con el que corre PHP-FPM
 no. Casi siempre es `SMTP_BLOCK` de ConfigServer Firewall. Se añade el usuario del dominio a
 `SMTP_ALLOWUSER` en `/etc/csf/csf.conf` y se recarga con `csf -r`. El usuario exacto sale en
-**Administración → Correo → Probar la salida de red**, campo «usuario de PHP». Ver
+**Configuración → Acceso y correo → Probar la salida de red**, campo «usuario de PHP». Ver
 `docs/config-mail.md`, apartado 5.4. Para probar las credenciales mientras tanto:
 `php herramientas/correo.php probar` desde SSH, donde el bloqueo no aplica.
 
@@ -600,5 +607,7 @@ mensaje desaparezca:
 - [ ] Segundo factor activado en todas las cuentas de administrador.
 - [ ] Copia de seguridad programada **y una restauración probada**.
 - [ ] Códigos QR de las jornadas impresos con el dominio definitivo.
-- [ ] Contraste del tema revisado (Identidad → Revisión de contraste): la puerta del
-      recinto suele tener sol directo.
+- [ ] Contraste del tema revisado (Configuración → Identidad → Revisión de contraste): la
+      puerta del recinto suele tener sol directo.
+- [ ] Formulario de registro revisado en **Configuración → Registro**, y abierto desde una
+      ventana privada para verlo como lo ve el público.

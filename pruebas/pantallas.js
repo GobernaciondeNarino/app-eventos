@@ -32,7 +32,7 @@ const PUBLICAS = ['/', '/registro', '/entrar/crear', '/agenda', '/entrar', '/adm
 const ASISTENTE_RUTAS = ['/carnet', '/checkin', '/contactos'];
 const ADMIN_RUTAS = ['/admin', '/admin/escaner', '/admin/registros', '/admin/qr-dias',
                      '/admin/expositores', '/admin/organizadores', '/admin/eventos', '/admin/identidad', '/admin/autenticacion',
-                     '/admin/cuenta'];
+                     '/admin/cuenta', '/admin/configuracion/registro'];
 
 let fallos = 0;
 

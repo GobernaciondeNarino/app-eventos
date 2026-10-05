@@ -290,10 +290,15 @@
      En la puerta del evento, con conexión lenta, la gente pulsa dos veces y
      se generan registros duplicados.                                      */
   $$('form').forEach(function (formulario) {
-    formulario.addEventListener('submit', function () {
+    formulario.addEventListener('submit', function (evento) {
       var boton = formulario.querySelector('button[type=submit]:not([formnovalidate])');
       if (!boton || formulario.hasAttribute('data-sin-bloqueo')) return;
       setTimeout(function () {
+        // Otro guion pudo frenar el envío —contraseñas que no coinciden, un
+        // registro incompleto—. Se mira aquí y no arriba porque esos guiones
+        // escuchan después que este. Sin esto el botón se quedaba ocho
+        // segundos en «Enviando…» sin que se estuviera enviando nada.
+        if (evento.defaultPrevented) return;
         boton.disabled = true;
         boton.dataset.textoPrevio = boton.textContent;
         boton.textContent = 'Enviando…';

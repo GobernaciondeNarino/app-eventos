@@ -42,7 +42,7 @@ $rol = (string) $persona['rol'];
             <div class="carnet__fields">
               <?php foreach ([
                 ['Nombre', $persona['nombre']],
-                ['Identificación', documento($documento)],
+                ['Identificación', identificacion($persona['tipo_documento'], $documento) ?: 'No registrada'],
                 ['Entidad', $persona['entidad'] ?: 'Independiente'],
               ] as [$k, $valor]): ?>
                 <div class="carnet__field">
@@ -63,7 +63,7 @@ $rol = (string) $persona['rol'];
               <span class="carnet__qrcap">Escanear para acceso / contacto</span>
             </div>
             <div class="carnet__foot">
-              <span class="carnet__code"><?= e($persona['tipo_documento'] . ' ' . documento($documento)) ?></span>
+              <span class="carnet__code"><?= e(identificacion($persona['tipo_documento'], $documento) ?: $credencial['codigo']) ?></span>
             </div>
           </div>
 

@@ -25,6 +25,7 @@ defined('EVENTOS_TIC') || exit;
 use App\Controladores\Acceso;
 use App\Controladores\Admin;
 use App\Controladores\Carnet;
+use App\Controladores\Configuracion;
 use App\Controladores\Contactos;
 use App\Controladores\Cuenta;
 use App\Controladores\Escaneo;
@@ -130,8 +131,11 @@ $enrutador->ambos('/admin/clave', [Acceso::class, 'cambiarClave']);
 
 $enrutador->get('/admin', [Admin::class, 'panel'], 'admin:consulta');
 
-// «Configuración»: la cuenta propia. Sobre todo, restablecer el código QR de la
-// verificación en dos pasos sin depender de alguien con acceso al servidor.
+// Configuración: un módulo con pestañas. La de la cuenta propia es para todo el
+// equipo —restablecer el código QR de la verificación en dos pasos sin
+// depender de alguien con acceso al servidor—; las demás, de administrador.
+$enrutador->get('/admin/configuracion', [Configuracion::class, 'inicio'], 'admin:consulta');
+$enrutador->ambos('/admin/configuracion/registro', [Configuracion::class, 'registro'], 'admin:administrador');
 $enrutador->ambos('/admin/cuenta', [Cuenta::class, 'ver'], 'admin:consulta');
 
 // Aplica al esquema lo que falte para esta versión del código. Solo agrega
@@ -205,6 +209,7 @@ $enrutador->post('/admin/correo/local', [Admin::class, 'usarCorreoLocal'], 'admi
    lo decida el servidor y no la extensión del archivo. Ver docs/SEGURIDAD.md.
    ========================================================================= */
 $enrutador->get('/medios/logo/{evento:num}', [Medios::class, 'logo']);
+$enrutador->get('/medios/banner/{evento:num}', [Medios::class, 'banner']);
 
 // Sin guardia en la tabla: la foto de una persona la puede ver ella misma y el
 // equipo organizador, y eso lo decide el propio método. Con un guardia fijo,

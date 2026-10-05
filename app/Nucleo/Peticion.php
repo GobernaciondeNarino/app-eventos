@@ -112,6 +112,38 @@ final class Peticion
         ));
     }
 
+    /**
+     * Un campo con estructura: `listas[genero][3][etiqueta]`.
+     *
+     * Para los editores que de verdad lo necesitan, como el de las opciones del
+     * formulario de registro. Con límites: tres niveles, quinientos elementos
+     * por nivel y textos de hasta veinte mil caracteres —el de departamentos y
+     * municipios es largo—. Lo que pase de ahí se descarta, y lo que queda sigue
+     * sin ser de fiar: quien lo usa lo valida campo por campo.
+     *
+     * @return array<string|int, mixed>
+     */
+    public function campoEstructurado(string $clave): array
+    {
+        $valor = $this->cuerpo[$clave] ?? null;
+        return is_array($valor) ? self::recortar($valor, 3) : [];
+    }
+
+    private static function recortar(array $datos, int $niveles): array
+    {
+        $salida = [];
+        foreach (array_slice($datos, 0, 500, true) as $clave => $valor) {
+            if (is_array($valor)) {
+                if ($niveles > 1) {
+                    $salida[$clave] = self::recortar($valor, $niveles - 1);
+                }
+            } elseif (is_scalar($valor)) {
+                $salida[$clave] = mb_substr((string) $valor, 0, 20000);
+            }
+        }
+        return $salida;
+    }
+
     public function entero(string $clave, int $porDefecto = 0): int
     {
         $v = $this->cuerpo[$clave] ?? $this->consulta[$clave] ?? null;

@@ -94,9 +94,11 @@ $codigos = [
 ?>
 <div class="view view--wide stack stack--4">
 
+  <?php $pestana = 'acceso'; require __DIR__ . '/../parciales/pestanas-configuracion.php'; ?>
+
   <div class="stack stack--2">
-    <span class="kicker">Administrador</span>
-    <h1>Autenticación</h1>
+    <span class="kicker">Configuración</span>
+    <h1>Acceso y correo</h1>
     <p class="lead" style="max-width:66ch">
       Cómo entran los participantes y los expositores al evento. Se pueden tener varios métodos
       a la vez, y conviene: atar la entrada a un solo canal significa que el día que ese canal

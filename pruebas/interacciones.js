@@ -678,6 +678,62 @@ function titulo(t) {
     (await p3.locator('form[action$="/qr-dias/ajustar"]').count()) >= 1);
 
   /* =====================================================================
+     Registro incompleto: la ventana que dice que no se guardó
+     ---------------------------------------------------------------------
+     Al pulsar «Completar registro» con lo obligatorio vacío, el formulario no
+     se envía: se abre una ventana que lo dice y enumera lo que falta, y su
+     botón lleva al primer campo pendiente.
+     ===================================================================== */
+  titulo('Registro incompleto');
+
+  const visitante = await navegador.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const p5 = await visitante.newPage();
+  const erroresVentana = [];
+  p5.on('console', m => { if (m.type() === 'error') erroresVentana.push(m.text()); });
+  p5.on('pageerror', e => erroresVentana.push(e.message));
+  await p5.goto(BASE + '/registro', { waitUntil: 'networkidle' });
+
+  let envios = 0;
+  p5.on('request', r => { if (r.method() === 'POST' && r.url().endsWith('/registro')) envios++; });
+  await p5.click('form[data-registro] button[type=submit]');
+  await p5.waitForTimeout(250);
+  const ventana = p5.locator('#modal-registro-incompleto');
+  comprobar('con lo obligatorio vacío, no se envía', envios === 0, String(envios));
+  comprobar('y se abre la ventana «tu registro no fue guardado»', await ventana.isVisible());
+  const faltan = await ventana.locator('[data-faltantes] li').allInnerTexts();
+  comprobar('que dice qué falta', faltan.some(t => t.includes('Nombre completo')) && faltan.some(t => t.includes('autorización')),
+    faltan.join(' | '));
+  comprobar('el botón no se queda en «Enviando…»',
+    !(await p5.locator('form[data-registro] button[type=submit]').isDisabled()));
+  await ventana.locator('[data-ir-al-primero]').click();
+  await p5.waitForTimeout(300);
+  comprobar('su botón cierra la ventana y lleva al primer campo pendiente',
+    !(await ventana.isVisible()) && await p5.evaluate(() => document.activeElement && document.activeElement.id === 'correo'));
+
+  // Lleno lo obligatorio salvo la autorización: la ventana lo sigue diciendo.
+  await p5.fill('#correo', 'ventana@narino.gov.co');
+  await p5.fill('#nombre', 'Persona De La Ventana');
+  await p5.fill('#documento', '1085777002');
+  await p5.click('form[data-registro] button[type=submit]');
+  await p5.waitForTimeout(250);
+  const faltaUno = await ventana.locator('[data-faltantes] li').allInnerTexts();
+  comprobar('con todo menos la autorización, falta solo eso',
+    faltaUno.length === 1 && faltaUno[0].includes('autorización'), faltaUno.join(' | '));
+  await ventana.locator('[data-ir-al-primero]').click();
+
+  // Y si el servidor lo rechaza —aquí, una cédula con letras—, vuelve con la
+  // ventana abierta.
+  await p5.fill('#documento', '10857A');
+  await p5.check('#habeas');
+  await Promise.all([p5.waitForNavigation({ waitUntil: 'networkidle' }), p5.click('form[data-registro] button[type=submit]')]);
+  comprobar('cuando el servidor no lo guarda, la ventana se abre sola al volver',
+    await p5.locator('#modal-registro-incompleto').isVisible());
+  comprobar('con lo que dijo el servidor',
+    (await p5.locator('#modal-registro-incompleto [data-faltantes]').innerText()).includes('solo números'));
+  comprobar('sin errores de consola en el registro', erroresVentana.length === 0, erroresVentana.join(' | '));
+  await visitante.close();
+
+  /* =====================================================================
      Segundo factor: la hora del servidor contra la de este equipo
      ---------------------------------------------------------------------
      El aviso lo pinta segundo-factor.js. No se puede correr el reloj del

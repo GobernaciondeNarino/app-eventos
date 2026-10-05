@@ -375,7 +375,7 @@ hacer si no fue uno quien lo pidió: alguien tiene la contraseña. Es más débi
 aplicación —el buzón tiene su propia contraseña—, así que se puede apagar con
 `'respaldo_2fa_correo' => false`.
 
-**Restablecer el código QR.** En **Configuración**, cada persona genera uno nuevo con su
+**Restablecer el código QR.** En **Configuración → Mi cuenta**, cada persona genera uno nuevo con su
 contraseña actual —una sesión abierta en un equipo ajeno no basta—. El secreto nuevo espera
 cifrado en la sesión, y **el anterior sigue valiendo hasta que el nuevo se confirma** con un
 código: abandonar a la mitad deja todo como estaba. Al confirmar se cierran las demás
@@ -394,10 +394,10 @@ igual que para uno registrado.
 
 ### Subida de archivos
 
-Se suben tres cosas: el logo del evento, que sube un administrador; la fotografía del
-carnet, que sube el propio asistente desde el formulario público; y los dos documentos del
-expositor —hoja de vida y exposición—, que suben también desde ahí. Las dos últimas son las
-que más cuidado piden, porque el formulario está abierto.
+Se suben cuatro cosas: el logo del evento y el banner del formulario de registro, que sube un
+administrador; la fotografía del carnet, que sube el propio asistente desde el formulario
+público; y los dos documentos del expositor —hoja de vida y exposición—, que suben también desde
+ahí. Las dos últimas son las que más cuidado piden, porque el formulario está abierto.
 
 **La fotografía** (`App\Nucleo\Imagen::guardarFoto`):
 
@@ -495,6 +495,21 @@ nadie que sepa de quién era.
 6. **Nunca se sirven desde el disco.** Pasan por `Medios::logo`, que fija el tipo desde el
    servidor y añade `Content-Security-Policy: sandbox`. Aunque un SVG malicioso pasara la
    limpieza, no se ejecutaría en el origen del sitio.
+
+**El banner del formulario de registro** (`Imagen::guardarBanner`, desde la 3.7). Lo sube un
+administrador, pero lo ve cualquiera que abra el registro, así que se trata como la foto:
+
+1. Tipo por el **contenido real** (`finfo`): JPG, PNG o WEBP. **Sin SVG**: un banner no lo
+   necesita, y así no hay documento XML que limpiar en una imagen pública.
+2. Tamaño máximo 6 MB, con el mismo mensaje legible que la foto cuando PHP lo corta antes.
+3. Se **vuelve a dibujar** con GD —se pierden los metadatos y lo que viniera detrás de la
+   cabecera— y se reduce a 1600 px de ancho.
+4. El nombre lo pone el servidor, con 6 bytes al azar; el del cliente se descarta.
+5. **Nunca se sirve desde el disco.** Pasa por `Medios::banner`, que toma el nombre de la base
+   y no de la dirección. El del evento activo es público; el de cualquier otro —un borrador
+   puede no estar anunciado— solo lo ve el equipo, y a los demás se les responde el mismo 404
+   que si no hubiera banner.
+6. Al cambiarlo, quitarlo o eliminar el evento, el archivo anterior se borra del disco.
 
 ### Exportaciones
 
@@ -606,11 +621,56 @@ Lo que sí ofrece la ficha de *Registros*, para un administrador:
 
 Ambas acciones quedan en la bitácora, y abrir una ficha también.
 
+### El formulario de registro se configura, pero no se puede desarmar
+
+Desde la 3.7 un administrador decide en **Configuración → Registro** qué campos pide el
+formulario público y qué opciones trae cada lista. Es una pantalla que cambia lo que la
+plataforma acepta de cualquiera, así que lo que se configura pasa por las mismas reglas que lo
+que llega del público (`App\Modelos\Formulario`):
+
+- **Solo administrador**, con testigo CSRF, y cada guardado o restablecimiento queda en la
+  bitácora con quién y cuándo.
+- **Tres campos no se pueden quitar**: el correo, el nombre y la autorización de tratamiento de
+  datos. Sin la autorización, la Ley 1581 no deja guardar nada.
+- **Los datos sensibles nunca son obligatorios.** Género, pertenencia étnica y discapacidad
+  solo admiten «visible» u «oculto»; un envío manipulado que los marque obligatorios se guarda
+  como opcional. «Prefiero no responder» no se puede apagar.
+- **Los perfiles que dan permisos no se ofrecen nunca.** La lista de perfiles se elige entre
+  los públicos; Staff y Organizador no están entre ellos, por mucho que se envíen a mano.
+- **Lo enviado se acota antes de leerlo.** `Peticion::campoEstructurado()` corta a tres niveles,
+  500 elementos por nivel y 20 000 caracteres por texto. Una opción más larga que la columna
+  donde se guardaría se rechaza diciendo cuál, y una sigla de documento solo admite de 2 a 8
+  letras y números.
+- **Lo guardado se revisa también al leer.** Una fila editada a mano en la base con una lista
+  sin forma —o sin ninguna opción activa, o un departamento sin municipios— se ignora y se usa
+  la de fábrica: el registro público nunca se queda sin opciones.
+- **El servidor es quien valida.** El registro público acepta solo las opciones de la lista
+  configurada —más la que ya tenía guardada quien edita sus datos—, y comprueba lo obligatorio
+  aunque el navegador no lo haga. La ventana de «tu registro no fue guardado» es una ayuda, no
+  un control.
+- **Ocultar un campo no borra datos.** Lo que alguien ya había dado se conserva al editar su
+  registro; simplemente no se le vuelve a preguntar.
+
+### El correo al expositor
+
+Desde la 3.7, decidir sobre una propuesta le avisa por correo a quien la envió, con la
+decisión, los cambios que le hizo el comité y las observaciones.
+
+- Va **solo a la dirección registrada de quien propuso**, nunca a una que llegue en el envío.
+- No lleva datos personales más allá de su nombre: ni documento, ni teléfono, ni nada de la
+  caracterización.
+- El título de la propuesta lo escribió alguien de fuera y va en el asunto: los saltos de
+  línea se quitan antes de armar las cabeceras, y el asunto viaja codificado. En el cuerpo, todo
+  texto que vino de un formulario sale escapado.
+- Si el correo no sale, **la decisión se guarda igual** y la pantalla lo dice; la bitácora
+  anota si se avisó o no.
+
 ### Auditoría
 
 `App\Nucleo\Bitacora` solo inserta. Registra accesos y su resultado, sellado de asistencias,
-consultas de credenciales, decisiones sobre propuestas, exportaciones, rotaciones de token,
-cambios de identidad y los rechazos de seguridad.
+consultas de credenciales, decisiones sobre propuestas —y si se avisó por correo—,
+exportaciones, rotaciones de token, cambios de identidad, cambios del formulario de registro y
+los rechazos de seguridad.
 
 Lo que **no** registra: el contenido de los datos personales. Dice que alguien exportó la
 caracterización, no qué decía. Un filtro descarta cualquier clave que parezca contraseña,
@@ -741,6 +801,9 @@ son errores fáciles de volver a cometer.
 | Entrar dos veces en el mismo medio minuto decía «revisa el reloj» | El código repetido se rechazaba con el mismo mensaje que el equivocado |
 | «Anexar» dejaba la base dada por buena y sin las columnas nuevas | La revisión miraba la versión anotada, no las columnas que hay |
 | Un envío del paso 3 sin modo vaciaba la base | El modo por omisión era la instalación limpia |
+| El carnet y la acreditación mostraban un pasaporte sin sus letras | La función que da formato al número quitaba todo lo que no fuera dígito |
+| Desde el celular no se podía escribir un pasaporte | El campo pedía el teclado numérico para cualquier tipo de documento |
+| Tras un envío que no salía, el botón se quedaba en «Enviando…» | El bloqueo del doble envío no miraba si el envío se había cancelado |
 
 ---
 
@@ -795,8 +858,8 @@ conviene decirlo con claridad en la pantalla de privacidad.
 |---|---|
 | Autorización previa e informada | Casilla obligatoria en el preregistro, con la finalidad declarada. Se guarda `autorizo_datos_en` |
 | Finalidad determinada | Acreditación, control de asistencia y reportes de cobertura del evento |
-| Datos sensibles con tratamiento reforzado | Tabla aparte, opcionales, exportación con rol administrador y auditada |
-| Minimización | Solo nombre y documento son obligatorios; lo demás es opcional |
+| Datos sensibles con tratamiento reforzado | Tabla aparte, nunca obligatorios —ni siquiera por configuración—, exportación con rol administrador y auditada |
+| Minimización | De fábrica, solo nombre y documento son obligatorios. Cada evento puede pedir menos —el documento puede quedar opcional u oculto— y ocultar lo que no necesite |
 | Circulación restringida | El QR no expone datos; el intercambio comparte cuatro campos y el teléfono es opcional |
 | Derecho de supresión | El intercambio de contactos guarda `revocado_en`. **Falta** el procedimiento para la persona completa |
 | Seguridad | Cifrado del documento, control de acceso por rol, auditoría de lecturas sensibles |

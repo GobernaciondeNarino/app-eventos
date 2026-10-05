@@ -767,6 +767,60 @@ input[type=file]::file-selector-button:hover {
 }
 
 /* =========================================================================
+   Configuración
+   -------------------------------------------------------------------------
+   Las pestañas del módulo son enlaces: cada una es su propia pantalla.
+   ========================================================================= */
+a.tabs__btn { text-decoration: none; display: inline-flex; align-items: center; }
+.tabs--enlaces { margin-bottom: 0; }
+
+.config-campo {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 18px;
+  align-items: center; padding: 13px 0; border-top: 1px solid var(--hair-soft);
+}
+.config-campo__estados { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 720px) {
+  .config-campo { grid-template-columns: 1fr; }
+  .config-campo__estados { justify-content: flex-start; }
+}
+
+.config-lista { border: 1px solid var(--hair); background: var(--a-04, transparent); }
+.config-lista > summary {
+  cursor: pointer; list-style: none; padding: 14px 16px;
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+}
+.config-lista > summary::-webkit-details-marker { display: none; }
+.config-lista > summary::before { content: '▸'; color: var(--c-accent); width: 12px; }
+.config-lista[open] > summary::before { content: '▾'; }
+.config-lista > summary strong { font-weight: 500; color: var(--c-title); }
+.config-lista__cuerpo { padding: 0 16px 16px; }
+
+.config-opciones { display: flex; flex-direction: column; gap: 6px; }
+.config-opciones__fila {
+  display: grid; grid-template-columns: 34px minmax(64px, 140px) minmax(0, 1fr);
+  gap: 10px; align-items: center;
+}
+.config-opciones__cabeza {
+  font-family: var(--f-mono); font-size: 10px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--c-muted);
+}
+
+.config-banner__vista { width: 100%; max-height: 220px; object-fit: cover; border: 1px solid var(--hair); }
+
+/* El banner, arriba del formulario de registro. */
+.registro-banner { border: 1px solid var(--hair); background: var(--c-surface); overflow: hidden; }
+.registro-banner__imagen { display: block; width: 100%; height: auto; max-height: 360px; object-fit: cover; }
+.registro-banner__texto { padding: 18px 20px; display: flex; flex-direction: column; gap: 6px; }
+.registro-banner__texto p { margin: 0; color: var(--c-text); line-height: 1.6; }
+.registro-banner__texto .registro-banner__titulo {
+  font-family: var(--f-display); font-size: 22px; font-weight: 700; line-height: 1.2; color: var(--c-title);
+  letter-spacing: var(--f-display-tracking); text-transform: var(--f-display-transform);
+}
+
+/* La lista de lo que falta, en la ventana del registro incompleto. */
+.faltantes { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; color: var(--c-text); }
+
+/* =========================================================================
    Utilidades
    ========================================================================= */
 .hidden { display: none !important; }

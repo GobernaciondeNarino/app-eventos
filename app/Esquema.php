@@ -15,7 +15,7 @@ use App\Nucleo\Bd;
  */
 final class Esquema
 {
-    public const VERSION = '1.7.0';
+    public const VERSION = '1.8.0';
 
     /**
      * Columnas que ya existen pero cambiaron de tipo.
@@ -33,8 +33,12 @@ final class Esquema
      * Condiciones:
      *   'no_nulable'     la columna todavía es NOT NULL
      *   'falta_en_tipo'  el tipo actual no contiene «busca» (un valor de ENUM)
+     *   'mas_corta'      no es un VARCHAR de al menos «largo» caracteres. Uno
+     *                    más ancho —o un TEXT— se deja como está: ensanchar
+     *                    sí, estrechar nunca, aunque alguien lo haya agrandado
+     *                    a mano en el servidor.
      *
-     * @var array<int, array{tabla:string, columna:string, tipo:string, si:string, busca?:string}>
+     * @var array<int, array{tabla:string, columna:string, tipo:string, si:string, busca?:string, largo?:int}>
      */
     private const AJUSTES = [
         [
@@ -56,6 +60,46 @@ final class Esquema
                          . "NOT NULL DEFAULT 'participante'",
             'si'      => 'falta_en_tipo',
             'busca'   => "'staff'",
+        ],
+        // 1.8.0: los tipos de documento se configuran por evento —PPT, PEP,
+        // registro civil—, así que la columna deja de ser una lista cerrada.
+        // De ENUM a VARCHAR los valores que ya hay se quedan como estaban.
+        [
+            'tabla'   => 'persona',
+            'columna' => 'tipo_documento',
+            'tipo'    => "VARCHAR(12) NOT NULL DEFAULT 'CC'",
+            'si'      => 'mas_corta',
+            'largo'   => 12,
+        ],
+        // Y las opciones nuevas de la caracterización guardan su propio texto,
+        // que no cabía en las columnas pensadas para códigos cortos.
+        [
+            'tabla'   => 'persona_caracterizacion',
+            'columna' => 'genero',
+            'tipo'    => "VARCHAR(60) NOT NULL DEFAULT ''",
+            'si'      => 'mas_corta',
+            'largo'   => 60,
+        ],
+        [
+            'tabla'   => 'persona_caracterizacion',
+            'columna' => 'rango_edad',
+            'tipo'    => "VARCHAR(40) NOT NULL DEFAULT ''",
+            'si'      => 'mas_corta',
+            'largo'   => 40,
+        ],
+        [
+            'tabla'   => 'persona_caracterizacion',
+            'columna' => 'etnia',
+            'tipo'    => "VARCHAR(60) NOT NULL DEFAULT ''",
+            'si'      => 'mas_corta',
+            'largo'   => 60,
+        ],
+        [
+            'tabla'   => 'persona_caracterizacion',
+            'columna' => 'discapacidad',
+            'tipo'    => "VARCHAR(60) NOT NULL DEFAULT ''",
+            'si'      => 'mas_corta',
+            'largo'   => 60,
         ],
     ];
 
@@ -98,6 +142,29 @@ final class Esquema
                 ],
             ],
 
+            'evento_formulario' => [
+                'nota' => 'Cómo es el formulario de registro de cada evento: qué campos pide, las opciones de cada lista y el banner. Lo que no está guardado —campos o listas en NULL, una lista que no aparece— es el de fábrica.',
+                'columnas' => [
+                    'evento_id'       => 'INT UNSIGNED NOT NULL',
+                    // JSON: estado de cada campo —oculto, opcional, obligatorio—.
+                    'campos'          => 'TEXT NULL',
+                    // JSON: las opciones de cada lista desplegable.
+                    'listas'          => 'MEDIUMTEXT NULL',
+                    'banner_activo'   => 'TINYINT(1) NOT NULL DEFAULT 0',
+                    'banner_imagen'   => "VARCHAR(120) NOT NULL DEFAULT ''",
+                    'banner_tipo'     => "VARCHAR(40) NOT NULL DEFAULT ''",
+                    'banner_titulo'   => "VARCHAR(160) NOT NULL DEFAULT ''",
+                    'banner_texto'    => "VARCHAR(600) NOT NULL DEFAULT ''",
+                    'banner_alt'      => "VARCHAR(200) NOT NULL DEFAULT ''",
+                    'actualizado_en'  => 'DATETIME NULL',
+                    'actualizado_por' => 'INT UNSIGNED NULL',
+                ],
+                'llaves' => [
+                    'PRIMARY KEY (evento_id)',
+                    'CONSTRAINT fk_formulario_evento FOREIGN KEY (evento_id) REFERENCES {evento} (id) ON DELETE CASCADE',
+                ],
+            ],
+
             'evento_dia' => [
                 'nota' => 'Las jornadas. El código QR de acceso cuelga de aquí, no del evento: por eso cambia cada día.',
                 'columnas' => [
@@ -126,7 +193,7 @@ final class Esquema
                     'evento_id'          => 'INT UNSIGNED NOT NULL',
                     'nombre'             => 'VARCHAR(160) NOT NULL',
                     'correo'             => 'VARCHAR(190) NOT NULL',
-                    'tipo_documento'     => "ENUM('CC','CE','TI','PP') NOT NULL DEFAULT 'CC'",
+                    'tipo_documento'     => "VARCHAR(12) NOT NULL DEFAULT 'CC'",
                     // Nulables desde la 1.4.0: se puede crear el acceso con
                     // solo correo y contraseña y completar el resto después.
                     // En MySQL los nulos no chocan entre sí, así que la llave
@@ -176,10 +243,10 @@ final class Esquema
                 'nota' => 'Datos sensibles (Ley 1581, art. 5) en tabla aparte: las consultas del día a día no los tocan y su lectura se audita.',
                 'columnas' => [
                     'persona_id'   => 'INT UNSIGNED NOT NULL',
-                    'genero'       => "VARCHAR(20) NOT NULL DEFAULT ''",
-                    'rango_edad'   => "VARCHAR(12) NOT NULL DEFAULT ''",
-                    'etnia'        => "VARCHAR(40) NOT NULL DEFAULT ''",
-                    'discapacidad' => "VARCHAR(40) NOT NULL DEFAULT ''",
+                    'genero'       => "VARCHAR(60) NOT NULL DEFAULT ''",
+                    'rango_edad'   => "VARCHAR(40) NOT NULL DEFAULT ''",
+                    'etnia'        => "VARCHAR(60) NOT NULL DEFAULT ''",
+                    'discapacidad' => "VARCHAR(60) NOT NULL DEFAULT ''",
                 ],
                 'llaves' => [
                     'PRIMARY KEY (persona_id)',
@@ -680,6 +747,8 @@ final class Esquema
         return match ($ajuste['si']) {
             'no_nulable'    => $actual['nulable'] === 'NO',
             'falta_en_tipo' => !str_contains($actual['tipo'], (string) ($ajuste['busca'] ?? '')),
+            'mas_corta'     => !preg_match('/^(tiny|medium|long)?text\b/i', $actual['tipo'])
+                && (!preg_match('/^varchar\((\d+)\)/i', $actual['tipo'], $m) || (int) $m[1] < (int) ($ajuste['largo'] ?? 0)),
             default         => false,
         };
     }

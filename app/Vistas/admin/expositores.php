@@ -2,7 +2,7 @@
 /**
  * Propuestas de exposición.
  * @var array $propuestas @var array $conteos @var string $estado @var array $jornadas
- * @var bool $puedeVerDocumento
+ * @var bool $puedeVerDocumento @var \App\Modelos\Formulario $formulario @var bool $correoListo
  */
 defined('EVENTOS_TIC') || exit;
 
@@ -258,8 +258,27 @@ $columnas = 'grid-template-columns:1.7fr 1.1fr 1fr .8fr .9fr';
             de abajo, y el carnet del expositor sale con ese rótulo.
             <strong>Devolver</strong> se la regresa para que corrija lo que le digas, y puede
             volver a enviarla. <strong>Rechazar</strong> la deja fuera del evento. Las tres se
-            pueden cambiar después volviendo a entrar aquí.
+            pueden cambiar después volviendo a entrar aquí, y en las tres le llega un correo con
+            la decisión, los cambios que hagas abajo y tus observaciones.
           </p>
+
+          <!-- Ajustes del comité a la exposición. Lo que cambie aquí se guarda
+               en la propuesta y se le cuenta al expositor en el correo. -->
+          <div class="grid-2" style="grid-template-columns:1.6fr 1fr">
+            <div class="field">
+              <label class="label" for="titulo-<?= (int) $p['id'] ?>">Título de la exposición</label>
+              <input class="input" id="titulo-<?= (int) $p['id'] ?>" name="titulo" maxlength="200"
+                     value="<?= e((string) $p['titulo']) ?>">
+            </div>
+            <div class="field">
+              <label class="label" for="categoria-<?= (int) $p['id'] ?>">Categoría</label>
+              <select class="select" id="categoria-<?= (int) $p['id'] ?>" name="categoria">
+                <?php foreach ($formulario->texto('categoria', (string) $p['categoria']) as $categoria): ?>
+                  <option value="<?= e($categoria) ?>" <?= $categoria === (string) $p['categoria'] ? 'selected' : '' ?>><?= e($categoria) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+          </div>
 
           <div class="grid-3">
             <div class="field">
@@ -284,11 +303,32 @@ $columnas = 'grid-template-columns:1.7fr 1.1fr 1fr .8fr .9fr';
             </div>
           </div>
 
+          <div class="field" style="max-width:220px">
+            <label class="label" for="duracion-<?= (int) $p['id'] ?>">Duración</label>
+            <select class="select" id="duracion-<?= (int) $p['id'] ?>" name="duracion">
+              <?php foreach ($formulario->duraciones((int) $p['duracion_min']) as $min): ?>
+                <option value="<?= $min ?>" <?= $min === (int) $p['duracion_min'] ? 'selected' : '' ?>><?= $min ?> minutos</option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+
           <div class="field">
             <label class="label" for="obs-<?= (int) $p['id'] ?>">Observación para el expositor</label>
             <textarea class="textarea" id="obs-<?= (int) $p['id'] ?>" name="observacion" rows="3"
-                      maxlength="1000" placeholder="Obligatoria si devuelves la propuesta."></textarea>
+                      maxlength="1000" placeholder="Obligatoria si devuelves la propuesta. Le llega tal cual por correo."></textarea>
           </div>
+
+          <label class="row" style="gap:10px;cursor:pointer;align-items:flex-start">
+            <input type="checkbox" name="avisar" value="1" checked
+                   style="width:18px;height:18px;margin-top:2px;accent-color:var(--c-accent)">
+            <span class="help" style="margin:0">
+              Avisar a <?= e((string) $p['correo']) ?> por correo
+              <?php if (!$correoListo): ?>
+                — <strong>el correo saliente no está configurado</strong>; se guardará la decisión
+                pero el aviso no podrá salir.
+              <?php endif; ?>
+            </span>
+          </label>
 
           <div class="row row--end">
             <button class="btn btn--danger" type="submit" name="decision" value="rechazada"

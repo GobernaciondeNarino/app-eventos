@@ -294,6 +294,28 @@ function leerConfig(string $raiz): array
     return is_array($datos) ? $datos : [];
 }
 
+/**
+ * Cambia valores de config/config.php, como haría quien administra el servidor.
+ * Con null se quita la clave.
+ */
+function ajustarConfig(string $raiz, array $cambios): void
+{
+    $actual = leerConfig($raiz);
+    foreach ($cambios as $clave => $valor) {
+        if ($valor === null) {
+            unset($actual[$clave]);
+        } else {
+            $actual[$clave] = $valor;
+        }
+    }
+    file_put_contents($raiz . '/config/config.php', "<?php\n\nreturn " . var_export($actual, true) . ";\n");
+    // El servidor de pruebas tiene opcache y vuelve a mirar la fecha del archivo
+    // como mucho cada dos segundos. Desde este proceso no se le puede invalidar
+    // la caché, así que se espera: si no, la petición siguiente aún ve la
+    // configuración anterior.
+    sleep(3);
+}
+
 /* =========================================================================
    Archivos de prueba
    -------------------------------------------------------------------------
@@ -2654,6 +2676,11 @@ foreach (['/admin/escaner', '/admin/registros', '/carnets', '/admin/qr-dias',
    ========================================================================= */
 titulo('Base atrasada');
 
+// Desde la 3.6 la base se pone al día sola en la primera visita. Aquí se apaga
+// para probar lo que queda cuando no puede —un usuario de la base sin permiso
+// de ALTER—: el aviso, el 503 de la puerta y el botón.
+ajustarConfig($RAIZ, ['actualizacion_automatica' => false]);
+
 // Se quita la columna que estrena la 1.6.0 y se anota una versión vieja: es
 // exactamente el estado de quien copió los archivos y no pulsó el botón.
 $pdo->exec("ALTER TABLE {$BD['prefijo']}asistencia DROP COLUMN operador_tipo");
@@ -2698,6 +2725,24 @@ comprobar('vuelve la columna que faltaba',
                         LIKE 'operador_tipo'")->fetchAll()) === 1);
 $admin->get('/admin/escaner', false);
 comprobar('y la pantalla de la puerta vuelve a abrir', $admin->codigo === 200, (string) $admin->codigo);
+
+// Y con la actualización automática encendida otra vez, la misma base atrasada
+// se pone al día sola en la primera visita, sin que nadie pulse nada.
+ajustarConfig($RAIZ, ['actualizacion_automatica' => null]);
+$pdo->exec("ALTER TABLE {$BD['prefijo']}asistencia DROP COLUMN operador_tipo");
+@unlink($RAIZ . '/almacen/registro/esquema-al-dia.php');   // como recién subidos los archivos
+$visita = new Cliente($BASE);
+$visita->get('/', false);
+comprobar('la primera visita pone la base al día sola',
+    count($pdo->query("SHOW COLUMNS FROM {$BD['prefijo']}asistencia
+                        LIKE 'operador_tipo'")->fetchAll()) === 1, (string) $visita->codigo);
+comprobar('y la página de esa visita responde normal', $visita->codigo === 200, (string) $visita->codigo);
+$detalle = json_decode((string) $pdo->query("SELECT detalle FROM {$BD['prefijo']}bitacora
+     WHERE accion = 'esquema_actualizado' ORDER BY id DESC LIMIT 1")->fetchColumn(), true) ?: [];
+comprobar('y queda en la bitácora como automática', ($detalle['origen'] ?? '') === 'automatica',
+    json_encode($detalle));
+$html = $admin->get('/admin');
+comprobar('el panel ya no muestra el aviso', !str_contains($html, 'atrasada respecto al código'));
 
 /* =========================================================================
    10 · Cierre de sesión
@@ -2745,9 +2790,20 @@ $secreto = str_replace(' ', '', trim($m[1] ?? ''));
 comprobar('el secreto está en base32 y mide 32 caracteres',
     (bool) preg_match('/^[A-Z2-7]{32}$/', $secreto), $secreto);
 
-$html = $dosFactores->post('/admin/activar-2fa', ['codigo' => '000000']);
+// Un código que no cuadra en ninguna parte de la búsqueda: uno al azar puede
+// caer lejos, en uno de los intervalos de la resincronización, y eso ya no es
+// «no coincide» sino «escribe el siguiente».
+$equivocado = '000000';
+foreach (['000000', '111111', '222222', '333333', '444444', '555555'] as $candidato) {
+    if (App\Nucleo\Totp::evaluar($secreto, $candidato)['estado'] === 'no') {
+        $equivocado = $candidato;
+        break;
+    }
+}
+$html = $dosFactores->post('/admin/activar-2fa', ['codigo' => $equivocado]);
 comprobar('un código equivocado no lo activa', str_contains($html, 'no coincide'));
 
+$intervaloDelAlta = intdiv(time(), 30);
 $html = $dosFactores->post('/admin/activar-2fa', ['codigo' => $codigoDe($secreto)]);
 comprobar('con el código correcto se entra al panel',
     str_contains($html, 'Indicadores') || str_contains($html, 'Panel'));
@@ -2778,6 +2834,11 @@ $html = $vuelve->get("/c/$tokenCarnet");
 comprobar('con el segundo factor a medias no se ve la ficha de acreditación',
     !str_contains($html, 'Acreditar') && !str_contains($html, 'Registrar ingreso'));
 
+// El código con que se confirmó el alta quedó usado: para volver a entrar hace
+// falta el siguiente, como con cualquier otro.
+while (intdiv(time(), 30) <= $intervaloDelAlta) {
+    usleep(300000);
+}
 $codigoUsado = $codigoDe($secreto);
 $html = $vuelve->post('/admin/verificar', ['codigo' => $codigoUsado]);
 comprobar('con el código correcto se entra',
@@ -2792,17 +2853,184 @@ $repite->post('/admin/entrar', [
     'clave'  => 'una frase larga y facil de recordar',
 ]);
 $html = $repite->post('/admin/verificar', ['codigo' => $codigoUsado]);
-comprobar('el mismo código no sirve dos veces', str_contains($html, 'no coincide'));
+comprobar('el mismo código no sirve dos veces', str_contains($html, 'ya se usó'));
+// Y lo dice así, no con el mensaje del reloj: después de una actualización, que
+// cierra las sesiones, entrar dos veces en el mismo medio minuto es lo normal.
+comprobar('y dice que ya se usó, no que el reloj está mal', !str_contains($html, 'reloj del teléfono'));
 
 $vuelve->get('/admin', false);
 comprobar('y el panel ya no rebota a la verificación', $vuelve->codigo === 200,
     $vuelve->codigo . ' → ' . $vuelve->cabecera('Location'));
 
+/* =========================================================================
+   11b · Cuando el código correcto no entra
+   -------------------------------------------------------------------------
+   Lo que pasaba en producción después de cada actualización: el código del
+   teléfono se rechazaba con un mensaje sobre el reloj, y no había salida.
+   Las causas eran varias y cada una tiene ahora la suya:
+
+     · el reloj del servidor corrido → se confirma con el código siguiente
+       y el desfase queda aprendido;
+     · la configuración ilegible tras un cambio de llave → se dice, y se
+       entra con un código por correo;
+     · el teléfono perdido → código por correo, y «Configuración» para
+       escanear un QR nuevo.
+   ========================================================================= */
+titulo('Segundo factor: reloj, correo y Configuración');
+
+$P = $BD['prefijo'];
+$configAntes2fa = leerConfig($RAIZ);
+ajustarConfig($RAIZ, ['modo_correo' => 'registro']);
+
+$entrarHastaVerificar = static function () use ($BASE): Cliente {
+    $c = new Cliente($BASE);
+    $c->get('/admin/entrar');
+    $c->post('/admin/entrar', [
+        'correo' => 'aerazo@narino.gov.co',
+        'clave'  => 'una frase larga y facil de recordar',
+    ]);
+    return $c;
+};
+$enElPanel = static fn(string $html): bool => str_contains($html, 'Indicadores') || str_contains($html, 'Panel del evento');
+$esperarSiguiente = static function (int $intervalo): void {
+    while (intdiv(time(), 30) <= $intervalo) {
+        usleep(300000);
+    }
+};
+/** El último código de respaldo que «llegó» al correo: en modo registro queda en el registro. */
+$codigoDelCorreo = static function () use ($RAIZ): string {
+    $archivos = glob($RAIZ . '/almacen/registro/*.log.php') ?: [];
+    sort($archivos);
+    preg_match_all('/Código para entrar al panel: (\d{6})/u', (string) @file_get_contents((string) end($archivos)), $m);
+    return (string) (end($m[1]) ?: '');
+};
+$fila2fa = static fn(): array => $pdo->query("SELECT totp_secreto, totp_confirmado, totp_ultimo, totp_deriva
+    FROM {$P}usuario WHERE correo = 'aerazo@narino.gov.co'")->fetch(PDO::FETCH_ASSOC) ?: [];
+
+// ---- El reloj del servidor, siete minutos atrasado ----------------------
+$pdo->exec("UPDATE {$P}usuario SET totp_ultimo = 0, totp_deriva = 0 WHERE correo = 'aerazo@narino.gov.co'");
+$adelanto = 7 * 60;   // el teléfono va siete minutos por delante del servidor
+$telefono = static fn(int $extra = 0): string => App\Nucleo\Totp::codigoActual($secreto, time() + $adelanto + $extra);
+
+$c = $entrarHastaVerificar();
+$html = $c->post('/admin/verificar', ['codigo' => $telefono()]);
+comprobar('con el servidor siete minutos atrasado no rechaza: pide el código siguiente',
+    str_contains($html, 'código siguiente') && str_contains($html, '7 minutos'), substr(strip_tags($html), 0, 200));
+comprobar('y no culpa al teléfono', !str_contains($html, 'reloj del teléfono'));
+$html = $c->post('/admin/verificar', ['codigo' => $telefono(30)]);
+comprobar('con el código siguiente entra', $enElPanel($html));
+$deriva = (int) ($fila2fa()['totp_deriva'] ?? 0);
+comprobar('y el desfase queda aprendido', abs($deriva - 15) <= 1, (string) $deriva);
+$c = $entrarHastaVerificar();
+$html = $c->post('/admin/verificar', ['codigo' => $telefono(60)]);
+comprobar('la vez siguiente entra a la primera', $enElPanel($html));
+comprobar('la resincronización queda en la bitácora',
+    (int) $pdo->query("SELECT COUNT(*) FROM {$P}bitacora WHERE accion = 'segundo_factor_resincronizado'")->fetchColumn() >= 1);
+$pdo->exec("UPDATE {$P}usuario SET totp_ultimo = 0, totp_deriva = 0 WHERE correo = 'aerazo@narino.gov.co'");
+
+// ---- Código por correo, con la aplicación en orden ----------------------
+$c = $entrarHastaVerificar();
+$html = $c->get('/admin/verificar');
+comprobar('la verificación ofrece entrar con un código por correo', str_contains($html, 'Enviar un código a mi correo'));
+$html = $c->post('/admin/verificar', ['accion' => 'enviar_correo']);
+comprobar('dice a qué buzón lo envió, sin mostrarlo entero',
+    str_contains($html, 'a••••o@narino.gov.co') && !str_contains($html, 'aerazo@narino.gov.co'));
+$codigoCorreo = $codigoDelCorreo();
+comprobar('el código llegó', (bool) preg_match('/^\d{6}$/', $codigoCorreo), $codigoCorreo);
+$html = $c->post('/admin/verificar', ['accion' => 'codigo_correo',
+    'codigo_correo' => $codigoCorreo === '000000' ? '111111' : '000000']);
+comprobar('un código del correo equivocado no entra', str_contains($html, 'no coincide') && !$enElPanel($html));
+$html = $c->post('/admin/verificar', ['accion' => 'codigo_correo', 'codigo_correo' => $codigoCorreo]);
+comprobar('con el del correo entra, y llega a Configuración',
+    str_contains($html, 'Configuración') && str_contains($html, 'Restablecer'), substr(strip_tags($html), 0, 200));
+comprobar('la aplicación sigue configurada: el correo es un respaldo, no la reemplaza',
+    (int) ($fila2fa()['totp_confirmado'] ?? 0) === 1 && str_contains($html, '>Activa<'));
+$otro = $entrarHastaVerificar();
+$otro->post('/admin/verificar', ['accion' => 'codigo_correo', 'codigo_correo' => $codigoCorreo]);
+comprobar('el código del correo sirve una sola vez, y solo en la sesión que lo pidió', !$enElPanel($otro->cuerpo));
+comprobar('el menú tiene «Configuración»', str_contains($html, 'href="' . parse_url($BASE, PHP_URL_PATH) . '/admin/cuenta"'));
+
+// ---- Configuración: un código QR nuevo ----------------------------------
+$html = $c->post('/admin/cuenta', ['accion' => 'nuevo', 'clave' => 'no es esta']);
+comprobar('sin la contraseña actual no genera un QR nuevo', str_contains($html, 'Esa no es tu contraseña actual'));
+$html = $c->post('/admin/cuenta', ['accion' => 'nuevo', 'clave' => 'una frase larga y facil de recordar']);
+preg_match('#letter-spacing:\.14em[^>]*>\s*([A-Z2-7 ]{32,})\s*<#', $html, $m);
+$secretoNuevo = str_replace(' ', '', trim($m[1] ?? ''));
+comprobar('con la contraseña muestra un código QR nuevo',
+    (bool) preg_match('/^[A-Z2-7]{32}$/', $secretoNuevo) && $secretoNuevo !== $secreto && str_contains($html, '<svg'));
+
+$mientras = $entrarHastaVerificar();
+$html = $mientras->post('/admin/verificar', ['codigo' => $codigoDe($secreto)]);
+comprobar('mientras no se confirma, la aplicación anterior sigue sirviendo', $enElPanel($html));
+
+$intervaloConfirmacion = intdiv(time(), 30);
+$html = $c->post('/admin/cuenta', ['accion' => 'confirmar', 'codigo' => $codigoDe($secretoNuevo)]);
+comprobar('al confirmarlo con su código, queda restablecido', str_contains($html, 'desde ahora vale el código'));
+$mientras->get('/admin', false);
+comprobar('y las otras sesiones de la cuenta se cierran', $mientras->codigo === 303);
+$c->get('/admin', false);
+comprobar('pero no la de quien lo restableció', $c->codigo === 200, (string) $c->codigo);
+
+$c3 = $entrarHastaVerificar();
+$esperarSiguiente($intervaloConfirmacion);
+$html = $c3->post('/admin/verificar', ['codigo' => $codigoDe($secreto)]);
+comprobar('el código de la aplicación anterior ya no sirve', !$enElPanel($html));
+$html = $c3->post('/admin/verificar', ['codigo' => $codigoDe($secretoNuevo)]);
+comprobar('el de la nueva sí', $enElPanel($html));
+$secreto = $secretoNuevo;
+comprobar('el restablecimiento queda en la bitácora',
+    (int) $pdo->query("SELECT COUNT(*) FROM {$P}bitacora WHERE accion = 'segundo_factor_restablecido'")->fetchColumn() >= 1);
+
+// ---- Configuración ilegible: la llave de cifrado cambió -----------------
+// Un secreto que la llave de la instalación no abre: es lo que queda cuando
+// config/config.php se pierde y el asistente genera otra llave.
+ajustarConfig($RAIZ, ['exigir_2fa_admin' => true]);
+$pdo->exec("UPDATE {$P}usuario SET totp_secreto = UNHEX(CONCAT('01', REPEAT('5A', 72))), totp_confirmado = 1
+             WHERE correo = 'aerazo@narino.gov.co'");
+$c4 = $entrarHastaVerificar();
+$html = $c4->get('/admin/verificar');
+comprobar('con la configuración ilegible lo dice, en vez de culpar al reloj',
+    str_contains($html, 'no se puede leer') && str_contains($html, 'llave de cifrado') && !str_contains($html, 'reloj del teléfono'));
+comprobar('y no pide un código de la aplicación, que no puede cuadrar', !str_contains($html, 'name="codigo"'));
+$c4->post('/admin/verificar', ['codigo' => $codigoDe($secreto)]);
+comprobar('aunque se envíe uno igual, no entra', !$enElPanel($c4->cuerpo));
+$c4->post('/admin/verificar', ['accion' => 'enviar_correo']);
+$html = $c4->post('/admin/verificar', ['accion' => 'codigo_correo', 'codigo_correo' => $codigoDelCorreo()]);
+comprobar('con el código del correo entra a configurar la aplicación otra vez',
+    str_contains($html, 'Activa la verificación en dos pasos'), substr(strip_tags($html), 0, 200));
+preg_match('#letter-spacing:\.14em[^>]*>([A-Z2-7 ]{32,})<#', $html, $m);
+$secretoRehecho = str_replace(' ', '', trim($m[1] ?? ''));
+$html = $c4->post('/admin/activar-2fa', ['codigo' => $codigoDe($secretoRehecho)]);
+comprobar('y con el QR nuevo queda dentro', $enElPanel($html));
+comprobar('queda anotado por qué se quitó el anterior',
+    (int) $pdo->query("SELECT COUNT(*) FROM {$P}bitacora WHERE accion = 'segundo_factor_ilegible'")->fetchColumn() >= 1);
+$secreto = $secretoRehecho;
+ajustarConfig($RAIZ, ['exigir_2fa_admin' => $configAntes2fa['exigir_2fa_admin'] ?? null]);
+
+// ---- Organizadores: restablecer el de otra persona ----------------------
+$otraCuenta = (int) $pdo->query("SELECT id FROM {$P}usuario WHERE correo <> 'aerazo@narino.gov.co' LIMIT 1")->fetchColumn();
+if ($otraCuenta > 0) {
+    $pdo->exec("UPDATE {$P}usuario SET totp_secreto = UNHEX(CONCAT('01', REPEAT('5A', 72))), totp_confirmado = 1
+                 WHERE id = $otraCuenta");
+    $html = $c4->get('/admin/organizadores');
+    comprobar('Organizadores marca el segundo factor ilegible de otra cuenta', str_contains($html, '2FA ilegible'));
+    $c4->post('/admin/organizadores/segundo-factor', ['usuario' => (string) $otraCuenta]);
+    comprobar('y una administradora se lo puede restablecer',
+        $pdo->query("SELECT totp_secreto FROM {$P}usuario WHERE id = $otraCuenta")->fetchColumn() === null);
+}
+$miId = (int) $pdo->query("SELECT id FROM {$P}usuario WHERE correo = 'aerazo@narino.gov.co'")->fetchColumn();
+$c4->post('/admin/organizadores/segundo-factor', ['usuario' => (string) $miId], false);
+comprobar('el propio se restablece en Configuración, no desde ahí',
+    $c4->codigo === 303 && str_contains($c4->cabecera('Location'), '/admin/cuenta')
+    && (int) ($fila2fa()['totp_confirmado'] ?? 0) === 1);
+
+ajustarConfig($RAIZ, ['modo_correo' => $configAntes2fa['modo_correo'] ?? null]);
+
 // Se deja la cuenta como estaba. Los otros guiones —pantallas.js, entre ellos—
 // entran con contraseña y se quedarían atascados en la verificación revisando
 // ocho veces la misma pantalla.
 $pdo->exec("UPDATE {$BD['prefijo']}usuario
-               SET totp_secreto = NULL, totp_confirmado = 0, totp_ultimo = 0
+               SET totp_secreto = NULL, totp_confirmado = 0, totp_ultimo = 0, totp_deriva = 0
              WHERE correo = 'aerazo@narino.gov.co'");
 comprobar('el guion deja la cuenta como la encontró',
     (int) $pdo->query("SELECT totp_confirmado FROM {$BD['prefijo']}usuario

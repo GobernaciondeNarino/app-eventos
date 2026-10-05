@@ -15,7 +15,7 @@ use App\Nucleo\Bd;
  */
 final class Esquema
 {
-    public const VERSION = '1.6.0';
+    public const VERSION = '1.7.0';
 
     /**
      * Columnas que ya existen pero cambiaron de tipo.
@@ -312,6 +312,9 @@ final class Esquema
                     'totp_secreto'      => 'VARBINARY(255) NULL',
                     'totp_confirmado'   => 'TINYINT(1) NOT NULL DEFAULT 0',
                     'totp_ultimo'       => 'INT UNSIGNED NOT NULL DEFAULT 0',
+                    // Desfase aprendido entre el reloj del servidor y el del
+                    // teléfono, en intervalos de treinta segundos.
+                    'totp_deriva'       => 'SMALLINT NOT NULL DEFAULT 0',
                     'estado'            => "ENUM('activo','suspendido') NOT NULL DEFAULT 'activo'",
                     'debe_cambiar'      => 'TINYINT(1) NOT NULL DEFAULT 0',
                     'ultimo_acceso'     => 'DATETIME NULL',
@@ -658,12 +661,7 @@ final class Esquema
                 continue;   // la columna no existe todavía; ya la agregó el paso anterior
             }
 
-            $hace = match ($ajuste['si']) {
-                'no_nulable'    => $actual['nulable'] === 'NO',
-                'falta_en_tipo' => !str_contains($actual['tipo'], (string) ($ajuste['busca'] ?? '')),
-                default         => false,
-            };
-            if (!$hace) {
+            if (!self::ajusteHaceFalta($ajuste, $actual)) {
                 continue;   // ya está como tiene que estar
             }
 
@@ -674,6 +672,16 @@ final class Esquema
                 . ($ajuste['si'] === 'no_nulable' ? ' (nulable)' : ' (tipo)');
         }
         return $hechas;
+    }
+
+    /** @param array{nulable: string, tipo: string} $actual */
+    private static function ajusteHaceFalta(array $ajuste, array $actual): bool
+    {
+        return match ($ajuste['si']) {
+            'no_nulable'    => $actual['nulable'] === 'NO',
+            'falta_en_tipo' => !str_contains($actual['tipo'], (string) ($ajuste['busca'] ?? '')),
+            default         => false,
+        };
     }
 
     /** Qué tablas del esquema ya están en la base. */
@@ -757,16 +765,84 @@ final class Esquema
         return self::$revision = self::revisar();
     }
 
+    /**
+     * Olvida la respuesta guardada. Hace falta justo después de aplicar el
+     * esquema en la misma petición —la actualización automática lo hace— y en
+     * los procesos que revisan varias bases seguidas, como las pruebas.
+     */
+    public static function olvidarRevision(): void
+    {
+        self::$revision = null;
+    }
+
+    /*
+     * Se comparan las columnas de verdad, no solo la versión anotada.
+     *
+     * La versión anotada puede mentir: el modo «anexar» del asistente deja las
+     * tablas viejas como estaban y aun así anota la versión nueva, y un ALTER
+     * que falla a mitad deja la anotación de una corrida anterior. En los dos
+     * casos el panel decía «al día» mientras el código pedía columnas que no
+     * existen, y lo primero que fallaba era el inicio de sesión. Mirando las
+     * columnas, lo que falte se ve —y la actualización automática lo agrega—
+     * diga lo que diga la tabla de migraciones.
+     *
+     * Es una sola consulta a information_schema, y la actualización automática
+     * solo la repite cada diez minutos.
+     */
     private static function revisar(): array
     {
+        $prefijo = Bd::prefijo();
         try {
-            $faltan = array_values(array_diff(self::nombres(), self::existentes()));
+            $filas = Bd::filasDirecto(
+                "SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE
+                   FROM information_schema.COLUMNS
+                  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME LIKE ? ESCAPE '!'",
+                [strtr($prefijo, ['!' => '!!', '_' => '!_', '%' => '!%']) . '%']
+            );
         } catch (\Throwable) {
             return [false, ''];
         }
 
+        $actual = [];
+        foreach ($filas as $fila) {
+            $tabla = (string) $fila['TABLE_NAME'];
+            if (!str_starts_with($tabla, $prefijo)) {
+                continue;
+            }
+            $actual[substr($tabla, strlen($prefijo))][(string) $fila['COLUMN_NAME']] = [
+                'nulable' => (string) $fila['IS_NULLABLE'],
+                'tipo'    => (string) $fila['COLUMN_TYPE'],
+            ];
+        }
+
+        $faltan = array_values(array_diff(self::nombres(), array_keys($actual)));
         if ($faltan !== []) {
             return [true, 'Faltan ' . count($faltan) . ' tabla(s): ' . implode(', ', $faltan) . '.'];
+        }
+
+        $columnas = [];
+        foreach (self::tablas() as $nombre => $definicion) {
+            foreach (array_keys($definicion['columnas']) as $columna) {
+                if (!isset($actual[$nombre][$columna])) {
+                    $columnas[] = $nombre . '.' . $columna;
+                }
+            }
+        }
+        if ($columnas !== []) {
+            return [true, 'Faltan ' . count($columnas) . ' columna(s): '
+                . implode(', ', array_slice($columnas, 0, 6)) . (count($columnas) > 6 ? '…' : '') . '.'];
+        }
+
+        $viejas = [];
+        foreach (self::AJUSTES as $ajuste) {
+            $columna = $actual[$ajuste['tabla']][$ajuste['columna']] ?? null;
+            if ($columna !== null && self::ajusteHaceFalta($ajuste, $columna)) {
+                $viejas[] = $ajuste['tabla'] . '.' . $ajuste['columna'];
+            }
+        }
+        if ($viejas !== []) {
+            return [true, 'Hay ' . count($viejas) . ' columna(s) con la definición de una versión anterior: '
+                . implode(', ', $viejas) . '.'];
         }
 
         $aplicada = self::versionInstalada();

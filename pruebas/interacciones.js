@@ -677,6 +677,47 @@ function titulo(t) {
   comprobar('cada jornada ofrece cambiar fecha y horario',
     (await p3.locator('form[action$="/qr-dias/ajustar"]').count()) >= 1);
 
+  /* =====================================================================
+     Segundo factor: la hora del servidor contra la de este equipo
+     ---------------------------------------------------------------------
+     El aviso lo pinta segundo-factor.js. No se puede correr el reloj del
+     servidor, así que se adelanta diez minutos el de este navegador: el
+     aviso tiene que aparecer, y sin errores bajo la política de seguridad.
+     ===================================================================== */
+  titulo('Segundo factor y Configuración');
+
+  const desfasado = await navegador.newContext({
+    viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true,
+  });
+  const p2fa = await desfasado.newPage();
+  const errores2fa = [];
+  p2fa.on('console', m => { if (m.type() === 'error') errores2fa.push(m.text()); });
+  p2fa.on('pageerror', e => errores2fa.push(e.message));
+  await p2fa.clock.install({ time: Date.now() + 10 * 60 * 1000 });
+
+  await p2fa.goto(BASE + '/admin/entrar', { waitUntil: 'networkidle' });
+  await p2fa.fill('#correo', ADMIN.correo);
+  await p2fa.fill('#clave', ADMIN.clave);
+  await p2fa.click('button[type=submit]');
+  await p2fa.waitForLoadState('networkidle');
+
+  await p2fa.goto(BASE + '/admin/activar-2fa', { waitUntil: 'networkidle' });
+  const avisoReloj = p2fa.locator('[data-reloj-aviso]');
+  comprobar('con el reloj del equipo diez minutos adelante, la pantalla lo advierte',
+    await avisoReloj.isVisible());
+  const textoReloj = await avisoReloj.innerText().catch(() => '');
+  comprobar('y dice cuánto', textoReloj.includes('10 minutos'), textoReloj.slice(0, 80));
+  comprobar('muestra la hora del servidor para compararla',
+    /\d{2}:\d{2}:\d{2}/.test(await p2fa.locator('[data-hora-servidor]').innerText()));
+
+  await p2fa.goto(BASE + '/admin/cuenta', { waitUntil: 'networkidle' });
+  comprobar('«Configuración» está en la navegación',
+    (await p2fa.locator('a[href$="/admin/cuenta"]').count()) >= 1);
+  comprobar('para generar otro QR pide la contraseña actual',
+    await p2fa.locator('input[name=clave][type=password]').isVisible());
+  comprobar('sin errores de consola en esas pantallas', errores2fa.length === 0, errores2fa.join(' | '));
+  await desfasado.close();
+
   await navegador.close();
 
   console.log('\n' + '─'.repeat(58));

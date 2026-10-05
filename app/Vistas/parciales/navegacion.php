@@ -91,6 +91,9 @@ if ($usuario !== null) {
         ['clave' => 'admin-eventos', 'etiqueta' => 'Eventos', 'icono' => 'evento', 'ruta' => '/admin/eventos', 'rol' => 'administrador'],
         ['clave' => 'admin-identidad', 'etiqueta' => 'Identidad', 'icono' => 'theme', 'ruta' => '/admin/identidad', 'rol' => 'administrador'],
         ['clave' => 'admin-autenticacion', 'etiqueta' => 'Autenticación', 'icono' => 'llave', 'ruta' => '/admin/autenticacion', 'rol' => 'administrador'],
+        // La cuenta propia, para todo el equipo: contraseña y código QR de la
+        // verificación en dos pasos.
+        ['clave' => 'cuenta', 'etiqueta' => 'Configuración', 'icono' => 'user', 'ruta' => '/admin/cuenta', 'rol' => 'consulta'],
     ];
     foreach ($candidatos as $item) {
         if (Guardia::tieneRol($usuario, $item['rol'])) {

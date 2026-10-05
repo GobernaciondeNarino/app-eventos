@@ -118,17 +118,74 @@ final class Instalador
     private function estadoDelEsquema(): array
     {
         if (!$this->reconectar()) {
-            return ['conectado' => false, 'existentes' => [], 'version' => null];
+            return ['conectado' => false, 'existentes' => [], 'version' => null, 'llave' => null];
         }
         try {
             return [
                 'conectado'  => true,
                 'existentes' => Esquema::existentes(),
                 'version'    => Esquema::versionInstalada(),
+                'llave'      => $this->estadoDeLaLlave(),
             ];
         } catch (\Throwable) {
-            return ['conectado' => false, 'existentes' => [], 'version' => null];
+            return ['conectado' => false, 'existentes' => [], 'version' => null, 'llave' => null];
         }
+    }
+
+    /**
+     * ¿Hay datos cifrados en la base sin una llave con que leerlos?
+     *
+     * Es lo que pasa cuando config/config.php se pierde —se borró la carpeta
+     * para subir la versión nueva, por ejemplo— y se vuelve a pasar por el
+     * asistente. Hasta la 3.5 el asistente generaba una llave nueva sin decir
+     * nada, y con ella:
+     *
+     *   · las cédulas guardadas dejaban de poder leerse;
+     *   · el segundo factor de cada cuenta también, y el código correcto del
+     *     teléfono se rechazaba siempre con un mensaje sobre el reloj.
+     *
+     * Ahora, si la configuración no trae llave y la base tiene datos cifrados,
+     * el paso 3 pide la llave anterior —está en la copia de config.php— y la
+     * prueba contra un dato de verdad antes de aceptarla. Seguir sin ella se
+     * puede, pero solo diciéndolo de forma explícita.
+     *
+     * @return array{falta: bool, personas: int, cuentas: int, muestras: array<int,string>}
+     */
+    private function estadoDeLaLlave(): array
+    {
+        $vacio = ['falta' => false, 'personas' => 0, 'cuentas' => 0, 'muestras' => []];
+        if (Cripto::hayLlave()) {
+            // Con llave en la configuración no se pregunta nada: es la que se
+            // está usando, y cambiarla sería justamente el problema.
+            return $vacio;
+        }
+        $cifrados = Instalacion::datosCifrados();
+        if ($cifrados['muestras'] === []) {
+            return $vacio;
+        }
+
+        // Ya se dio en este mismo proceso y se comprobó.
+        $enCurso = (string) ($this->leerConexion()['llave_cifrado'] ?? '');
+        if ($enCurso !== '' && Instalacion::llaveAbreLosDatos($enCurso, $cifrados['muestras'])) {
+            return $vacio;
+        }
+
+        return ['falta' => true] + $cifrados;
+    }
+
+    /**
+     * La llave tal como la pegue la persona.
+     *
+     * Lo natural es copiar la línea entera del config.php viejo
+     * —'llave_cifrado' => '…',— y no solo el valor. Se acepta igual.
+     */
+    private function llavePegada(string $texto): string
+    {
+        $texto = trim($texto);
+        if (preg_match("/llave_cifrado'?\s*=>\s*'([A-Za-z0-9+\/=]+)'/", $texto, $m)) {
+            return $m[1];
+        }
+        return trim($texto, " \t\n\r\0\x0B'\",;");
     }
 
     /**
@@ -667,9 +724,12 @@ final class Instalador
 
     private function paso3(Peticion $peticion, array $estado, bool $reparacion = false): array
     {
-        $modo = $peticion->campo('modo', 'limpio');
+        // Si el formulario llega sin modo, o con uno inventado, se hace lo que
+        // no borra nada. Antes caía en «limpio»: con la plataforma en producción,
+        // un envío incompleto bastaba para vaciar la base.
+        $modo = $peticion->campo('modo', 'actualizar');
         if (!in_array($modo, ['limpio', 'actualizar', 'anexar'], true)) {
-            $modo = 'limpio';
+            $modo = 'actualizar';
         }
         // En una reparación no se borra nada, aunque el formulario venga
         // manipulado: quien llega aquí lo hace porque el sitio está roto, no
@@ -684,10 +744,52 @@ final class Instalador
 
         try {
             $existentes = Esquema::existentes();
+        } catch (\Throwable $e) {
+            return [3, ['general' => 'No se pudo revisar la base de datos: ' . $e->getMessage()], $estado];
+        }
+
+        // Datos cifrados sin llave con que leerlos: se pide la anterior antes de
+        // tocar nada. Ver estadoDeLaLlave().
+        $llave = $this->estadoDeLaLlave();
+        if ($llave['falta']) {
+            $pegada = $this->llavePegada($peticion->campoCrudo('llave_previa'));
+            if ($pegada !== '') {
+                if (!Instalacion::llaveAbreLosDatos($pegada, $llave['muestras'])) {
+                    return [3, ['llave_previa' => 'Esa llave no abre los datos de esta base. Cópiala del '
+                        . 'config/config.php que estaba en el servidor antes de actualizar: es la línea '
+                        . '\'llave_cifrado\'.'], $estado];
+                }
+                // Va al mismo archivo que la contraseña de la base, que vive solo
+                // mientras dura el asistente. Nunca a la cookie del proceso.
+                $conexion = (array) $this->leerConexion();
+                if (!$this->guardarConexion(['llave_cifrado' => $pegada] + $conexion)) {
+                    return [3, ['general' => 'No se pudo escribir en la carpeta config/.'], $estado];
+                }
+                unset($estado['llave_nueva']);
+            } elseif ($peticion->campo('sin_llave_previa') === '1') {
+                $estado['llave_nueva'] = true;
+            } else {
+                return [3, ['llave_previa' => 'La base tiene datos cifrados y falta la llave con que se '
+                    . 'cifraron. Pégala aquí, o marca la casilla para seguir sin ella sabiendo lo que se '
+                    . 'pierde.'], $estado];
+            }
+        }
+
+        // Borrar tablas con datos pide una confirmación aparte, no solo elegir
+        // la opción. Un clic de más en el radio equivocado no puede costar el
+        // registro de un evento.
+        if ($modo === 'limpio' && $existentes !== [] && $peticion->campo('confirmar_limpio') !== '1') {
+            return [3, ['general' => 'La instalación limpia borra las ' . count($existentes)
+                . ' tablas que ya hay y todo lo que guardan. Si de verdad es lo que quieres, marca la '
+                . 'casilla que lo confirma. Para conservar los datos elige «Actualizar lo existente».'], $estado];
+        }
+
+        try {
             $hechas = Esquema::aplicar($modo, $existentes);
         } catch (\Throwable $e) {
             return [3, ['general' => 'No se pudo aplicar el esquema: ' . $e->getMessage()], $estado];
         }
+        \App\Nucleo\Actualizacion::crearCarpetas();
 
         $estado['modo'] = $modo;
         $estado['tablas'] = $hechas;
@@ -764,7 +866,12 @@ final class Instalador
             // configuración; nunca a la cookie del asistente. Y se genera una
             // sola vez: en una reparación sobre una instalación que ya tiene
             // datos, cambiarla dejaría ilegibles todos los documentos guardados.
-            $llave = (string) Config::obtener('llave_cifrado', '') ?: Cripto::generarLlave();
+            //
+            // Si en el paso 3 se dio la llave anterior —config/config.php se
+            // había perdido—, esa es la buena: se comprobó contra los datos.
+            $llave = (string) ($conexion['llave_cifrado'] ?? '')
+                ?: (string) Config::obtener('llave_cifrado', '')
+                ?: Cripto::generarLlave();
 
             // Lo que este asistente decide, lo que ya hubiera en el archivo, y
             // los valores por defecto: en ese orden, porque con la unión gana el
@@ -809,13 +916,30 @@ final class Instalador
             // ni el archivo en disco: basta con tener la configuración en
             // memoria para resolver el prefijo de las tablas.
             Config::establecerEnMemoria($configuracion);
+            Cripto::olvidarLlave();
             Bd::establecerPrefijo((string) $configuracion['bd_prefijo']);
 
+            // Al actualizar, lo normal es escribir el correo de la cuenta que ya
+            // se usa. Se le cambia la contraseña y nada más: conserva su
+            // segundo factor, y el código del teléfono sigue sirviendo.
+            $previo = Usuario::porCorreo((string) $estado['admin']['correo']);
             $usuarioId = Usuario::asegurarAdministrador(
                 (string) $estado['admin']['correo'],
                 (string) $estado['admin']['nombre'],
                 (string) $estado['admin']['clave_hash']
             );
+
+            // Con una llave nueva, el segundo factor de esta cuenta ya no se
+            // puede leer. Quien está aquí probó tener las credenciales de la
+            // base, que es más que el segundo factor: se le quita, y al entrar
+            // configura la aplicación otra vez. Las demás cuentas lo resuelven
+            // al entrar, con un código enviado a su correo.
+            $rehacer2fa = false;
+            if ($previo !== null && Usuario::estadoSegundoFactor($previo) === 'ilegible') {
+                Usuario::quitarSegundoFactor($usuarioId);
+                Bitacora::registrar('segundo_factor_retirado', 'usuario', $usuarioId, ['motivo' => 'llave nueva']);
+                $rehacer2fa = true;
+            }
 
             // Si ya hay un evento activo, este paso no crea otro. Reparando una
             // instalación que ya tiene registros, crear uno nuevo lo dejaba
@@ -832,6 +956,7 @@ final class Instalador
                     $estado['evento_id'] = $eventoId;
                 }
             }
+            $eventoExistia = $eventoId !== 0;
             if ($eventoId === 0) {
                 $eventoId = Evento::crear([
                     'nombre'       => $nombreEvento,
@@ -860,7 +985,18 @@ final class Instalador
             // contraseña de la base sin ninguna razón.
             $this->olvidarConexion();
 
+            // Lo mismo con el permiso para reabrir el asistente: sirvió para
+            // esta vez. Olvidarse de borrarlo deja la instalación abierta a
+            // cualquiera que tenga las credenciales de la base.
+            $permiso = RAIZ . '/config/permitir-reinstalar';
+            if (is_file($permiso)) {
+                @unlink($permiso);
+            }
+
             Instalacion::olvidar();
+            // La marca de «base al día» era de antes del asistente: que la
+            // próxima petición vuelva a mirar en vez de fiarse de ella.
+            \App\Nucleo\Actualizacion::olvidar();
             Bitacora::registrar('instalacion', 'sistema', $eventoId, [
                 'modo'     => $estado['modo'] ?? 'limpio',
                 'jornadas' => $jornadas,
@@ -877,6 +1013,12 @@ final class Instalador
                 'exigir_2fa' => (bool) ($estado['admin']['exigir_2fa'] ?? true),
                 'https'      => \App\Nucleo\App::peticion()->esSegura(),
                 'correo_ok'  => Correo::disponible(),
+                'cuenta_existia'  => $previo !== null,
+                'conserva_2fa'    => $previo !== null && !$rehacer2fa && (int) ($previo['totp_confirmado'] ?? 0) === 1,
+                'rehacer_2fa'     => $rehacer2fa,
+                'llave_nueva'     => !empty($estado['llave_nueva']),
+                'evento_existia'  => $eventoExistia,
+                'permiso_abierto' => is_file($permiso),
             ];
             // Ya no hace falta arrastrar nada de esto en la cookie.
             unset($estado['bd'], $estado['admin'], $estado['evento_id']);

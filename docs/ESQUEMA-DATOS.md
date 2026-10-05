@@ -1,6 +1,6 @@
 # Esquema de datos
 
-Plataforma de Eventos TIC · versión del esquema **1.6.0**
+Plataforma de Eventos TIC · versión del esquema **1.7.0**
 
 > Documento generado con `php herramientas/generar-doc-esquema.php` a partir de
 > `app/Esquema.php`, la misma definición que el instalador usa para crear y actualizar
@@ -23,7 +23,7 @@ poder compartir la base con otras aplicaciones del alojamiento.
 | `evt_contacto` | 5 | Intercambio de datos entre asistentes. Guarda quién escaneó a quién, para poder revertirlo si alguien lo pide. |
 | `evt_propuesta` | 17 | Lo que envía un expositor en el preregistro. Al aprobarse se convierte en charla. |
 | `evt_charla` | 6 | La agenda pública: propuestas aprobadas con horario y salón asignados. |
-| `evt_usuario` | 13 | El equipo organizador. Contraseña con Argon2id y segundo factor obligatorio para el rol administrador. |
+| `evt_usuario` | 14 | El equipo organizador. Contraseña con Argon2id y segundo factor obligatorio para el rol administrador. |
 | `evt_sesion` | 9 | Sesiones en base de datos: se pueden cerrar a distancia y no quedan en archivos compartidos del servidor. |
 | `evt_dispositivo` | 8 | Teléfonos desde los que un asistente ya entró. Le evitan volver a pedir el código cada vez. |
 | `evt_codigo_acceso` | 7 | Códigos de un solo uso que se envían por correo al asistente. Se guarda el hash, no el código. |
@@ -313,6 +313,7 @@ El equipo organizador. Contraseña con Argon2id y segundo factor obligatorio par
 | `totp_secreto` | `VARBINARY(255) NULL` |
 | `totp_confirmado` | `TINYINT(1) NOT NULL DEFAULT 0` |
 | `totp_ultimo` | `INT UNSIGNED NOT NULL DEFAULT 0` |
+| `totp_deriva` | `SMALLINT NOT NULL DEFAULT 0` |
 | `estado` | `ENUM('activo','suspendido') NOT NULL DEFAULT 'activo'` |
 | `debe_cambiar` | `TINYINT(1) NOT NULL DEFAULT 0` |
 | `ultimo_acceso` | `DATETIME NULL` |

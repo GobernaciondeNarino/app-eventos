@@ -299,7 +299,7 @@ switch ($comando) {
     /* ------------------------------------------------------ sin-2fa ----- */
     case 'sin-2fa':
         $usuario = $exigirCuenta();
-        Bd::ejecutar('UPDATE {usuario} SET totp_secreto = NULL, totp_confirmado = 0 WHERE id = ?', [$usuario['id']]);
+        Usuario::quitarSegundoFactor((int) $usuario['id']);
         \App\Nucleo\Sesion::cerrarTodasDe('admin', (int) $usuario['id']);
         \App\Nucleo\Bitacora::registrar('segundo_factor_retirado', 'usuario', (int) $usuario['id']);
 

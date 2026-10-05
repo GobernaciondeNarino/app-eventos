@@ -215,16 +215,16 @@ guiones('instalador.js');
       $versionPrevia = $esquema['version'] ?? null;
       $prefijo = (string) ($bd['prefijo'] ?? 'evt_');
 
-      // Si no se pudo comprobar qué hay, no se sugiere borrar: se sugiere lo
-      // que no destruye nada.
-      $modoSugerido = !$conectado
-          ? 'anexar'
-          : ($existentes ? ($versionPrevia ? 'actualizar' : 'anexar') : 'limpio');
+      // Solo se sugiere borrar cuando consta que no hay nada que borrar. Con
+      // tablas presentes —o sin poder comprobarlo— se sugiere actualizar: crea
+      // lo que falte, agrega columnas y no borra nada, así que sirve igual para
+      // una base vieja que para una a medias.
+      $modoSugerido = ($conectado && !$existentes) ? 'limpio' : 'actualizar';
 
       $modos = [
         ['limpio', 'Instalación limpia', 'Elimina las tablas con este prefijo y las crea desde cero. Se pierden los datos que hubiera.'],
-        ['actualizar', 'Actualizar lo existente', 'Conserva los datos y solo agrega las tablas y columnas que falten.'],
-        ['anexar', 'Anexar sin tocar nada', 'Crea únicamente las tablas que falten. Las que ya están se dejan intactas.'],
+        ['actualizar', 'Actualizar lo existente', 'Conserva los datos y solo agrega las tablas y columnas que falten. Es lo que se usa al subir una versión nueva.'],
+        ['anexar', 'Anexar sin tocar nada', 'Crea únicamente las tablas que falten. Si a las que ya están les faltan columnas de esta versión, la plataforma las agrega sola al abrirse.'],
       ];
       if ($reparacion) {
           // Reparando no se ofrece borrar: es lo contrario de lo que se vino a hacer.
@@ -268,6 +268,49 @@ guiones('instalador.js');
           </div>
         </div>
 
+        <?php $llave = (array) ($esquema['llave'] ?? []); ?>
+        <?php if (!empty($llave['falta']) || $err('llave_previa')): ?>
+          <!-- La base tiene datos cifrados y la configuración no trae la llave.
+               Pasa cuando config/config.php se perdió al subir la versión
+               nueva. Seguir con una llave nueva deja ilegibles las cédulas y
+               el segundo factor de cada cuenta, así que se pide la anterior. -->
+          <div class="card" id="llave-anterior">
+            <div class="card__head"><span>Llave de cifrado anterior</span></div>
+            <div class="card__body stack stack--3">
+              <div class="notice notice--warn">
+                <span class="notice__icon" aria-hidden="true">▲</span>
+                <span>
+                  <strong>Falta el archivo config/config.php de la instalación anterior.</strong>
+                  La base guarda <?= (int) ($llave['personas'] ?? 0) ?> documentos de identidad y
+                  <?= (int) ($llave['cuentas'] ?? 0) ?> configuraciones de verificación en dos pasos
+                  cifrados con una llave que estaba en ese archivo. Sin ella no se pueden leer.
+                </span>
+              </div>
+              <div class="field">
+                <label class="label" for="llave_previa">Llave anterior</label>
+                <input class="input mono<?= $err('llave_previa') ? ' is-invalid' : '' ?>" id="llave_previa"
+                       name="llave_previa" autocomplete="off" spellcheck="false"
+                       placeholder="'llave_cifrado' => '…'">
+                <span class="help">
+                  Está en la copia de seguridad del sitio, dentro de
+                  <span class="mono">config/config.php</span>: la línea
+                  <span class="mono">'llave_cifrado' =&gt; '…'</span>. Puedes pegar la línea entera.
+                  Se comprueba contra los datos antes de aceptarla.
+                </span>
+                <?php if ($err('llave_previa')): ?><span class="error"><?= e($err('llave_previa')) ?></span><?php endif; ?>
+              </div>
+              <label class="row" style="gap:8px;align-items:flex-start;cursor:pointer">
+                <input type="checkbox" name="sin_llave_previa" value="1"
+                       style="margin-top:3px;width:16px;height:16px;accent-color:var(--c-danger)">
+                <span class="help" style="margin:0">
+                  No la tengo. Seguir con una llave nueva: los documentos guardados no se podrán
+                  leer, y cada cuenta volverá a configurar su verificación en dos pasos al entrar.
+                </span>
+              </label>
+            </div>
+          </div>
+        <?php endif; ?>
+
         <div class="card">
           <div class="card__head"><span>Qué hacer con ellas</span></div>
           <div class="card__body stack stack--3">
@@ -290,10 +333,17 @@ guiones('instalador.js');
         <?php if ($existentes): ?>
           <div class="notice notice--danger" data-aviso-limpio>
             <span class="notice__icon" aria-hidden="true">▲</span>
-            <span>
-              <strong>La instalación limpia borra datos.</strong> Hay <?= count($existentes) ?> tablas
-              con este prefijo y su contenido se perderá. Haz una copia de seguridad desde Plesk
-              antes de continuar.
+            <span class="stack stack--2">
+              <span>
+                <strong>La instalación limpia borra datos.</strong> Hay <?= count($existentes) ?> tablas
+                con este prefijo y su contenido se perderá. Haz una copia de seguridad desde Plesk
+                antes de continuar.
+              </span>
+              <label class="row" style="gap:8px;align-items:flex-start;cursor:pointer">
+                <input type="checkbox" name="confirmar_limpio" value="1"
+                       style="margin-top:3px;width:16px;height:16px;accent-color:var(--c-danger)">
+                <span>Entiendo que se borran las <?= count($existentes) ?> tablas y todo lo que guardan.</span>
+              </label>
             </span>
           </div>
         <?php endif; ?>
@@ -349,6 +399,17 @@ guiones('instalador.js');
           </div>
         <?php endif; ?>
 
+        <?php if (in_array($estado['modo'] ?? 'limpio', ['actualizar', 'anexar'], true)): ?>
+          <div class="notice">
+            <span class="notice__icon" aria-hidden="true">i</span>
+            <span>
+              <strong>Actualizando una instalación con datos.</strong> Escribe el correo de la cuenta
+              administradora que ya usas: solo se le cambia la contraseña. Conserva su verificación
+              en dos pasos y el código de la aplicación del teléfono sigue sirviendo.
+            </span>
+          </div>
+        <?php endif; ?>
+
         <div class="card">
           <div class="card__head"><span>Datos de la cuenta</span></div>
           <div class="card__body stack stack--4">
@@ -384,7 +445,10 @@ guiones('instalador.js');
             </div>
 
             <label class="row" style="align-items:flex-start;gap:11px;cursor:pointer">
-              <input type="checkbox" name="ad_2fa" value="1" checked style="margin-top:3px;width:18px;height:18px;accent-color:var(--c-accent)">
+              <?php // Al volver a pasar por el asistente se respeta lo que ya estaba decidido. ?>
+              <input type="checkbox" name="ad_2fa" value="1"
+                     <?= \App\Nucleo\Config::obtener('exigir_2fa_admin', true) ? 'checked' : '' ?>
+                     style="margin-top:3px;width:18px;height:18px;accent-color:var(--c-accent)">
               <span class="help" style="flex:1">
                 Exigir segundo factor a las cuentas administrativas (recomendado). Al primer
                 inicio de sesión se mostrará el código para la aplicación de autenticación.
@@ -506,10 +570,14 @@ guiones('instalador.js');
               <?php $pintarChecks([
                 ['nombre' => 'Archivo de configuración', 'detalle' => 'config/config.php', 'valor' => 'escrito', 'estado' => 'ok'],
                 ['nombre' => 'Tablas del esquema', 'detalle' => 'Prefijo ' . ($r['prefijo'] ?? 'evt_'), 'valor' => count(Esquema::nombres()) . ' tablas', 'estado' => 'ok'],
-                ['nombre' => 'Cuenta administradora', 'detalle' => (string) ($r['correo'] ?? ''), 'valor' => 'creada', 'estado' => 'ok'],
-                ['nombre' => 'Segundo factor', 'detalle' => 'Obligatorio para administradores', 'valor' => !empty($r['exigir_2fa']) ? 'activado' : 'desactivado', 'estado' => !empty($r['exigir_2fa']) ? 'ok' : 'warn'],
-                ['nombre' => 'Primer evento', 'detalle' => (string) ($r['evento'] ?? ''), 'valor' => ($r['jornadas'] ?? 0) . ' jornadas', 'estado' => 'ok'],
-                ['nombre' => 'Códigos QR de acceso', 'detalle' => 'Uno por jornada', 'valor' => ($r['jornadas'] ?? 0) . ' generados', 'estado' => 'ok'],
+                ['nombre' => 'Cuenta administradora', 'detalle' => (string) ($r['correo'] ?? ''), 'valor' => !empty($r['cuenta_existia']) ? 'contraseña cambiada' : 'creada', 'estado' => 'ok'],
+                ['nombre' => 'Segundo factor', 'detalle' => !empty($r['conserva_2fa']) ? 'Se conserva: el código del teléfono sigue sirviendo' : 'Obligatorio para administradores', 'valor' => !empty($r['exigir_2fa']) ? 'activado' : 'desactivado', 'estado' => !empty($r['exigir_2fa']) ? 'ok' : 'warn'],
+                !empty($r['evento_existia'])
+                  ? ['nombre' => 'Evento activo', 'detalle' => 'Se conservó con sus registros', 'valor' => 'sin cambios', 'estado' => 'ok']
+                  : ['nombre' => 'Primer evento', 'detalle' => (string) ($r['evento'] ?? ''), 'valor' => ($r['jornadas'] ?? 0) . ' jornadas', 'estado' => 'ok'],
+                !empty($r['evento_existia'])
+                  ? ['nombre' => 'Códigos QR de acceso', 'detalle' => 'Los de cada jornada', 'valor' => 'sin cambios', 'estado' => 'ok']
+                  : ['nombre' => 'Códigos QR de acceso', 'detalle' => 'Uno por jornada', 'valor' => ($r['jornadas'] ?? 0) . ' generados', 'estado' => 'ok'],
                 ['nombre' => 'HTTPS', 'detalle' => 'Sin TLS la plataforma no debe salir a producción', 'valor' => !empty($r['https']) ? 'activo' : 'pendiente', 'estado' => !empty($r['https']) ? 'ok' : 'warn'],
                 ['nombre' => 'Envío de correo', 'detalle' => 'Códigos de acceso y carnets', 'valor' => !empty($r['correo_ok']) ? 'disponible' : 'sin configurar', 'estado' => !empty($r['correo_ok']) ? 'ok' : 'warn'],
               ]); ?>
@@ -540,14 +608,37 @@ guiones('instalador.js');
           </div>
         </div>
 
-        <div class="notice notice--ok">
-          <span class="notice__icon" aria-hidden="true">✓</span>
-          <span>
-            <strong>El asistente ya no es accesible.</strong> Al existir
-            <span class="mono">config/config.php</span> con la instalación marcada como
-            completa, esta ruta queda cerrada. No hay que borrar ninguna carpeta a mano.
-          </span>
-        </div>
+        <?php if (!empty($r['llave_nueva'])): ?>
+          <div class="notice notice--warn">
+            <span class="notice__icon" aria-hidden="true">▲</span>
+            <span>
+              <strong>Se generó una llave de cifrado nueva.</strong> Los documentos de identidad
+              guardados antes no se pueden leer, y las demás cuentas del equipo configurarán otra vez
+              su verificación en dos pasos al entrar, con un código que les llega al correo. Guarda una
+              copia de <span class="mono">config/config.php</span>: es lo único que evita esto la
+              próxima vez.
+            </span>
+          </div>
+        <?php endif; ?>
+
+        <?php if (!empty($r['permiso_abierto'])): ?>
+          <div class="notice notice--danger">
+            <span class="notice__icon" aria-hidden="true">▲</span>
+            <span>
+              <strong>Borra el archivo <span class="mono">config/permitir-reinstalar</span>.</strong>
+              No se pudo borrar solo. Mientras exista, el asistente sigue abierto.
+            </span>
+          </div>
+        <?php else: ?>
+          <div class="notice notice--ok">
+            <span class="notice__icon" aria-hidden="true">✓</span>
+            <span>
+              <strong>El asistente ya no es accesible.</strong> Al existir
+              <span class="mono">config/config.php</span> con la instalación marcada como
+              completa, esta ruta queda cerrada. No hay que borrar ninguna carpeta a mano.
+            </span>
+          </div>
+        <?php endif; ?>
 
         <div class="card">
           <div class="card__head"><span>Siguientes pasos</span></div>
@@ -555,7 +646,11 @@ guiones('instalador.js');
             <div class="steps">
               <?php foreach ([
                 ['01', 'Activa HTTPS', 'En Plesk, «Certificados SSL/TLS» del dominio. Sin TLS, las contraseñas del equipo y los tokens de los carnets viajan en claro por la red del recinto.'],
-                ['02', 'Activa tu segundo factor', 'Al entrar por primera vez se te pedirá vincular la aplicación de autenticación.'],
+                match (true) {
+                  !empty($r['conserva_2fa']) => ['02', 'Entra con tu mismo código', 'Tu verificación en dos pasos se conservó: usa la misma aplicación del teléfono de siempre.'],
+                  !empty($r['rehacer_2fa'])  => ['02', 'Vuelve a configurar tu segundo factor', 'La llave de cifrado cambió y la configuración anterior no se puede leer. Al entrar verás un código QR nuevo: escanéalo y borra de la aplicación la entrada vieja.'],
+                  default                    => ['02', 'Activa tu segundo factor', 'Al entrar por primera vez se te pedirá vincular la aplicación de autenticación.'],
+                },
                 ['03', 'Revisa el correo saliente', 'Sin correo, la plataforma no puede enviar códigos de acceso ni carnets. En Plesk se configura en «Correo».'],
                 ['04', 'Programa las copias de seguridad', 'Una copia diaria durante la semana del evento y una antes de cada actualización.'],
                 ['05', 'Sube el logo y revisa el contraste', 'Desde Identidad del evento. La revisión avisa si el texto quedará ilegible bajo el sol.'],

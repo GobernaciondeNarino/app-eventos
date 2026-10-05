@@ -35,6 +35,12 @@
  *                        de config/config.php, o de config/instalacion.php si
  *                        el asistente llegó al paso 2, o de --bd-*
  *   --forzar             permite reinstalar sobre una instalación terminada
+ *   --llave=…            la llave de cifrado anterior, si config/config.php se
+ *                        perdió y la base ya tiene datos cifrados (es la línea
+ *                        'llave_cifrado' del config.php de la copia de seguridad)
+ *   --llave-nueva        seguir sin la llave anterior: los documentos guardados
+ *                        no se podrán leer y cada cuenta configurará otra vez su
+ *                        verificación en dos pasos
  *
  * Para terminar una instalación interrumpida (las tablas creadas pero la tabla
  * de usuarios vacía, que es lo que deja un asistente cortado a mitad):
@@ -53,7 +59,7 @@ if (PHP_SAPI !== 'cli') {
 
 define('EVENTOS_TIC', true);
 define('RAIZ', dirname(__DIR__));
-define('APP_VERSION', '3.5.0');
+define('APP_VERSION', '3.6.0');
 
 spl_autoload_register(static function (string $clase): void {
     if (!str_starts_with($clase, 'App\\')) {
@@ -74,6 +80,7 @@ require RAIZ . '/app/ayudas.php';
 use App\Esquema;
 use App\Modelos\Evento;
 use App\Modelos\Usuario;
+use App\Nucleo\Actualizacion;
 use App\Nucleo\Bd;
 use App\Nucleo\Config;
 use App\Nucleo\Cripto;
@@ -107,6 +114,43 @@ $opcion = static function (string $nombre, ?string $porDefecto = null) use ($arg
     return $porDefecto;
 };
 $bandera = static fn(string $nombre): bool => in_array("--$nombre", array_slice($argv, 1), true);
+
+/**
+ * La llave de cifrado que va a quedar en la configuración.
+ *
+ * La que ya tenga la configuración, si la tiene. Si no —config/config.php se
+ * perdió—, la de --llave, comprobada contra los datos. Y una nueva solo si la
+ * base no tiene nada cifrado, o si se pidió con --llave-nueva: hasta la 3.5 se
+ * generaba sin preguntar, y con eso las cédulas guardadas y el segundo factor
+ * de todas las cuentas dejaban de poder leerse.
+ */
+$resolverLlave = static function () use ($opcion, $bandera, $morir): string {
+    $actual = (string) Config::obtener('llave_cifrado', '');
+    if ($actual !== '') {
+        return $actual;
+    }
+    $cifrados = Instalacion::datosCifrados();
+    $dada = trim((string) $opcion('llave', ''));
+    if ($dada !== '') {
+        $cruda = base64_decode($dada, true);
+        if ($cruda === false || strlen($cruda) !== 32) {
+            $morir('--llave no tiene el formato de una llave de la plataforma (32 bytes en base64).');
+        }
+        if ($cifrados['muestras'] !== [] && !Instalacion::llaveAbreLosDatos($dada, $cifrados['muestras'])) {
+            $morir('La llave de --llave no abre los datos de esta base. Cópiala del config/config.php que '
+                . 'estaba en el servidor antes de actualizar.');
+        }
+        return $dada;
+    }
+    if ($cifrados['muestras'] !== [] && !$bandera('llave-nueva')) {
+        $morir('La base tiene datos cifrados (' . $cifrados['personas'] . ' documentos, ' . $cifrados['cuentas']
+            . ' cuentas con segundo factor) y no hay llave con que leerlos: falta config/config.php. '
+            . 'Pasa la llave anterior con --llave=… (la línea \'llave_cifrado\' del config.php de la copia '
+            . 'de seguridad), o añade --llave-nueva para seguir sin ella sabiendo que esos datos no se '
+            . 'podrán leer.');
+    }
+    return Cripto::generarLlave();
+};
 
 $generarClave = static function (): string {
     $silabas = ['ba','ca','da','fa','ga','la','ma','na','pa','ra','sa','ta','be','ce','de','fe',
@@ -209,17 +253,23 @@ if ($bandera('reparar')) {
         } else {
             $paso('Actualizando el esquema: ' . $motivo);
             try {
-                $hechas = Esquema::aplicar('actualizar', Esquema::existentes());
+                // Lo mismo que hacen el botón del panel y la actualización
+                // automática: esquema, carpetas, marca y bitácora.
+                $hechas = Actualizacion::aplicar('consola');
             } catch (\Throwable $e) {
                 $morir('No se pudo actualizar el esquema: ' . $e->getMessage());
             }
             foreach ($hechas as $h) {
-                if (in_array($h['accion'], ['creada', 'actualizada'], true)) {
-                    $linea('    · ' . $h['tabla'] . ' ' . $h['accion'] . ': ' . $h['detalle']);
-                }
+                $linea('    · ' . $h['tabla'] . ' ' . $h['accion'] . ': ' . $h['detalle']);
             }
             $bien('Esquema en la versión ' . Esquema::VERSION);
         }
+        // olvidar() antes de volver a preguntar: el diagnóstico se guarda la
+        // primera vez que se pide, y sin esto devolvía el de antes de
+        // actualizar. La consola creaba las tablas que faltaban y a renglón
+        // seguido moría con «Faltan 1 tablas», así que quien actualizaba veía
+        // un error justo cuando todo había salido bien.
+        Instalacion::olvidar();
         $d = Instalacion::diagnostico();
     }
 
@@ -252,7 +302,7 @@ if ($bandera('reparar')) {
         // La llave de cifrado tiene que existir antes de crear a nadie, y si ya
         // había una no se toca: cambiarla vuelve ilegible todo lo guardado.
         if ((string) Config::obtener('llave_cifrado', '') === '') {
-            Config::establecerEnMemoria(['llave_cifrado' => Cripto::generarLlave()] + Config::todo());
+            Config::establecerEnMemoria(['llave_cifrado' => $resolverLlave()] + Config::todo());
         }
 
         $paso('Creando la cuenta administradora');
@@ -300,8 +350,8 @@ if ($bandera('reparar')) {
     /* ---- Y por último la configuración -------------------------------- */
 
     $paso('Escribiendo config/config.php');
-    $configuracion = ['instalado' => true, 'version' => APP_VERSION] + Config::todo() + [
-        'llave_cifrado'      => Cripto::generarLlave(),
+    $configuracion = ['instalado' => true, 'version' => APP_VERSION, 'llave_cifrado' => $resolverLlave()]
+        + Config::todo() + [
         'zona_horaria'       => 'America/Bogota',
         'url_base'           => rtrim((string) $opcion('url', ''), '/'),
         'correo_remitente'   => 'no-responder@localhost',
@@ -450,6 +500,13 @@ if ($modo === 'limpio' && $existentes && !$bandera('forzar')) {
         . 'Usa --modo=actualizar para conservarlas, o añade --forzar si de verdad quieres borrarlas.');
 }
 
+// La llave se decide antes de tocar el esquema: si falta y la base tiene datos
+// cifrados, es mejor parar aquí que a mitad. En modo limpio los datos se borran,
+// así que no hay nada que proteger.
+$llave = $modo === 'limpio'
+    ? ((string) Config::obtener('llave_cifrado', '') ?: Cripto::generarLlave())
+    : $resolverLlave();
+
 $paso('Aplicando el esquema en modo ' . $modo . ' (' . count($existentes) . ' tablas presentes)');
 try {
     $hechas = Esquema::aplicar($modo, $existentes);
@@ -460,7 +517,6 @@ $bien(count($hechas) . ' operaciones sobre el esquema · ' . count(Esquema::nomb
 
 /* ---- Configuración en memoria, para que lo demás pueda escribir ------- */
 
-$llave = (string) Config::obtener('llave_cifrado', '') ?: Cripto::generarLlave();
 $configuracion = [
     'instalado'        => true,
     'version'          => APP_VERSION,

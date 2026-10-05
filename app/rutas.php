@@ -26,6 +26,7 @@ use App\Controladores\Acceso;
 use App\Controladores\Admin;
 use App\Controladores\Carnet;
 use App\Controladores\Contactos;
+use App\Controladores\Cuenta;
 use App\Controladores\Escaneo;
 use App\Controladores\Instalador;
 use App\Controladores\Medios;
@@ -129,6 +130,10 @@ $enrutador->ambos('/admin/clave', [Acceso::class, 'cambiarClave']);
 
 $enrutador->get('/admin', [Admin::class, 'panel'], 'admin:consulta');
 
+// «Configuración»: la cuenta propia. Sobre todo, restablecer el código QR de la
+// verificación en dos pasos sin depender de alguien con acceso al servidor.
+$enrutador->ambos('/admin/cuenta', [Cuenta::class, 'ver'], 'admin:consulta');
+
 // Aplica al esquema lo que falte para esta versión del código. Solo agrega
 // tablas y columnas; nunca borra. Ver Esquema::revisionPendiente().
 $enrutador->post('/admin/actualizar-esquema', [Admin::class, 'actualizarEsquema'], 'admin:administrador');
@@ -166,6 +171,7 @@ $enrutador->get('/admin/organizadores', [Admin::class, 'organizadores'], 'admin:
 $enrutador->post('/admin/organizadores/crear', [Admin::class, 'crearUsuario'], 'admin:administrador');
 $enrutador->post('/admin/organizadores/estado', [Admin::class, 'cambiarEstadoUsuario'], 'admin:administrador');
 $enrutador->post('/admin/organizadores/rol', [Admin::class, 'cambiarRolUsuario'], 'admin:administrador');
+$enrutador->post('/admin/organizadores/segundo-factor', [Admin::class, 'restablecerSegundoFactor'], 'admin:administrador');
 
 $enrutador->get('/admin/eventos', [Admin::class, 'eventos'], 'admin:administrador');
 $enrutador->post('/admin/eventos/crear', [Admin::class, 'crearEvento'], 'admin:administrador');

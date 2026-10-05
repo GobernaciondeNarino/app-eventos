@@ -71,8 +71,19 @@ $permisos = [
                 <span class="tag <?= $u['estado'] === 'activo' ? 'tag--ok' : 'tag--danger' ?>">
                   <?= $u['estado'] === 'activo' ? 'Activo' : 'Suspendido' ?>
                 </span>
-                <?php if (!Usuario::tieneSegundoFactor($u) && $u['rol'] === 'administrador'): ?>
+                <?php $estado2fa = Usuario::estadoSegundoFactor($u); ?>
+                <?php if ($estado2fa === 'ilegible'): ?>
+                  <span class="tag tag--danger" title="La configuración guardada no se puede leer con la llave actual">2FA ilegible</span>
+                <?php elseif (!Usuario::tieneSegundoFactor($u) && $u['rol'] === 'administrador'): ?>
                   <span class="tag tag--danger" title="Todavía no ha activado el segundo factor">Sin 2FA</span>
+                <?php endif; ?>
+                <?php if ((int) $u['id'] !== (int) $usuario['id'] && $estado2fa !== 'ninguno'): ?>
+                  <form method="post" action="<?= e(u('/admin/organizadores/segundo-factor')) ?>"
+                        data-confirmar="Se quitará la verificación en dos pasos de <?= e($u['nombre']) ?> y se cerrarán sus sesiones. Al entrar con su contraseña escaneará un código QR nuevo. ¿Continuar?">
+                    <?= testigo() ?>
+                    <input type="hidden" name="usuario" value="<?= (int) $u['id'] ?>">
+                    <button class="btn btn--sm" type="submit" title="Para quien perdió el teléfono">Restablecer 2FA</button>
+                  </form>
                 <?php endif; ?>
                 <?php if ((int) $u['id'] !== (int) $usuario['id']): ?>
                   <form method="post" action="<?= e(u('/admin/organizadores/estado')) ?>">

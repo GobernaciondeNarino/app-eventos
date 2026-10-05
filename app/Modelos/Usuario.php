@@ -207,12 +207,54 @@ final class Usuario
        Segundo factor
        ===================================================================== */
 
+    /**
+     * Guarda un secreto nuevo, todavía sin confirmar.
+     *
+     * Empieza de cero el último código aceptado: era del secreto anterior. El
+     * desfase aprendido se conserva, porque es del reloj del servidor y no del
+     * secreto.
+     */
     public static function guardarSecretoTotp(int $id, string $secreto): void
     {
-        Bd::ejecutar('UPDATE {usuario} SET totp_secreto = ?, totp_confirmado = 0 WHERE id = ?', [
-            Cripto::cifrar($secreto),
-            $id,
-        ]);
+        $columnas = ['totp_secreto = ?', 'totp_confirmado = 0'];
+        $valores = [Cripto::cifrar($secreto)];
+        if (self::tieneColumna('totp_ultimo')) {
+            $columnas[] = 'totp_ultimo = 0';
+        }
+        $valores[] = $id;
+        Bd::ejecutar('UPDATE {usuario} SET ' . implode(', ', $columnas) . ' WHERE id = ?', $valores);
+    }
+
+    /**
+     * Deja activo un secreto que se acaba de confirmar con un código.
+     *
+     * Ese código queda consumido —no sirve para entrar después— y el desfase
+     * con que cuadró queda aprendido.
+     */
+    public static function activarSecretoTotp(int $id, string $secreto, int $intervalo, int $deriva): void
+    {
+        $columnas = ['totp_secreto = ?', 'totp_confirmado = 1'];
+        $valores = [Cripto::cifrar($secreto)];
+        if (self::tieneColumna('totp_ultimo')) {
+            $columnas[] = 'totp_ultimo = ?';
+            $valores[] = $intervalo;
+        }
+        if (self::tieneColumna('totp_deriva')) {
+            $columnas[] = 'totp_deriva = ?';
+            $valores[] = $deriva;
+        }
+        $valores[] = $id;
+        Bd::ejecutar('UPDATE {usuario} SET ' . implode(', ', $columnas) . ' WHERE id = ?', $valores);
+    }
+
+    /** Quita el segundo factor. La cuenta tendrá que volver a configurarlo. */
+    public static function quitarSegundoFactor(int $id): void
+    {
+        $columnas = ['totp_secreto = NULL', 'totp_confirmado = 0'];
+        if (self::tieneColumna('totp_ultimo')) {
+            $columnas[] = 'totp_ultimo = 0';
+        }
+        Bd::ejecutar('UPDATE {usuario} SET ' . implode(', ', $columnas) . ' WHERE id = ?', [$id]);
     }
 
     public static function secretoTotp(array $usuario): string
@@ -233,27 +275,110 @@ final class Usuario
     }
 
     /**
-     * Comprueba el código del segundo factor y lo consume.
+     * En qué está el segundo factor de la cuenta.
+     *
+     *   'ninguno'    no lo ha configurado
+     *   'pendiente'  empezó el alta y no la confirmó
+     *   'activo'     configurado y legible
+     *   'ilegible'   configurado, pero el secreto no se puede descifrar
+     *
+     * El último caso es el que había detrás del «error de reloj» después de
+     * algunas actualizaciones. Si config/config.php se pierde y se vuelve a
+     * pasar por el asistente, la llave de cifrado es otra, el secreto guardado
+     * ya no se puede leer, y todos los códigos se rechazaban con un mensaje que
+     * mandaba a revisar la hora del teléfono. Ahora se reconoce y se dice.
+     */
+    public static function estadoSegundoFactor(array $usuario): string
+    {
+        if (empty($usuario['totp_secreto'])) {
+            return 'ninguno';
+        }
+        if ((int) $usuario['totp_confirmado'] !== 1) {
+            return 'pendiente';
+        }
+        return self::secretoTotp($usuario) === '' ? 'ilegible' : 'activo';
+    }
+
+    /**
+     * Evalúa el código del segundo factor y, si sirve, lo consume.
      *
      * Un código vale hasta noventa segundos con la tolerancia de reloj. Sin
      * consumirlo, quien lo vea por encima del hombro puede usarlo otra vez
      * dentro de esa ventana. Se guarda el intervalo aceptado y no se admite
-     * ninguno anterior ni el mismo (RFC 6238 §5.2).
+     * ninguno anterior ni el mismo (RFC 6238 §5.2). La escritura es la que
+     * decide: si llegan dos envíos del mismo código a la vez, solo uno la
+     * consigue.
+     *
+     * Funciona también con una base que todavía no tiene las columnas del
+     * último código o del desfase: entra sin guardarlos. Antes, con la base de
+     * una versión anterior a la 1.1.0, el código correcto respondía un error
+     * 500, y el administrador se quedaba fuera del panel desde el que se
+     * actualiza la base.
+     *
+     * @param array{intervalo: int, deriva: int, hasta: int}|null $pendiente
+     * @return array{estado: string, intervalo?: int, deriva?: int}
+     *         'ok', 'repetido', 'confirmar', 'no' o 'ilegible'
      */
-    public static function consumirTotp(array $usuario, string $codigo): bool
+    public static function evaluarTotp(array $usuario, string $codigo, ?array $pendiente = null): array
     {
         $secreto = self::secretoTotp($usuario);
         if ($secreto === '') {
-            return false;
+            return ['estado' => 'ilegible'];
         }
 
-        $intervalo = \App\Nucleo\Totp::intervaloValido($secreto, $codigo);
-        if ($intervalo === null || $intervalo <= (int) ($usuario['totp_ultimo'] ?? 0)) {
-            return false;
+        $conUltimo = array_key_exists('totp_ultimo', $usuario);
+        $conDeriva = array_key_exists('totp_deriva', $usuario);
+
+        $resultado = \App\Nucleo\Totp::evaluar(
+            $secreto,
+            $codigo,
+            $conDeriva ? (int) $usuario['totp_deriva'] : 0,
+            $conUltimo ? (int) $usuario['totp_ultimo'] : 0,
+            $pendiente
+        );
+        if ($resultado['estado'] !== 'ok' || !$conUltimo) {
+            return $resultado;
         }
 
-        Bd::ejecutar('UPDATE {usuario} SET totp_ultimo = ? WHERE id = ?', [$intervalo, $usuario['id']]);
-        return true;
+        $columnas = ['totp_ultimo = ?'];
+        $valores = [$resultado['intervalo']];
+        if ($conDeriva) {
+            $columnas[] = 'totp_deriva = ?';
+            $valores[] = $resultado['deriva'];
+        }
+        if (!empty($resultado['retroceso'])) {
+            // El teléfono se puso en hora y el intervalo queda por debajo del
+            // último: se guarda igual, pero solo si nadie lo cambió desde que
+            // se leyó la cuenta.
+            array_push($valores, $usuario['id'], (int) $usuario['totp_ultimo']);
+            $donde = 'id = ? AND totp_ultimo = ?';
+        } else {
+            // El último guardado se respeta salvo que sea imposible —más allá
+            // de lo que la búsqueda alcanza—, el mismo criterio de Totp::evaluar().
+            $imposible = intdiv(time(), 30) + \App\Nucleo\Totp::BUSQUEDA;
+            array_push($valores, $usuario['id'], $resultado['intervalo'], $imposible);
+            $donde = 'id = ? AND (totp_ultimo < ? OR totp_ultimo > ?)';
+        }
+
+        $cambiadas = Bd::ejecutar(
+            'UPDATE {usuario} SET ' . implode(', ', $columnas) . ' WHERE ' . $donde,
+            $valores
+        )->rowCount();
+
+        return $cambiadas === 1 ? $resultado : ['estado' => 'repetido'];
+    }
+
+    /** Compatibilidad: true si el código sirve y quedó consumido. */
+    public static function consumirTotp(array $usuario, string $codigo): bool
+    {
+        return self::evaluarTotp($usuario, $codigo)['estado'] === 'ok';
+    }
+
+    /** ¿Tiene la tabla esta columna? Para no romper con una base sin actualizar. */
+    private static function tieneColumna(string $columna): bool
+    {
+        static $conocidas = [];
+        return $conocidas[$columna] ??= Bd::existeColumna('usuario', $columna);
     }
 
     /**

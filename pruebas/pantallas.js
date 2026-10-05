@@ -31,7 +31,8 @@ const ASISTENTE = 'mzambrano@narino.gov.co';
 const PUBLICAS = ['/', '/registro', '/entrar/crear', '/agenda', '/entrar', '/admin/entrar'];
 const ASISTENTE_RUTAS = ['/carnet', '/checkin', '/contactos'];
 const ADMIN_RUTAS = ['/admin', '/admin/escaner', '/admin/registros', '/admin/qr-dias',
-                     '/admin/expositores', '/admin/organizadores', '/admin/eventos', '/admin/identidad', '/admin/autenticacion'];
+                     '/admin/expositores', '/admin/organizadores', '/admin/eventos', '/admin/identidad', '/admin/autenticacion',
+                     '/admin/cuenta'];
 
 let fallos = 0;
 

@@ -1,6 +1,13 @@
 <?php
-/** Alta del segundo factor. @var string $secreto @var string $qr @var array $errores */
+/**
+ * Alta del segundo factor.
+ *
+ * @var string $secreto @var string $qr @var array $errores @var array $avisos @var int $horaServidor
+ */
 defined('EVENTOS_TIC') || exit;
+
+guiones('segundo-factor.js');
+$avisos = $avisos ?? [];
 ?>
 <main class="acceso" id="contenido">
   <div class="acceso__inner" style="max-width:480px">
@@ -33,6 +40,12 @@ defined('EVENTOS_TIC') || exit;
       <?= testigo() ?>
       <div class="card__head"><span>2 · Confirma que funciona</span></div>
       <div class="card__body stack stack--4">
+        <?php foreach ($avisos as $texto): ?>
+          <div class="notice notice--warn" role="status">
+            <span class="notice__icon" aria-hidden="true">i</span>
+            <span><?= e($texto) ?></span>
+          </div>
+        <?php endforeach; ?>
         <?php if (isset($errores['codigo'])): ?>
           <div class="notice notice--danger">
             <span class="notice__icon" aria-hidden="true">▲</span>
@@ -41,13 +54,20 @@ defined('EVENTOS_TIC') || exit;
         <?php endif; ?>
 
         <div class="field">
-          <label class="label" for="codigo">Código que muestra la aplicación</label>
+          <label class="label" for="codigo"><?= $avisos ? 'El código siguiente que muestra la aplicación' : 'Código que muestra la aplicación' ?></label>
           <input class="input campo-otp" id="codigo" name="codigo" inputmode="numeric"
                  maxlength="6" pattern="[0-9]{6}" autocomplete="one-time-code"
                  placeholder="000000" autofocus required>
         </div>
 
         <button class="btn btn--primary btn--block btn--lg" type="submit">Activar y entrar</button>
+
+        <?php if (isset($horaServidor)): ?>
+          <p class="help" data-hora-servidor="<?= (int) $horaServidor ?>">
+            Hora de este servidor: <span class="mono"><?= e(date('H:i:s', (int) $horaServidor)) ?></span>.
+          </p>
+          <p class="help" data-reloj-aviso hidden></p>
+        <?php endif; ?>
       </div>
     </form>
 

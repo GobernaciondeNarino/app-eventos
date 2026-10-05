@@ -483,6 +483,15 @@ final class Acceso
                 ]);
 
                 if (Usuario::tieneSegundoFactor($usuario)) {
+                    // Que quede escrito dónde mirar: si el secreto no se puede
+                    // descifrar, la llave de cifrado de la instalación cambió, y
+                    // eso afecta a todas las cuentas y a las cédulas guardadas.
+                    if (Usuario::estadoSegundoFactor($usuario) === 'ilegible') {
+                        \App\Nucleo\Registro::aviso('El segundo factor de una cuenta no se puede descifrar con '
+                            . 'la llave actual. ¿Se perdió config/config.php y se generó una llave nueva?',
+                            ['usuario_id' => (int) $usuario['id']]);
+                        Bitacora::registrar('segundo_factor_ilegible', 'usuario', (int) $usuario['id']);
+                    }
                     Respuesta::redirigir('/admin/verificar');
                 }
 
@@ -512,6 +521,24 @@ final class Acceso
         ]);
     }
 
+    /**
+     * Segundo paso del acceso del equipo: el código de la aplicación.
+     *
+     * Hasta la 3.5 había una sola respuesta para todo lo que podía salir mal
+     * —«el código no coincide, revisa el reloj del teléfono»— y casi nunca era
+     * eso. Ahora cada causa tiene la suya:
+     *
+     *   · el código ya se usó (dos entradas seguidas en los mismos treinta
+     *     segundos, lo normal después de que una actualización cierra las
+     *     sesiones);
+     *   · el reloj del servidor está corrido: se detecta, se pide el código
+     *     siguiente para confirmarlo y el desfase queda aprendido;
+     *   · la configuración guardada no se puede leer porque la llave de
+     *     cifrado cambió: se dice, y se ofrece entrar con un código al correo.
+     *
+     * El código por correo es también el respaldo para quien perdió el
+     * teléfono. Llega después de la contraseña, nunca en su lugar.
+     */
     public function verificarSegundoFactor(Peticion $peticion): void
     {
         $sesion = Sesion::actual('admin');
@@ -529,36 +556,232 @@ final class Acceso
             Respuesta::redirigir(Url::destinoSeguro((string) ($datos['destino'] ?? '/admin'), '/admin'));
         }
 
+        $estado2fa = Usuario::estadoSegundoFactor($usuario);
+        $porCorreo = $this->respaldoPorCorreo();
+        $correo = (string) $usuario['correo'];
         $errores = [];
+        $avisos = [];
+
         if ($peticion->esPost()) {
-            Limite::exigir('acceso_admin', 'totp:' . $usuario['correo']);
-            $codigo = $peticion->campo('codigo');
+            $accion = $peticion->campo('accion', 'codigo');
 
-            if (Usuario::consumirTotp($usuario, $codigo)) {
-                Limite::limpiar('acceso_admin', 'totp:' . $usuario['correo']);
-                // Rotar tras superar el segundo factor: la sesión que existía
-                // antes de completar la identificación no debe seguir sirviendo.
-                Sesion::rotar('admin');
-                Sesion::guardarDatos('admin', ['pendiente_2fa' => false, 'destino' => $datos['destino'] ?? '/admin']);
+            if ($accion === 'enviar_correo' && $porCorreo) {
+                Limite::exigir('envio_codigo', 'admin:' . $correo);
+                Limite::registrar('envio_codigo', 'admin:' . $correo);
 
-                Usuario::registrarAcceso((int) $usuario['id']);
-                Bitacora::registrar('acceso_correcto', 'usuario', (int) $usuario['id'], ['con_2fa' => true]);
-                Respuesta::redirigir(Url::destinoSeguro((string) ($datos['destino'] ?? '/admin'), '/admin'), 'Sesión iniciada.');
+                $codigo = Cripto::codigoNumerico(6);
+                $evento = App::eventoActivo();
+                if (Correo::codigoSegundoFactor($correo, (string) $usuario['nombre'], $codigo,
+                        (string) ($evento['nombre'] ?? 'Eventos TIC'))) {
+                    $datos['correo_2fa'] = [
+                        'huella' => $this->huellaCodigoCorreo($codigo, (string) $sesion['id']),
+                        'hasta'  => time() + 600,
+                        'fallos' => 0,
+                    ];
+                    Sesion::guardarDatos('admin', $datos);
+                    Bitacora::registrar('segundo_factor_correo', 'usuario', (int) $usuario['id']);
+                    $avisos[] = 'Te enviamos un código de seis dígitos a ' . $this->correoOculto($correo)
+                        . '. Vence en diez minutos.';
+                } else {
+                    \App\Nucleo\Registro::error('No se pudo enviar el código de respaldo del segundo factor', [
+                        'usuario_id' => (int) $usuario['id'],
+                        'detalle'    => Correo::ultimoError(),
+                    ]);
+                    $errores['correo'] = 'No se pudo enviar el correo en este momento. Vuelve a intentarlo en '
+                        . 'unos minutos, o pide a quien administra el servidor que revise el correo saliente.';
+                }
+            } elseif ($accion === 'codigo_correo' && $porCorreo) {
+                Limite::exigir('codigo_correo', 'admin:' . $correo);
+                $guardado = $datos['correo_2fa'] ?? null;
+                $codigo = preg_replace('/\D/', '', $peticion->campo('codigo_correo')) ?? '';
+
+                if (!is_array($guardado) || (int) ($guardado['hasta'] ?? 0) < time()) {
+                    unset($datos['correo_2fa']);
+                    Sesion::guardarDatos('admin', $datos);
+                    $errores['codigo_correo'] = 'Ese código venció o no se ha pedido. Pide uno nuevo.';
+                } elseif (!hash_equals((string) $guardado['huella'],
+                        $this->huellaCodigoCorreo($codigo, (string) $sesion['id']))) {
+                    Limite::registrarFallo('codigo_correo', 'admin:' . $correo);
+                    Bitacora::registrar('acceso_fallido', 'seguridad', (int) $usuario['id'], ['paso' => '2fa correo']);
+                    $guardado['fallos'] = (int) $guardado['fallos'] + 1;
+                    if ($guardado['fallos'] >= 5) {
+                        unset($datos['correo_2fa']);
+                        $errores['codigo_correo'] = 'El código no coincide y ya no sirve. Pide uno nuevo.';
+                    } else {
+                        $datos['correo_2fa'] = $guardado;
+                        $errores['codigo_correo'] = 'El código no coincide. Revisa el último correo que llegó.';
+                    }
+                    Sesion::guardarDatos('admin', $datos);
+                } else {
+                    Limite::limpiar('codigo_correo', 'admin:' . $correo);
+                    Limite::limpiar('acceso_admin', 'totp:' . $correo);
+
+                    // Con la configuración ilegible no hay nada que conservar: se
+                    // quita, y la cuenta configura la aplicación otra vez.
+                    if ($estado2fa === 'ilegible') {
+                        Usuario::quitarSegundoFactor((int) $usuario['id']);
+                        Bitacora::registrar('segundo_factor_retirado', 'usuario', (int) $usuario['id'],
+                            ['motivo' => 'ilegible']);
+                    }
+
+                    $this->completarSegundoFactor($usuario, $datos, 'correo');
+
+                    if ($estado2fa === 'ilegible' && Usuario::exigeSegundoFactor($usuario)
+                        && Config::obtener('exigir_2fa_admin', true)) {
+                        Respuesta::redirigir('/admin/activar-2fa',
+                            'Entraste con el código del correo. Escanea el código nuevo con tu aplicación.');
+                    }
+                    Respuesta::redirigir('/admin/cuenta', 'Entraste con un código enviado a tu correo. Si la '
+                        . 'aplicación del teléfono no te funciona, restablécela aquí.');
+                }
+            } elseif ($estado2fa === 'ilegible') {
+                // El formulario del código no se muestra en este caso; si llega
+                // igual, la respuesta es la misma explicación.
+                $errores['codigo'] = $this->mensajeIlegible($porCorreo);
+            } else {
+                Limite::exigir('acceso_admin', 'totp:' . $correo);
+                $pendiente = $this->resincronizacion($datos);
+                $resultado = Usuario::evaluarTotp($usuario, $peticion->campo('codigo'), $pendiente);
+
+                if ($resultado['estado'] === 'ok') {
+                    Limite::limpiar('acceso_admin', 'totp:' . $correo);
+                    if ($pendiente !== null
+                        && abs($resultado['deriva'] - (int) $pendiente['deriva']) <= Totp::VENTANA) {
+                        Bitacora::registrar('segundo_factor_resincronizado', 'usuario', (int) $usuario['id'], [
+                            'desfase_segundos' => $resultado['deriva'] * 30,
+                        ]);
+                    }
+                    $this->completarSegundoFactor($usuario, $datos, 'aplicacion');
+                    Respuesta::redirigir(Url::destinoSeguro((string) ($datos['destino'] ?? '/admin'), '/admin'),
+                        'Sesión iniciada.');
+                }
+
+                Limite::registrarFallo('acceso_admin', 'totp:' . $correo);
+
+                if ($resultado['estado'] === 'confirmar') {
+                    $datos['totp_resincronizar'] = [
+                        'intervalo' => $resultado['intervalo'],
+                        'deriva'    => $resultado['deriva'],
+                        'hasta'     => time() + Totp::PLAZO_CONFIRMAR,
+                        'retroceso' => !empty($resultado['retroceso']),
+                    ];
+                    Sesion::guardarDatos('admin', $datos);
+                    if (!empty($resultado['retroceso'])) {
+                        $avisos[] = 'El código es correcto, pero es anterior al último con que se entró: parece '
+                            . 'que la hora del teléfono se corrigió. Para confirmar que eres tú, espera a que la '
+                            . 'aplicación muestre el código siguiente y escríbelo.';
+                    } else {
+                        [$cuanto, $hacia] = Totp::describirDeriva($resultado['deriva']);
+                        \App\Nucleo\Registro::aviso('El reloj del servidor no coincide con el de los teléfonos: va '
+                            . $cuanto . ' ' . $hacia . '. Conviene activar la hora automática (NTP) del servidor.');
+                        $avisos[] = 'El código es correcto, pero la hora de este servidor no coincide con la de tu '
+                            . 'teléfono: va ' . $cuanto . ' ' . $hacia . '. Para confirmar que eres tú, espera a que '
+                            . 'la aplicación muestre el código siguiente y escríbelo.';
+                    }
+                } elseif ($resultado['estado'] === 'repetido') {
+                    $errores['codigo'] = 'Ese código ya se usó para entrar. Espera a que la aplicación muestre '
+                        . 'el siguiente —cambia cada treinta segundos— y escríbelo.';
+                } else {
+                    Bitacora::registrar('acceso_fallido', 'seguridad', (int) $usuario['id'], ['paso' => '2fa']);
+                    $errores['codigo'] = 'El código no coincide. Escribe el que muestra ahora la aplicación'
+                        . ($porCorreo ? '; si sigue sin funcionar, entra con un código enviado a tu correo.' : '.');
+                }
             }
-
-            Limite::registrarFallo('acceso_admin', 'totp:' . $usuario['correo']);
-            Bitacora::registrar('acceso_fallido', 'seguridad', (int) $usuario['id'], ['paso' => '2fa']);
-            $errores['codigo'] = 'El código no coincide. Revisa que el reloj del teléfono esté en hora.';
         }
 
+        $correo2fa = $datos['correo_2fa'] ?? null;
         Respuesta::vista('admin/verificar', [
-            'titulo'       => 'Verificación en dos pasos',
-            'errores'      => $errores,
-            'sinPlantilla' => true,
+            'titulo'        => 'Verificación en dos pasos',
+            'errores'       => $errores,
+            'avisos'        => $avisos,
+            'ilegible'      => $estado2fa === 'ilegible',
+            'mensajeIlegible' => $this->mensajeIlegible($porCorreo),
+            'porCorreo'     => $porCorreo,
+            'correoOculto'  => $this->correoOculto($correo),
+            'correoEnviado' => is_array($correo2fa) && (int) ($correo2fa['hasta'] ?? 0) >= time(),
+            'resincronizando' => $this->resincronizacion($datos) !== null,
+            'horaServidor'  => time(),
+            'sinPlantilla'  => true,
         ]);
     }
 
-    /** Alta del segundo factor: se muestra el QR y se confirma con un código. */
+    /** Termina el acceso: la sesión deja de estar a medias. */
+    private function completarSegundoFactor(array $usuario, array $datos, string $via): void
+    {
+        // Rotar tras superar el segundo factor: la sesión que existía antes de
+        // completar la identificación no debe seguir sirviendo. Y los datos se
+        // escriben de nuevo enteros: el código del correo y la resincronización
+        // a medias no tienen por qué sobrevivir al acceso.
+        Sesion::rotar('admin');
+        Sesion::guardarDatos('admin', ['pendiente_2fa' => false, 'destino' => $datos['destino'] ?? '/admin']);
+        Usuario::registrarAcceso((int) $usuario['id']);
+        Bitacora::registrar('acceso_correcto', 'usuario', (int) $usuario['id'], ['con_2fa' => true, 'via' => $via]);
+    }
+
+    /** La resincronización en curso, si no ha vencido. */
+    private function resincronizacion(array $datos): ?array
+    {
+        $pendiente = $datos['totp_resincronizar'] ?? null;
+        if (!is_array($pendiente) || (int) ($pendiente['hasta'] ?? 0) < time()) {
+            return null;
+        }
+        return [
+            'intervalo' => (int) $pendiente['intervalo'],
+            'deriva'    => (int) $pendiente['deriva'],
+            'hasta'     => (int) $pendiente['hasta'],
+            'retroceso' => !empty($pendiente['retroceso']),
+        ];
+    }
+
+    /**
+     * ¿Se ofrece entrar con un código por correo?
+     *
+     * Solo si hay correo saliente configurado, y se puede apagar con
+     * 'respaldo_2fa_correo' => false para quien prefiera que el segundo factor
+     * sea solo la aplicación.
+     */
+    private function respaldoPorCorreo(): bool
+    {
+        return (bool) Config::obtener('respaldo_2fa_correo', true) && Correo::disponible();
+    }
+
+    private function mensajeIlegible(bool $porCorreo): string
+    {
+        return 'La configuración de tu verificación en dos pasos no se puede leer en este servidor: la '
+            . 'llave de cifrado de la instalación cambió. No es un problema del reloj ni del teléfono. '
+            . ($porCorreo
+                ? 'Entra con un código que te llega al correo y vuelve a configurar la aplicación.'
+                : 'Quien administra el servidor puede restablecerla con «php herramientas/cuenta.php '
+                  . 'sin-2fa --correo=…», u otra persona administradora desde «Organizadores».');
+    }
+
+    /**
+     * El código del correo no se guarda tal cual. Va con la llave de la
+     * instalación y el identificador de la sesión: no sirve en otra.
+     */
+    private function huellaCodigoCorreo(string $codigo, string $sesionId): string
+    {
+        return hash_hmac('sha256', 'correo-2fa|' . $codigo, $this->llave() . '|' . $sesionId);
+    }
+
+    /** «a•••o@narino.gov.co»: lo justo para reconocer el buzón. */
+    private function correoOculto(string $correo): string
+    {
+        [$usuario, $dominio] = array_pad(explode('@', $correo, 2), 2, '');
+        $largo = mb_strlen($usuario);
+        $visible = $largo <= 2
+            ? mb_substr($usuario, 0, 1) . '•'
+            : mb_substr($usuario, 0, 1) . str_repeat('•', min(6, $largo - 2)) . mb_substr($usuario, -1);
+        return $visible . '@' . $dominio;
+    }
+
+    /**
+     * Alta del segundo factor: se muestra el QR y se confirma con un código.
+     *
+     * La confirmación usa la misma evaluación que el acceso. Con el reloj del
+     * servidor corrido más de un minuto, el alta no se podía terminar nunca:
+     * ningún código cuadraba y el mensaje pedía «el siguiente», que tampoco.
+     */
     public function activarSegundoFactor(Peticion $peticion): void
     {
         $sesion = Sesion::actual('admin');
@@ -576,6 +799,7 @@ final class Acceso
 
         $datos = Sesion::datos('admin');
         $errores = [];
+        $avisos = [];
 
         // El secreto se genera una vez y se conserva mientras dura el alta: si
         // se generara en cada carga, el código de la aplicación nunca cuadraría.
@@ -586,8 +810,19 @@ final class Acceso
         }
 
         if ($peticion->esPost()) {
-            if (Totp::verificar($secreto, $peticion->campo('codigo'))) {
-                Usuario::confirmarTotp((int) $usuario['id']);
+            Limite::exigir('acceso_admin', 'totp:' . $usuario['correo']);
+            $pendiente = $this->resincronizacion($datos);
+            $resultado = Totp::evaluar(
+                $secreto,
+                $peticion->campo('codigo'),
+                (int) ($usuario['totp_deriva'] ?? 0),
+                0,
+                $pendiente
+            );
+
+            if ($resultado['estado'] === 'ok') {
+                Limite::limpiar('acceso_admin', 'totp:' . $usuario['correo']);
+                Usuario::activarSecretoTotp((int) $usuario['id'], $secreto, $resultado['intervalo'], $resultado['deriva']);
                 Sesion::rotar('admin');
                 Sesion::guardarDatos('admin', ['pendiente_2fa' => false, 'destino' => $datos['destino'] ?? '/admin']);
                 Usuario::registrarAcceso((int) $usuario['id']);
@@ -601,7 +836,24 @@ final class Acceso
                     'Segundo factor activado.'
                 );
             }
-            $errores['codigo'] = 'El código no coincide. Vuelve a intentarlo con el siguiente que muestre la aplicación.';
+
+            Limite::registrarFallo('acceso_admin', 'totp:' . $usuario['correo']);
+            if ($resultado['estado'] === 'confirmar') {
+                $datos['totp_resincronizar'] = [
+                    'intervalo' => $resultado['intervalo'],
+                    'deriva'    => $resultado['deriva'],
+                    'hasta'     => time() + Totp::PLAZO_CONFIRMAR,
+                    'retroceso' => !empty($resultado['retroceso']),
+                ];
+                Sesion::guardarDatos('admin', $datos);
+                [$cuanto, $hacia] = Totp::describirDeriva($resultado['deriva']);
+                $avisos[] = 'El código es correcto, pero la hora de este servidor no coincide con la de tu '
+                    . 'teléfono: va ' . $cuanto . ' ' . $hacia . '. Para confirmarlo, espera el código '
+                    . 'siguiente de la aplicación y escríbelo.';
+            } else {
+                $errores['codigo'] = 'El código no coincide. Revisa que escaneaste el código de esta pantalla '
+                    . 'y escribe el que muestra ahora la aplicación.';
+            }
         }
 
         $evento = App::eventoActivo();
@@ -617,6 +869,8 @@ final class Acceso
             'qr'           => Qr::svg($uri, ['nivel' => 'M', 'silencio' => 2, 'clase' => 'qr',
                                              'titulo' => 'Código para la aplicación de autenticación']),
             'errores'      => $errores,
+            'avisos'       => $avisos,
+            'horaServidor' => time(),
             'sinPlantilla' => true,
         ]);
     }

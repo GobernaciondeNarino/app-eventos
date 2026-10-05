@@ -187,6 +187,51 @@ final class Instalacion
     }
 
     /** Tras crear una cuenta o un evento, el diagnóstico anterior ya no vale. */
+    /**
+     * Lo que hay cifrado en la base: cuántos documentos, cuántas cuentas con
+     * segundo factor, y el dato más reciente de cada clase para probar llaves.
+     *
+     * Lo usan el asistente y la consola antes de escribir una configuración
+     * sin llave: si la base ya tiene datos cifrados, una llave nueva los deja
+     * ilegibles, y eso no puede pasar sin que alguien lo decida.
+     *
+     * @return array{personas: int, cuentas: int, muestras: array<int, string>}
+     */
+    public static function datosCifrados(): array
+    {
+        $vacio = ['personas' => 0, 'cuentas' => 0, 'muestras' => []];
+        try {
+            $personas = Bd::existeTabla('persona') ? (int) Bd::valor(
+                "SELECT COUNT(*) FROM {persona} WHERE documento_cifrado IS NOT NULL AND documento_cifrado <> ''"
+            ) : 0;
+            $cuentas = Bd::existeTabla('usuario') ? (int) Bd::valor(
+                "SELECT COUNT(*) FROM {usuario} WHERE totp_secreto IS NOT NULL AND totp_secreto <> ''"
+            ) : 0;
+            // Los más recientes: si alguna vez se cambió la llave, son los que
+            // están cifrados con la última.
+            $muestras = array_values(array_filter([
+                $personas ? (string) Bd::valor("SELECT documento_cifrado FROM {persona}
+                     WHERE documento_cifrado IS NOT NULL AND documento_cifrado <> '' ORDER BY id DESC LIMIT 1") : '',
+                $cuentas ? (string) Bd::valor("SELECT totp_secreto FROM {usuario}
+                     WHERE totp_secreto IS NOT NULL AND totp_secreto <> '' ORDER BY id DESC LIMIT 1") : '',
+            ]));
+        } catch (\Throwable) {
+            return $vacio;
+        }
+        return ['personas' => $personas, 'cuentas' => $cuentas, 'muestras' => $muestras];
+    }
+
+    /** ¿Abre esta llave alguno de los datos cifrados de la base? */
+    public static function llaveAbreLosDatos(string $llave, array $muestras): bool
+    {
+        foreach ($muestras as $muestra) {
+            if (Cripto::llaveAbre($llave, $muestra)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static function olvidar(): void
     {
         self::$cache = null;

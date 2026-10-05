@@ -45,6 +45,15 @@ final class Cripto
         return self::$llave = $cruda;
     }
 
+    /**
+     * Olvida la llave leída. Hace falta cuando la configuración en memoria
+     * cambia a mitad de la petición, como en el último paso del asistente.
+     */
+    public static function olvidarLlave(): void
+    {
+        self::$llave = null;
+    }
+
     public static function hayLlave(): bool
     {
         $cruda = base64_decode((string) Config::obtener('llave_cifrado', ''), true);
@@ -78,7 +87,33 @@ final class Cripto
         if ($paquete === '') {
             return '';
         }
-        $llave = self::llave();
+        return self::descifrarCon($paquete, self::llave());
+    }
+
+    /**
+     * ¿Abre esta llave un dato cifrado?
+     *
+     * Para el asistente: cuando la base ya tiene datos y config/config.php no
+     * está, la llave con que se cifraron solo la puede dar quien guardó una
+     * copia del archivo. Antes de aceptarla se prueba contra un dato de verdad;
+     * aceptar una equivocada sería peor que no tener ninguna.
+     */
+    public static function llaveAbre(string $llaveCodificada, string $paquete): bool
+    {
+        $cruda = base64_decode(trim($llaveCodificada), true);
+        if ($cruda === false || strlen($cruda) !== 32 || $paquete === '') {
+            return false;
+        }
+        try {
+            self::descifrarCon($paquete, $cruda);
+            return true;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    private static function descifrarCon(string $paquete, string $llave): string
+    {
         $version = $paquete[0];
         $resto = substr($paquete, 1);
 

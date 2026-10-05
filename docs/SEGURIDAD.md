@@ -317,6 +317,71 @@ una sola dirección, y un tope bajo bloquearía al décimo asistente que se regi
 La clave del contador se guarda como HMAC. Si se guardara en claro, la tabla de intentos
 sería una lista de correos de personas que fallaron el acceso, útil para quien la lea.
 
+### El segundo factor cuando el código correcto no entra
+
+Fue el problema más visible en producción: después de algunas actualizaciones, el código de
+seis dígitos del teléfono se rechazaba siempre, con un mensaje que mandaba a revisar el
+reloj. Detrás había cuatro causas distintas con una sola respuesta. Desde la 3.6 cada una
+tiene la suya.
+
+**El secreto ya no se podía leer.** Si `config/config.php` se perdía —se borra la carpeta
+para subir la versión nueva— y se volvía a pasar por el asistente, se generaba otra llave de
+cifrado sin avisar, y con ella el secreto guardado de cada cuenta quedaba ilegible. Ahora:
+
+- El asistente y la consola no cambian la llave en silencio. Si la base tiene datos
+  cifrados y la configuración no trae llave, piden la anterior y la **prueban contra un dato
+  real** antes de aceptarla. La llave pegada viaja al mismo archivo temporal que la
+  contraseña de la base (`config/instalacion.php`), nunca a la cookie del proceso, y ese
+  archivo se borra al terminar. Seguir sin ella exige marcar una casilla (o `--llave-nueva`).
+- Una cuenta cuyo secreto no se puede descifrar se reconoce (`Usuario::estadoSegundoFactor()`
+  devuelve `ilegible`): la pantalla lo dice tal cual, se anota en la bitácora y en el
+  registro de errores, y se ofrece entrar con un código al correo. No se le deja entrar solo
+  con la contraseña: el secreto ilegible sigue contando como segundo factor configurado.
+
+**El reloj del servidor corrido.** El teléfono pone la hora solo; el servidor no siempre. Con
+más de un minuto de diferencia, la tolerancia de ±30 s no alcanzaba y ningún código entraba
+nunca. Ahora se aplica la resincronización del RFC 6238 (§6):
+
+- Primero se busca cerca de la hora del servidor y cerca del desfase aprendido para esa
+  cuenta (`usuario.totp_deriva`). Es lo normal, y entra.
+- Si no cuadra, se busca hasta doce horas a cada lado —cubre el reloj puesto en hora local
+  como si fuera UTC, cinco horas exactas en Colombia—. Un código que cuadra lejos **no da
+  acceso**: con tantos intervalos abiertos, uno al azar acierta en uno de cada trescientos
+  intentos. Se pide el siguiente, que tiene que caer justo después con el mismo desfase; dos
+  seguidos al azar son una posibilidad en un billón, y el límite de cinco intentos cada
+  quince minutos sigue contando los dos.
+- El desfase confirmado queda aprendido y la vez siguiente se entra a la primera. Se anota
+  en la bitácora, y en el registro se avisa de activar la hora automática del servidor.
+
+**El código repetido.** El último intervalo aceptado no se admite dos veces (RFC 6238 §5.2),
+y la escritura que lo consume es atómica: dos envíos del mismo código a la vez, solo uno
+entra. Pero el rechazo decía «revisa el reloj», y después de una actualización —que cierra
+las sesiones— entrar dos veces en el mismo medio minuto es lo normal. Ahora dice que ya se
+usó y que se espere el siguiente. Si el último aceptado está bastante más adelante que el
+código, no se trata como repetido sino como un teléfono que se puso en hora: se pide el
+siguiente, como en la resincronización. Un código viejo que alguien vio hace rato sigue sin
+servir.
+
+**La base sin la columna.** Con una instalación anterior a la 1.1.0, el código correcto
+respondía 500 porque se escribía en `totp_ultimo`, que no existía. El acceso ahora funciona
+con o sin esa columna, y además la base se pone al día sola en la primera visita.
+
+**El código por correo.** Para quien perdió el teléfono o tiene la configuración ilegible.
+Solo se ofrece **después de la contraseña**, nunca en su lugar, y solo si hay correo
+saliente. Seis dígitos, válidos diez minutos y una sola vez; se guardan como HMAC con la llave
+de la instalación y el identificador de la sesión, así que no sirven en otra sesión. Tope de
+cuatro envíos por hora y de cinco fallos (después, media hora de espera). El mensaje dice qué
+hacer si no fue uno quien lo pidió: alguien tiene la contraseña. Es más débil que la
+aplicación —el buzón tiene su propia contraseña—, así que se puede apagar con
+`'respaldo_2fa_correo' => false`.
+
+**Restablecer el código QR.** En **Configuración**, cada persona genera uno nuevo con su
+contraseña actual —una sesión abierta en un equipo ajeno no basta—. El secreto nuevo espera
+cifrado en la sesión, y **el anterior sigue valiendo hasta que el nuevo se confirma** con un
+código: abandonar a la mitad deja todo como estaba. Al confirmar se cierran las demás
+sesiones de la cuenta, por si el motivo es un teléfono perdido. Una cuenta administradora
+puede además quitárselo a otra desde **Organizadores**; queda en la bitácora.
+
 ### Enumeración de cuentas
 
 El mensaje de error del acceso es único: no distingue entre correo inexistente, contraseña
@@ -670,6 +735,12 @@ son errores fáciles de volver a cometer.
 | El lector de QR no reconocía ningún código | Solo funcionaba colgando de la raíz del dominio |
 | Dos pasaportes distintos se tomaban por el mismo | La normalización del documento quitaba las letras |
 | Quien recibía una clave temporal no podía cambiarla nunca | La marca existía y no la miraba nadie; no había pantalla |
+| Tras algunas actualizaciones, el código correcto del teléfono se rechazaba siempre | Sin `config/config.php`, el asistente generaba otra llave y el secreto ya no se podía leer; el mensaje culpaba al reloj |
+| Con una base anterior a la 1.1.0, el código correcto respondía 500 | Se escribía en una columna que no existía, y el botón que la creaba estaba detrás de ese mismo acceso |
+| Con el reloj del servidor corrido más de un minuto, ningún código entraba | Solo se toleraban ±30 segundos y no había forma de compensar |
+| Entrar dos veces en el mismo medio minuto decía «revisa el reloj» | El código repetido se rechazaba con el mismo mensaje que el equivocado |
+| «Anexar» dejaba la base dada por buena y sin las columnas nuevas | La revisión miraba la versión anotada, no las columnas que hay |
+| Un envío del paso 3 sin modo vaciaba la base | El modo por omisión era la instalación limpia |
 
 ---
 
@@ -735,8 +806,9 @@ conviene decirlo con claridad en la pantalla de privacidad.
 ## 6. Verificación
 
 ```bash
-php pruebas/extremo-a-extremo.php      # 478 comprobaciones sobre un servidor real
+php pruebas/extremo-a-extremo.php      # 515 comprobaciones sobre un servidor real
 php pruebas/instalacion.php            # el asistente, y qué se ve cuando falla
+php pruebas/actualizacion.php          # subir desde la 1.0.0 por cada camino, sin perder nada
 php pruebas/claves.php                 # parámetros de Argon2id y rehash
 php pruebas/smtp.php                   # el cliente SMTP contra un servidor real
 php pruebas/totp.php                   # segundo factor contra el RFC 6238
@@ -768,7 +840,15 @@ Lo que comprueban las de seguridad, concretamente:
 - Nadie puede registrarse sobre el correo de otra persona, ni con sesión ni sin ella.
 - Con el segundo factor a medias no se ve la ficha de acreditación.
 - Un testigo plantado en la cookie no vale mientras haya sesión abierta.
-- El mismo código del segundo factor no sirve dos veces.
+- El mismo código del segundo factor no sirve dos veces, y lo dice así, no culpando al reloj.
+- Con el reloj del servidor corrido, el código correcto se confirma con el siguiente y el
+  desfase queda aprendido; un código viejo ya superado no entra.
+- Con el secreto ilegible, la pantalla lo dice y se entra con un código del correo; ese
+  código vence, sirve una sola vez y solo en la sesión que lo pidió.
+- Restablecer el QR exige la contraseña actual, el anterior vale hasta confirmar el nuevo, y
+  al confirmarlo se cierran las demás sesiones de la cuenta.
+- Sin `config/config.php`, el asistente no cambia la llave en silencio: pide la anterior y
+  rechaza una que no abra los datos.
 - Una cuenta con contraseña puesta por otro no puede trabajar hasta cambiarla.
 - La contraseña de la base sale de la cookie del asistente en el paso 2, no al final.
 - La del administrador no viaja en claro entre pasos: viaja su hash.

@@ -260,7 +260,7 @@ comprobar('y config/config.php sigue sin existir: instalar no ha terminado',
     !is_file($RAIZ . '/config/config.php'));
 
 $navegador->ir('/instalar?paso=3');
-$r = $navegador->ir('/instalar', ['accion' => 'paso3', 'modo' => 'limpio']);
+$r = $navegador->ir('/instalar', ['accion' => 'paso3', 'modo' => 'limpio', 'confirmar_limpio' => '1']);
 comprobar('el paso 3 crea las tablas y pasa al 4', $r['codigo'] === 303 && str_contains($r['destino'], 'paso=4'),
     $r['codigo'] . ' ' . $r['destino']);
 

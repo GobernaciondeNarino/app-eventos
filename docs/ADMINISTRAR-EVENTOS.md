@@ -2,7 +2,7 @@
 
 Qué se puede cambiar una vez creado, quién puede tocar qué, y qué no tiene vuelta atrás:
 eventos y jornadas, las propuestas de los expositores, el perfil Staff, la impresión de
-carnets y la acreditación en la puerta.
+carnets, la acreditación en la puerta, y la verificación en dos pasos del equipo.
 
 Todo lo de aquí está en **Administración → Eventos**, **QR por día**, **Expositores** y
 **Registros**, y exige el rol **administrador** salvo donde se diga otra cosa. Las dos
@@ -347,7 +347,60 @@ personales hecha a mano.
 
 ---
 
-## 8. Antes de abrir al público
+## 8. La verificación en dos pasos del equipo
+
+Las cuentas administradoras entran con contraseña y con el código de seis dígitos de una
+aplicación del teléfono (Google Authenticator, Authy, FreeOTP…). Para operador y consulta es
+opcional.
+
+### 8.1 Cuando el código correcto no entra
+
+Desde la versión 3.6 la pantalla dice cuál es el problema, en vez de mandar siempre a revisar
+el reloj del teléfono:
+
+| Lo que dice | Qué pasó | Qué hacer |
+|---|---|---|
+| «Ese código ya se usó» | Se entró con él hace un momento —lo normal después de una actualización, que cierra las sesiones— | Esperar a que la aplicación muestre el siguiente (cambia cada 30 segundos) |
+| «La hora de este servidor no coincide con la de tu teléfono» | El reloj del servidor está corrido | Escribir el código siguiente: con eso la plataforma confirma y desde ahí compensa sola. Conviene avisar a sistemas para que active la hora automática del servidor |
+| «La configuración de tu verificación en dos pasos no se puede leer» | La llave de cifrado de la instalación cambió | Entrar con un código por correo (abajo) y escanear un QR nuevo |
+| «El código no coincide» | El código es de otra cuenta o de otra entrada de la aplicación | Revisar que sea la entrada de esta plataforma; si no aparece, código por correo |
+
+### 8.2 Entrar con un código por correo
+
+Debajo del campo del código, **«Enviar un código a mi correo»**. Llega un código de seis
+dígitos que vence en diez minutos y sirve una sola vez. Solo se ofrece después de escribir la
+contraseña, nunca en su lugar, y solo si el correo saliente está configurado. Al entrar así,
+la plataforma lleva a **Configuración** para que vuelvas a dejar la aplicación en orden.
+
+Si el mensaje te llega sin haberlo pedido, alguien escribió tu contraseña correcta: cámbiala.
+
+### 8.3 Configuración: restablecer el código QR
+
+**Administración → Configuración**, para todo el equipo. Sirve cuando se cambió de teléfono,
+se borró la aplicación, o el código no funciona:
+
+1. Escribe tu contraseña actual y pulsa **Restablecer: generar un código QR nuevo**.
+2. Escanéalo con la aplicación (o escribe a mano el código que aparece al lado).
+3. Escribe el código que te muestre y confirma.
+
+Hasta que confirmes, **el código anterior sigue valiendo**: si cierras la pestaña a la mitad,
+todo queda como estaba. Al confirmar se cierran tus demás sesiones abiertas. Después, borra de
+la aplicación la entrada vieja de esta cuenta.
+
+Desde ahí mismo se cambia la contraseña.
+
+### 8.4 Si alguien del equipo no puede entrar
+
+Si perdió el teléfono y el código por correo no le llega, una cuenta administradora puede
+quitarle la verificación desde **Organizadores → Restablecer 2FA**. Se le cierran las sesiones
+y, al entrar con su contraseña, escanea un QR nuevo. La tuya propia se restablece en
+Configuración, no desde ahí. Queda en la bitácora.
+
+Por consola, quien tenga acceso al servidor: `php herramientas/cuenta.php sin-2fa --correo=…`.
+
+---
+
+## 9. Antes de abrir al público
 
 Una lista corta para no llevarse sorpresas:
 

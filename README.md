@@ -21,10 +21,10 @@ registra gente, se sella asistencia, se aprueban exposiciones y se exportan repo
 |---|---|
 | **Interfaz** | 20 pantallas, diseño configurable por evento, responsive |
 | **Backend** | PHP 8.1+ con PDO y MySQL/MariaDB, sin framework ni Composer |
-| **Instalación** | Asistente de seis pasos que crea, actualiza o anexa las tablas |
+| **Instalación** | Asistente de seis pasos que crea, actualiza o anexa las tablas. Al subir una versión nueva, la base se pone al día sola en la primera visita |
 | **Autenticación** | Cinco formas de entrar: correo, QR personal, contraseña, WhatsApp y SMS. Se puede crear el acceso con solo correo y contraseña. El equipo, con contraseña y segundo factor |
 | **Códigos QR** | Generador **y lector** propios, verificados uno contra otro y contra una librería de referencia |
-| **Pruebas** | 326 comprobaciones de extremo a extremo, 47 en navegador, y 141 más de QR, foto, correo, TOTP, SVG y proxy |
+| **Pruebas** | 515 comprobaciones de extremo a extremo, 124 de actualización desde la 1.0.0, 99 en navegador, y 577 más de QR, foto, adjuntos, correo, TOTP, SVG y proxy |
 
 ---
 
@@ -123,6 +123,11 @@ Las cuentas del equipo viven en la tabla **`evt_usuario`** (el prefijo se elige 
 con la contraseña en hash Argon2id. Los asistentes al evento no están ahí: van a
 `evt_persona` y entran por correo, sin contraseña.
 
+Si el código de la aplicación no entra, la pantalla dice por qué —ya se usó, el reloj del
+servidor está corrido, la configuración no se puede leer— y ofrece entrar con un código que
+llega al correo. Después, en **Configuración**, cada persona genera un código QR nuevo con su
+contraseña; el anterior sigue valiendo hasta que confirma el nuevo.
+
 Si nadie puede entrar —la instalación se interrumpió, se perdió la contraseña, el segundo
 factor quedó en un teléfono que ya no está— el diagnóstico y el arreglo están en la consola:
 
@@ -146,9 +151,10 @@ proceso, y no ofrece la opción que borra tablas.
 | Carnets | Todos los del evento, para imprimirlos en tanda: una cara por persona, con el QR |
 | QR por día | Un código por jornada, imprimible a página completa y regenerable |
 | Expositores | Hoja de revisión por propuesta: los datos completos de quien la presenta, sus dos documentos para bajar, y aprobar, devolver o rechazar |
-| Organizadores | Equipo, roles y estado del segundo factor |
+| Organizadores | Equipo, roles y estado del segundo factor; restablecer el de quien perdió el teléfono |
 | Eventos | Varios eventos a la vez; el activo es el que ven los asistentes |
 | Identidad | Colores, tipografía y logo, con revisión de contraste |
+| Configuración | La cuenta propia: restablecer el código QR de la verificación en dos pasos y cambiar la contraseña. Para todo el equipo |
 
 **Roles:** `administrador` ⊃ `operador` ⊃ `consulta`. El operador sella ingresos pero no
 exporta datos sensibles ni toca la configuración.
@@ -264,6 +270,14 @@ php pruebas/extremo-a-extremo.php
 # Deja la base de pruebas vacía y vuelve a instalarla.
 php pruebas/instalacion.php
 
+# Actualizar una instalación en producción: arma la base exactamente como la
+# dejaba la 1.0.0 —con su propio Esquema.php, sacado de git—, la llena con datos
+# cifrados y un administrador con segundo factor, y la pone al día por cada
+# camino: sola en la primera visita (con seis visitas a la vez), la consola, el
+# botón del panel, el asistente, y el asistente sin config/config.php. Después
+# comprueba que no se perdió nada y que se entra con el mismo código del teléfono.
+php pruebas/actualizacion.php
+
 # El hash de las contraseñas del equipo. Vale en las dos compilaciones de
 # Argon2 que trae PHP: la libargon2 suelta y la que va dentro de libsodium,
 # que solo admite un hilo.
@@ -313,12 +327,13 @@ el enrutado, las cookies, los testigos y los guardias, que es donde suelen estar
 Incluye 19 comprobaciones en el bloque específico de seguridad y otras tantas repartidas por
 los guardias de cada pantalla.
 
-Estado actual: **478 de 478** de extremo a extremo, **77** del asistente de instalación,
-**28** del segundo factor contra los vectores del RFC 6238, **22** del hash de contraseñas,
+Estado actual: **515 de 515** de extremo a extremo, **77** del asistente de instalación,
+**124** de actualización de una instalación en producción por siete caminos, **46** del
+segundo factor —los vectores del RFC 6238 y el reloj del servidor corrido—, **22** del hash de contraseñas,
 **19** del correo saliente, **19** de la dirección del visitante detrás del proxy, **21** de la
 fotografía del carnet, **61** de los adjuntos del expositor, **17** del saneado de logos SVG,
 **198** casos de QR idénticos entre PHP y JavaScript, **161** entre JavaScript y la referencia,
-**13** del lector de QR, **93** de interacción en navegador, y las 16 pantallas limpias en
+**13** del lector de QR, **99** de interacción en navegador, y las 17 pantallas limpias en
 escritorio, tableta y móvil.
 
 Las pruebas nacieron de errores reales, y por eso cubren lo que cubren: una instalación que se

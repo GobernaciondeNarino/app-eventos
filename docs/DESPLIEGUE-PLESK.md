@@ -351,7 +351,10 @@ Lo que hay que respaldar:
 
 - **La base de datos.** Es donde están los registros y las asistencias.
 - **`config/config.php`.** Contiene la llave de cifrado. **Sin ese archivo, los documentos
-  de identidad guardados quedan ilegibles para siempre**: no hay forma de recuperarlos.
+  de identidad guardados quedan ilegibles para siempre**: no hay forma de recuperarlos. Con
+  la misma llave está cifrada la verificación en dos pasos de cada cuenta del equipo. Si el
+  archivo se pierde, el asistente pide la llave anterior (la línea `'llave_cifrado' => '…'`
+  de la copia) antes de seguir; ver 7.1.
 - **`almacen/logos` y `almacen/fotos`.**
 
 Restaura la copia una vez antes del evento, en un entorno de prueba. Una copia que nunca se
@@ -361,13 +364,25 @@ restauró no es una copia.
 
 ## 7. Actualizar a una versión nueva
 
-1. Copia de seguridad completa (base de datos y archivos).
+1. Copia de seguridad completa (base de datos y archivos). **Guarda aparte una copia de
+   `config/config.php`**: es lo único que no se puede volver a generar.
 2. Sube los archivos nuevos **sin tocar `config/` ni `almacen/`**.
-3. **Pon la base al día.** Los archivos suben, pero la base no se entera sola: si la versión
-   trae tablas o columnas nuevas, la plataforma queda a medias —una pantalla nueva contra una
-   tabla que no existe— y el fallo aparece en la puerta del evento.
+3. **La base se pone al día sola.** Desde la 3.6, la primera visita después de subir los
+   archivos —la de quien sea: un asistente que abre su carnet, el equipo que entra al
+   panel— agrega las tablas y columnas que la versión nueva necesite y crea las carpetas de
+   `almacen/` que falten. Solo agrega: nunca borra ni estrecha nada, así que es seguro con el
+   evento en curso. Se hace una sola vez aunque lleguen muchas visitas juntas, y queda en la
+   bitácora como «La base de datos se puso al día sola».
 
-   Hay tres caminos, y el primero es el normal:
+   Hasta la 3.5 había que pulsar un botón del panel, y eso tenía una trampa: para llegar al
+   botón había que iniciar sesión, y con una base muy vieja el segundo factor fallaba antes
+   de llegar. Ya no depende de eso.
+
+   Si el usuario de la base de datos no tiene permiso de `ALTER` —pasa en algunos
+   alojamientos—, la actualización automática no puede hacerse: lo anota en el registro,
+   vuelve a intentarlo cada cinco minutos y la plataforma sigue funcionando. Para hacerlo a
+   mano, o si prefieres apagarla con `'actualizacion_automatica' => false` en
+   `config/config.php`, quedan los tres caminos de siempre:
 
    - **Desde el panel.** Entra en `/admin`. Si la base está atrasada, arriba del todo aparece
      un aviso con el motivo y un botón **«Actualizar la base de datos»**. Agrega las tablas y
@@ -383,8 +398,12 @@ restauró no es una copia.
      ```
 
    - **Desde el asistente**, si algo salió mal con los dos anteriores: crea
-     `config/permitir-reinstalar`, entra a `/instalar`, elige el modo **Actualizar** —que
-     conserva los datos— y borra el archivo al terminar.
+     `config/permitir-reinstalar`, entra a `/instalar` y sigue los pasos. Con tablas en la
+     base, el asistente sugiere **Actualizar** —conserva los datos—; la instalación limpia
+     solo se aplica marcando además la casilla que confirma el borrado. En el paso 4 escribe
+     el correo de la cuenta que ya usas: solo se le cambia la contraseña, y su verificación en
+     dos pasos se conserva. Al terminar, el asistente borra `permitir-reinstalar` por su
+     cuenta (si no puede, lo dice en el resumen).
 
 4. Comprueba que el aviso desapareció. Desde la 3.4.1 sale en **todas** las pantallas del
    equipo y del staff, no solo en el panel: mientras esté puesto, las que estrenan columnas no
@@ -393,6 +412,32 @@ restauró no es una copia.
 
    **Si subiste los archivos y no ves ningún cambio en la plataforma, mira primero ese aviso.**
    Es la causa más común: el código nuevo está, pero la base no se enteró.
+
+### 7.1 Si se perdió `config/config.php`
+
+Pasa cuando, para subir la versión nueva, se borra la carpeta entera de la plataforma. El
+sitio vuelve a llevar al asistente, y el asistente necesita la **llave de cifrado** de la
+instalación anterior: con ella están cifrados los documentos de identidad y la configuración
+de la verificación en dos pasos de cada cuenta.
+
+Hasta la 3.5 el asistente generaba una llave nueva sin decir nada. Era la causa de que, tras
+algunas actualizaciones, **el código correcto del teléfono se rechazara siempre** con un
+mensaje sobre el reloj: el secreto guardado ya no se podía leer con la llave nueva.
+
+Desde la 3.6, si la base tiene datos cifrados y la configuración no trae llave, el paso 3
+pide la anterior:
+
+1. Abre la copia de seguridad de `config/config.php` y busca la línea
+   `'llave_cifrado' => '…',`.
+2. Pégala en el campo **Llave anterior** (la línea entera o solo el valor). Se comprueba
+   contra los datos de la base antes de aceptarla.
+3. Termina el asistente como siempre. Todo queda como estaba: las cédulas se leen y cada
+   cuenta entra con el mismo código del teléfono.
+
+Si no hay copia, se puede seguir marcando la casilla que lo reconoce. Los documentos guardados
+no se podrán leer, y cada cuenta configura otra vez su verificación en dos pasos: la que se
+escribe en el paso 4 al entrar, las demás con un código que les llega al correo (o desde
+**Organizadores**, ver 8). Por consola es lo mismo con `--llave=…` o `--llave-nueva`.
 
 ---
 
@@ -439,8 +484,19 @@ viven las cuentas. Con eso, el caso es uno de estos cuatro:
 |---|---|---|
 | `✕ cuentas administradoras activas: 0` | La instalación se interrumpió antes de crear la cuenta | El asistente se reabre solo en **modo reparación**: entra a `/cumbreAI/instalar`. O `cuenta.php crear` |
 | Hay cuenta, pero no recuerdas la contraseña | — | `php herramientas/cuenta.php clave --correo=…` |
-| Entra pero se queda pidiendo el código de seis dígitos | El segundo factor quedó en un teléfono que ya no está | `php herramientas/cuenta.php sin-2fa --correo=…` |
+| Entra pero se queda pidiendo el código de seis dígitos | El segundo factor quedó en un teléfono que ya no está | En la misma pantalla, **«Enviar un código a mi correo»**; después, **Configuración** para escanear un QR nuevo. Sin correo: otra cuenta administradora, desde **Organizadores → Restablecer 2FA**, o `php herramientas/cuenta.php sin-2fa --correo=…` |
+| «La configuración de tu verificación en dos pasos no se puede leer» | La llave de cifrado cambió (se perdió `config/config.php`, ver 7.1) | Código por correo desde esa pantalla; o lo mismo que la fila anterior |
 | `✕ tablas` o `✕ conexión` | La base no es la que cree, o le falta el esquema | Revisa `config/config.php` y repite el asistente en modo **Actualizar** |
+
+Sobre el código de seis dígitos, desde la 3.6 cada causa tiene su propio mensaje:
+
+- **«Ese código ya se usó»**: se entró con él hace un momento —lo normal tras una
+  actualización, que cierra las sesiones—. Basta esperar el siguiente.
+- **«La hora de este servidor no coincide con la de tu teléfono»**: el reloj del servidor
+  está corrido. La plataforma pide el código siguiente para confirmarlo y desde ahí compensa
+  el desfase sola. Conviene igual activar la hora automática (NTP) del servidor; la pantalla
+  muestra la hora del servidor para compararla.
+- **«No se puede leer»**: ver la tabla de arriba.
 
 Y dos cosas que **no** son el problema, aunque lo parezcan:
 

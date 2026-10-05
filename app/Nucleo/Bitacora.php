@@ -105,7 +105,7 @@ final class Bitacora
         $quien = $entrada['usuario_nombre'] ?? 'Sistema';
 
         return match ($entrada['accion']) {
-            'acceso_correcto'    => "$quien inició sesión",
+            'acceso_correcto'    => "$quien inició sesión" . (($detalle['via'] ?? '') === 'correo' ? ' con un código del correo' : ''),
             'acceso_fallido'     => 'Intento de acceso fallido',
             'acceso_cerrado'     => "$quien cerró sesión",
             'asistencia_sellada' => "$quien registró un ingreso" . (isset($detalle['dia']) ? ' del día ' . $detalle['dia'] : ''),
@@ -124,6 +124,16 @@ final class Bitacora
             'usuario_creado'     => "$quien agregó a alguien al equipo",
             'usuario_restablecido' => 'Se restableció el acceso de una cuenta administradora',
             'segundo_factor_retirado' => 'Se retiró el segundo factor de una cuenta',
+            'segundo_factor_activado' => "$quien activó la verificación en dos pasos",
+            'segundo_factor_restablecido' => "$quien configuró de nuevo su verificación en dos pasos",
+            'segundo_factor_correo'   => 'Se envió un código de respaldo al correo de una cuenta',
+            'segundo_factor_ilegible' => 'El segundo factor de una cuenta no se pudo leer con la llave actual',
+            'segundo_factor_resincronizado' => 'Se compensó la diferencia de hora entre el servidor y un teléfono',
+            'esquema_actualizado' => match ($detalle['origen'] ?? '') {
+                'automatica' => 'La base de datos se puso al día sola tras la actualización',
+                'consola'    => 'Se actualizó la base de datos desde la consola',
+                default      => "$quien actualizó la base de datos",
+            } . (isset($detalle['a']) ? ' (versión ' . $detalle['a'] . ')' : ''),
             'instalacion_reparacion'  => 'Se reabrió el asistente para reparar la instalación',
             'evento_creado'      => "$quien creó un evento",
             'evento_activado'    => "$quien cambió el evento activo",

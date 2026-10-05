@@ -75,23 +75,12 @@ final class Admin
         }
 
         try {
-            $hechas = \App\Esquema::aplicar('actualizar', \App\Esquema::existentes());
+            $cambiadas = \App\Nucleo\Actualizacion::aplicar('panel');
         } catch (\Throwable $e) {
             \App\Nucleo\Registro::excepcion($e);
             Respuesta::redirigir('/admin',
                 'No se pudo actualizar la base: ' . $e->getMessage(), 'warn');
         }
-
-        $cambiadas = array_values(array_filter(
-            $hechas,
-            static fn(array $h): bool => in_array($h['accion'], ['creada', 'actualizada'], true)
-        ));
-
-        Bitacora::registrar('esquema_actualizado', 'sistema', null, [
-            'version' => \App\Esquema::VERSION,
-            'motivo'  => $motivo,
-            'cambios' => count($cambiadas),
-        ]);
 
         Respuesta::redirigir('/admin', $cambiadas === []
             ? 'La base quedó marcada en la versión ' . \App\Esquema::VERSION . '; no hizo falta cambiar nada.'
@@ -809,6 +798,36 @@ final class Admin
 
         Usuario::cambiarEstado($id, $peticion->campo('estado'));
         Respuesta::redirigir('/admin/organizadores', 'Estado de la cuenta actualizado.');
+    }
+
+    /**
+     * Quita el segundo factor de otra persona del equipo.
+     *
+     * Para quien perdió el teléfono y no puede recibir el código por correo, o
+     * cuya configuración quedó ilegible tras un cambio de llave. Al volver a
+     * entrar con su contraseña escanea un código QR nuevo. Sus sesiones abiertas
+     * se cierran: si el teléfono se perdió, no debe seguir dentro.
+     */
+    public function restablecerSegundoFactor(Peticion $peticion): void
+    {
+        $yo = Guardia::usuarioActual();
+        $id = $peticion->entero('usuario');
+
+        if ($id === (int) $yo['id']) {
+            Respuesta::redirigir('/admin/cuenta',
+                'Tu propia verificación en dos pasos se restablece aquí, en Configuración.', 'warn');
+        }
+        $objetivo = Usuario::porId($id);
+        if (!$objetivo) {
+            Respuesta::redirigir('/admin/organizadores', 'Esa cuenta no existe.', 'warn');
+        }
+
+        Usuario::quitarSegundoFactor($id);
+        \App\Nucleo\Sesion::cerrarTodasDe('admin', $id);
+        Bitacora::registrar('segundo_factor_retirado', 'usuario', $id, ['motivo' => 'lo restableció otra persona']);
+
+        Respuesta::redirigir('/admin/organizadores', 'Se quitó la verificación en dos pasos de '
+            . $objetivo['nombre'] . '. Al entrar con su contraseña configurará la aplicación otra vez.');
     }
 
     /**

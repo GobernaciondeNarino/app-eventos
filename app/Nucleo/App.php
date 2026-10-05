@@ -69,6 +69,13 @@ final class App
                 [['texto' => 'Ver el diagnóstico', 'url' => Url::a('/instalar/diagnostico'), 'principal' => true]]);
         }
 
+        // Antes de tocar sesiones ni cuentas, la base se pone al día con el
+        // código recién subido. El asistente queda fuera: tiene sus propios
+        // modos y quien lo abre quiere decidir qué se hace.
+        if (!str_starts_with($peticion->ruta(), '/instalar')) {
+            Actualizacion::alDia();
+        }
+
         Sesion::limpiar();
         self::compartirConVistas();
 

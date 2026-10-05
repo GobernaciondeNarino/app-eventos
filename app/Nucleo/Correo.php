@@ -1098,6 +1098,38 @@ final class Correo
     }
 
     /**
+     * El código de respaldo del segundo factor, para el equipo organizador.
+     *
+     * Se usa cuando la aplicación del teléfono no sirve: se cambió de teléfono,
+     * se borró la entrada, o la configuración guardada no se puede leer. Llega
+     * después de la contraseña, nunca en su lugar, y por eso el mensaje dice
+     * qué hacer si no fue uno quien lo pidió: alguien tiene la contraseña.
+     */
+    public static function codigoSegundoFactor(string $destinatario, string $nombre, string $codigo, string $evento): bool
+    {
+        $html = self::plantilla(
+            $evento,
+            'Código para entrar al panel',
+            '<p style="margin:0 0 16px">Hola, ' . htmlspecialchars($nombre) . '. Pediste entrar al panel '
+            . 'con un código por correo en lugar de la aplicación de autenticación:</p>'
+            . '<p style="margin:0 0 16px;font-size:34px;letter-spacing:.3em;font-weight:700;'
+            . 'font-family:monospace;color:#0C2E3C">' . htmlspecialchars($codigo) . '</p>'
+            . '<p style="margin:0 0 12px;font-size:14px;color:#556">Vence en 10 minutos y sirve una sola vez. '
+            . 'Después de entrar puedes configurar otra vez la aplicación desde «Configuración».</p>'
+            . '<p style="margin:0;font-size:14px;color:#8A2B2B"><strong>Si no fuiste tú</strong>, alguien '
+            . 'escribió tu contraseña correcta: cámbiala en cuanto puedas y avisa a la administración del evento.</p>'
+        );
+
+        return self::enviar(
+            $destinatario,
+            'Código para entrar al panel: ' . $codigo,
+            $html,
+            "Tu código para entrar al panel es $codigo. Vence en 10 minutos y sirve una sola vez. "
+            . 'Si no fuiste tú, alguien escribió tu contraseña correcta: cámbiala y avisa a la administración.'
+        );
+    }
+
+    /**
      * El mensaje de bienvenida, con el enlace al carnet.
      *
      * $enlaceAcceso es el del QR personal, y cuando existe se usa como botón

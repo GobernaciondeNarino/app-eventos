@@ -125,6 +125,88 @@ comprobar('el código de otro secreto no vale',
     !Totp::verificar(Totp::generarSecreto(), $ahora));
 
 /* ------------------------------------------------------------------------
+   Con el reloj del servidor corrido
+   ------------------------------------------------------------------------
+   Lo que pasaba en producción: el teléfono pone la hora solo, el servidor no
+   siempre, y con más de un minuto de diferencia el código correcto se
+   rechazaba para siempre. Ahora el desfase se detecta, se confirma con el
+   código siguiente y queda aprendido.
+   ------------------------------------------------------------------------ */
+echo "\nReloj del servidor corrido\n";
+
+$s = Totp::generarSecreto();
+$servidor = 1_790_000_000;                      // un instante fijo: la prueba no depende de cuándo corre
+$c = intdiv($servidor, 30);
+$telefono = static fn(int $desfase): string => Totp::codigoActual($s, $servidor + $desfase);
+
+$r = Totp::evaluar($s, $telefono(0), 0, 0, null, $servidor);
+comprobar('en hora, entra', $r['estado'] === 'ok' && $r['deriva'] === 0, json_encode($r));
+
+$r = Totp::evaluar($s, $telefono(0), 0, $c, null, $servidor);
+comprobar('el mismo código otra vez: «repetido», no «no coincide»', $r['estado'] === 'repetido', json_encode($r));
+
+$r = Totp::evaluar($s, $telefono(-30), 0, $c, null, $servidor);
+comprobar('el del intervalo anterior al último usado también es repetido', $r['estado'] === 'repetido', json_encode($r));
+
+// El servidor va cinco horas atrasado: el reloj puesto en hora local como si
+// fuera UTC, que en Colombia son exactamente cinco horas.
+$r = Totp::evaluar($s, $telefono(5 * 3600), 0, 0, null, $servidor);
+comprobar('con cinco horas de desfase, pide confirmar en vez de rechazar',
+    $r['estado'] === 'confirmar' && $r['deriva'] === 600, json_encode($r));
+$pendiente = ['intervalo' => $r['intervalo'], 'deriva' => $r['deriva'], 'hasta' => $servidor + 300];
+
+$r2 = Totp::evaluar($s, $telefono(5 * 3600 + 35), 0, 0, $pendiente, $servidor + 35);
+comprobar('con el código siguiente, entra', $r2['estado'] === 'ok' && $r2['deriva'] === 600, json_encode($r2));
+
+$r3 = Totp::evaluar($s, $telefono(5 * 3600), 0, 0, $pendiente, $servidor + 5);
+comprobar('el mismo primer código no sirve de segundo', $r3['estado'] !== 'ok', json_encode($r3));
+
+$vencido = ['deriva' => 600, 'intervalo' => $r['intervalo'], 'hasta' => $servidor - 1];
+$r3 = Totp::evaluar($s, $telefono(5 * 3600 + 35), 0, 0, $vencido, $servidor + 35);
+comprobar('pasado el plazo, el segundo código vuelve a pedir confirmación', $r3['estado'] === 'confirmar', json_encode($r3));
+
+$r4 = Totp::evaluar($s, $telefono(5 * 3600 + 120), 600, $r2['intervalo'], null, $servidor + 120);
+comprobar('con el desfase aprendido, la vez siguiente entra a la primera', $r4['estado'] === 'ok', json_encode($r4));
+
+$r5 = Totp::evaluar($s, $telefono(0), 600, 0, null, $servidor);
+comprobar('si arreglan el reloj del servidor, el código en hora sigue entrando', $r5['estado'] === 'ok', json_encode($r5));
+
+// Unos segundos de más, que antes también fallaban siempre.
+$r6 = Totp::evaluar($s, $telefono(75), 0, 0, null, $servidor);
+comprobar('75 segundos de desfase se confirman en vez de fallar', $r6['estado'] === 'confirmar', json_encode($r6));
+
+// El teléfono iba adelantado, se entró así, y después lo pusieron en hora.
+$ultimoAdelantado = $c + 20;
+$r7 = Totp::evaluar($s, $telefono(0), 20, $ultimoAdelantado, null, $servidor);
+comprobar('un teléfono que se puso en hora no queda bloqueado: pide confirmar',
+    $r7['estado'] === 'confirmar' && !empty($r7['retroceso']), json_encode($r7));
+$r8 = Totp::evaluar($s, $telefono(30), 20, $ultimoAdelantado,
+    ['intervalo' => $r7['intervalo'], 'deriva' => $r7['deriva'], 'hasta' => $servidor + 300, 'retroceso' => true],
+    $servidor + 30);
+comprobar('y con el código siguiente entra, por debajo del último aceptado',
+    $r8['estado'] === 'ok' && !empty($r8['retroceso']), json_encode($r8));
+
+// Pero un código viejo, visto hace diez minutos, no se convierte en entrada.
+$r9 = Totp::evaluar($s, $telefono(-600), 0, $c, null, $servidor);
+comprobar('un código de hace diez minutos, ya superado, no sirve', $r9['estado'] === 'no', json_encode($r9));
+
+$r10 = Totp::evaluar($s, $telefono(0), 0, $c + 100000, null, $servidor);
+comprobar('un último aceptado imposible —más allá de la búsqueda— no bloquea', $r10['estado'] === 'ok', json_encode($r10));
+
+$r11 = Totp::evaluar($s, $telefono(13 * 3600), 0, 0, null, $servidor);
+comprobar('más allá de doce horas ya no se busca', $r11['estado'] === 'no', json_encode($r11));
+
+$inicio = microtime(true);
+Totp::evaluar($s, '000000', 0, 0, null, $servidor);
+$ms = (microtime(true) - $inicio) * 1000;
+comprobar('recorrer las doce horas a cada lado es rápido (< 100 ms)', $ms < 100, round($ms, 1) . ' ms');
+
+[$cuanto, $hacia] = Totp::describirDeriva(600);
+comprobar('el desfase se describe en palabras', $cuanto === '5 horas' && $hacia === 'atrasado', "$cuanto $hacia");
+[$cuanto, $hacia] = Totp::describirDeriva(-8);
+comprobar('y hacia el otro lado', $cuanto === '4 minutos' && $hacia === 'adelantado', "$cuanto $hacia");
+
+/* ------------------------------------------------------------------------
    El URI que va en el QR de alta
    ------------------------------------------------------------------------ */
 echo "\nURI de alta\n";

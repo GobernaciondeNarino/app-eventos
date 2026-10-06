@@ -7,6 +7,8 @@ defined('EVENTOS_TIC') || exit;
 
 $marca = require __DIR__ . '/../parciales/marca.php';
 $rol = (string) $persona['rol'];
+// El nombre del perfil, como lo configuró el evento de esta persona.
+$nombreRol = etiquetaRol($rol, (int) $persona['evento_id']);
 ?>
 <main class="main" id="contenido" style="padding:24px">
   <div class="view view--narrow stack stack--4" style="max-width:820px;margin:auto">
@@ -38,7 +40,7 @@ $rol = (string) $persona['rol'];
             <div class="carnet__photo">
               <div><span class="carnet__photo-empty"><?= e(iniciales((string) $persona['nombre'])) ?></span></div>
             </div>
-            <div class="carnet__rol"><?= e(mb_strtoupper(etiquetaRol($rol))) ?></div>
+            <div class="carnet__rol<?= tallaRol($nombreRol) ?>"><?= e(mb_strtoupper($nombreRol)) ?></div>
             <div class="carnet__fields">
               <?php foreach ([
                 ['Nombre', $persona['nombre']],

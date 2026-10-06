@@ -47,9 +47,9 @@ $columnas = 'grid-template-columns:1.6fr 1.1fr 1fr .9fr';
       <label class="sr-only" for="rol">Perfil</label>
       <select class="select" id="rol" name="rol">
         <option value="">Todos los perfiles</option>
-        <?php foreach (Persona::ROLES as $rol): ?>
+        <?php foreach (perfilesDelEvento() as $rol => $nombreRol): ?>
           <option value="<?= e($rol) ?>" <?= ($filtros['rol'] ?? '') === $rol ? 'selected' : '' ?>>
-            <?= e(etiquetaRol($rol)) ?>
+            <?= e($nombreRol) ?>
           </option>
         <?php endforeach; ?>
       </select>

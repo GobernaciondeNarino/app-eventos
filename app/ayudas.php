@@ -127,17 +127,57 @@ function iniciales(?string $nombre): string
     return mb_strtoupper($primera . $ultima);
 }
 
-/** Etiqueta legible de un rol de asistente. */
-function etiquetaRol(string $rol): string
+/**
+ * Nombre legible de un perfil de asistencia.
+ *
+ * Desde la 3.8 los nombres los configura cada evento (Configuración →
+ * Registro), así que se buscan en el formulario de ese evento: por omisión, el
+ * activo, que es el que ven todas las pantallas del equipo. El carnet pasa el
+ * de su dueño.
+ */
+function etiquetaRol(string $rol, ?int $eventoId = null): string
 {
-    return [
-        'participante' => 'Participante',
-        'visitante'    => 'Visitante',
-        'expositor'    => 'Expositor',
-        'organizador'  => 'Organizador',
-        'prensa'       => 'Prensa',
-        'staff'        => 'Staff',
-    ][$rol] ?? $rol;
+    try {
+        $eventoId ??= (int) (\App\Nucleo\App::eventoActivo()['id'] ?? 0);
+        return \App\Modelos\Formulario::delEvento($eventoId)->nombrePerfil($rol);
+    } catch (\Throwable) {
+        // Sin base —una prueba, el instalador—: los nombres de fábrica.
+        return \App\Modelos\Persona::PERFILES_DE_ADMIN[$rol] ?? \App\Modelos\Persona::PERFILES_DE_FABRICA[$rol] ?? $rol;
+    }
+}
+
+/**
+ * Todos los perfiles de un evento, para el equipo: clave => nombre. Los de la
+ * lista, encendidos o no, y los que solo pone un administrador.
+ *
+ * @return array<string, string>
+ */
+function perfilesDelEvento(?int $eventoId = null): array
+{
+    try {
+        $eventoId ??= (int) (\App\Nucleo\App::eventoActivo()['id'] ?? 0);
+        return \App\Modelos\Formulario::delEvento($eventoId)->todosLosPerfiles();
+    } catch (\Throwable) {
+        return \App\Modelos\Persona::PERFILES_DE_FABRICA + \App\Modelos\Persona::PERFILES_DE_ADMIN;
+    }
+}
+
+/**
+ * La talla del rótulo del perfil en el carnet.
+ *
+ * Va grande para leerlo a un metro en la fila, y a ese tamaño caben unas doce
+ * letras por línea: «PARTICIPANTE». Los nombres más largos —«Rueda de
+ * Negocios», los que agregue el evento— se achican, porque el carnet tiene el
+ * alto fijo y dos o tres líneas grandes dejaban la entidad fuera.
+ */
+function tallaRol(string $nombre): string
+{
+    $largo = mb_strlen($nombre);
+    return match (true) {
+        $largo <= 12 => '',
+        $largo <= 18 => ' carnet__rol--medio',
+        default      => ' carnet__rol--largo',
+    };
 }
 
 /** Clase de la etiqueta de estado según el rol. */

@@ -37,10 +37,12 @@ $hayPropuesta = $v('tema') !== '' || !empty($valores['expositor']);
 // Se abre sola si algo de dentro quedó con error, para que nadie tenga que
 // buscar a ciegas por qué no se guardó, y si el evento hizo obligatorio alguno
 // de sus campos: lo que se exige no puede estar escondido.
-$deCaracterizacion = ['entidad', 'rango_edad', 'ubicacion', 'genero', 'etnia', 'discapacidad'];
+// La entidad ya no va aquí sino en los datos principales: es lo que sale en el
+// carnet debajo del nombre.
+$deCaracterizacion = ['rango_edad', 'ubicacion', 'genero', 'etnia', 'discapacidad'];
 $caracterizacionVisible = array_filter($deCaracterizacion, static fn(string $c): bool => $f->visible($c)) !== [];
 $caracterizacionExige = array_filter($deCaracterizacion, static fn(string $c): bool => $f->obligatorio($c)) !== [];
-$erroresOpcionales = ['municipio', 'departamento', 'rango_edad', 'genero', 'etnia', 'discapacidad', 'entidad'];
+$erroresOpcionales = ['municipio', 'departamento', 'rango_edad', 'genero', 'etnia', 'discapacidad'];
 $abrirOpcional = $caracterizacionExige || (bool) array_intersect($erroresOpcionales, array_keys($errores));
 
 // Los errores que se le enseñan a la persona en el aviso de «no se guardó».
@@ -170,6 +172,15 @@ guiones('foto.js', 'preregistro.js', 'claves.js', 'registro-incompleto.js');
                    inputmode="<?= in_array($tipoElegido, ['CC', 'TI'], true) ? 'numeric' : 'text' ?>" data-documento>
             <?php if ($err('documento')): ?><span class="error"><?= e($err('documento')) ?></span><?php endif; ?>
           </div>
+        </div>
+      <?php endif; ?>
+
+      <?php if ($f->visible('entidad')): ?>
+        <div class="field">
+          <label class="label" for="entidad">Entidad u organización<?= $req('entidad') ?></label>
+          <input class="input<?= $err('entidad') ? ' is-invalid' : '' ?>" id="entidad" name="entidad" value="<?= e($v('entidad')) ?>"
+                 autocomplete="organization" placeholder="Ej. Alcaldía de Ipiales" maxlength="160" <?= $exige('entidad') ?>>
+          <?php if ($err('entidad')): ?><span class="error"><?= e($err('entidad')) ?></span><?php endif; ?>
         </div>
       <?php endif; ?>
 
@@ -402,14 +413,6 @@ guiones('foto.js', 'preregistro.js', 'claves.js', 'registro-incompleto.js');
             <?php if ($err($campo)): ?><span class="error"><?= e($err($campo)) ?></span><?php endif; ?>
           </div>
         <?php endforeach; ?>
-        <?php if ($f->visible('entidad')): ?>
-          <div class="field">
-            <label class="label" for="entidad">Entidad u organización<?= $req('entidad') ?></label>
-            <input class="input<?= $err('entidad') ? ' is-invalid' : '' ?>" id="entidad" name="entidad" value="<?= e($v('entidad')) ?>"
-                   autocomplete="organization" placeholder="Ej. Alcaldía de Ipiales" maxlength="160" <?= $exige('entidad') ?>>
-            <?php if ($err('entidad')): ?><span class="error"><?= e($err('entidad')) ?></span><?php endif; ?>
-          </div>
-        <?php endif; ?>
       </div>
 
       <?php if ($f->visible('rango_edad')): ?>

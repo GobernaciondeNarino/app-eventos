@@ -56,6 +56,12 @@ final class Formulario
             'estados'  => self::TRES, 'defecto' => self::OBLIGATORIO,
             'nota'     => 'Sin él no se puede acreditar a nadie por su número ni detectar a quien se registra dos veces.',
         ],
+        // En los datos principales desde la 3.8: es lo que sale en el carnet
+        // debajo del nombre. Antes iba plegada con la caracterización.
+        'entidad' => [
+            'etiqueta' => 'Entidad u organización', 'seccion' => 'Datos principales',
+            'estados'  => self::TRES, 'defecto' => self::OPCIONAL,
+        ],
         'telefono' => [
             'etiqueta' => 'Teléfono de contacto', 'seccion' => 'Datos principales',
             'estados'  => self::TRES, 'defecto' => self::OPCIONAL,
@@ -67,10 +73,6 @@ final class Formulario
         ],
         'foto' => [
             'etiqueta' => 'Fotografía del carnet', 'seccion' => 'Fotografía',
-            'estados'  => self::TRES, 'defecto' => self::OPCIONAL,
-        ],
-        'entidad' => [
-            'etiqueta' => 'Entidad u organización', 'seccion' => 'Caracterización',
             'estados'  => self::TRES, 'defecto' => self::OPCIONAL,
         ],
         'rango_edad' => [
@@ -121,8 +123,9 @@ final class Formulario
      *   codigos     cada opción tiene un valor que se guarda y una etiqueta que
      *               se ve; las de fábrica conservan su valor para siempre.
      *   texto       lo que se ve es lo que se guarda; una por línea.
-     *   perfiles    los perfiles públicos que se ofrecen; no se inventan otros,
-     *               porque cada uno hace algo distinto en la plataforma.
+     *   perfiles    los perfiles de asistencia: como los códigos —clave fija,
+     *               nombre que se ve, activo—, pero además se agregan y se
+     *               eliminan (leerPerfiles()). Staff y Organizador no entran.
      *   territorio  departamentos con sus municipios.
      *   minutos     duraciones de las exposiciones.
      *
@@ -130,7 +133,7 @@ final class Formulario
      */
     public const LISTAS = [
         'tipo_documento' => ['etiqueta' => 'Tipos de documento', 'clase' => 'codigos', 'largo' => 12, 'campo' => 'documento'],
-        'perfil'         => ['etiqueta' => 'Perfiles de asistencia', 'clase' => 'perfiles', 'campo' => 'rol'],
+        'perfil'         => ['etiqueta' => 'Perfiles de asistencia', 'clase' => 'perfiles', 'largo' => 30, 'campo' => 'rol'],
         'genero'         => ['etiqueta' => 'Género', 'clase' => 'codigos', 'largo' => 60, 'campo' => 'genero'],
         'etnia'          => ['etiqueta' => 'Grupo étnico', 'clase' => 'codigos', 'largo' => 60, 'campo' => 'etnia'],
         'discapacidad'   => ['etiqueta' => 'Discapacidad', 'clase' => 'codigos', 'largo' => 60, 'campo' => 'discapacidad'],
@@ -290,19 +293,57 @@ final class Formulario
         return $salida;
     }
 
-    /** @return array<int, string> los perfiles públicos que se ofrecen */
+    /**
+     * Las claves de los perfiles que ofrece el formulario, en su orden.
+     *
+     * $actual es el que ya tiene quien edita sus datos: si se apagó, lo sigue
+     * viendo y lo conserva. Los de administrador —Staff, Organizador— nunca:
+     * esos no se eligen.
+     *
+     * @return array<int, string>
+     */
     public function perfiles(string $actual = ''): array
     {
         $salida = [];
-        foreach (Persona::ROLES_PUBLICOS as $rol) {
-            if (!empty($this->listas['perfil'][$rol])) {
-                $salida[] = $rol;
+        foreach ((array) ($this->listas['perfil'] ?? []) as $opcion) {
+            if (!empty($opcion['activo'])) {
+                $salida[] = (string) $opcion['valor'];
             }
         }
-        if ($actual !== '' && in_array($actual, Persona::ROLES_PUBLICOS, true) && !in_array($actual, $salida, true)) {
+        if ($actual !== '' && !isset(Persona::PERFILES_DE_ADMIN[$actual]) && !in_array($actual, $salida, true)) {
             $salida[] = $actual;
         }
         return $salida;
+    }
+
+    /**
+     * Todos los perfiles del evento, encendidos o no, y los de administrador.
+     * Para el equipo: los filtros, la ficha. Un perfil apagado no se ofrece en
+     * el formulario, pero un administrador lo puede seguir poniendo.
+     *
+     * @return array<string, string> clave => nombre
+     */
+    public function todosLosPerfiles(): array
+    {
+        $salida = [];
+        foreach ((array) ($this->listas['perfil'] ?? []) as $opcion) {
+            $salida[(string) $opcion['valor']] = (string) $opcion['etiqueta'];
+        }
+        return $salida + Persona::PERFILES_DE_ADMIN;
+    }
+
+    /** El nombre de un perfil en este evento, aunque ya no esté en la lista. */
+    public function nombrePerfil(string $clave): string
+    {
+        if (isset(Persona::PERFILES_DE_ADMIN[$clave])) {
+            return Persona::PERFILES_DE_ADMIN[$clave];
+        }
+        foreach ((array) ($this->listas['perfil'] ?? []) as $opcion) {
+            if ((string) $opcion['valor'] === $clave) {
+                return (string) $opcion['etiqueta'];
+            }
+        }
+        return Persona::PERFILES_DE_FABRICA[$clave] ?? ucfirst(str_replace('_', ' ', $clave));
     }
 
     /** @return array<int, string> */
@@ -458,10 +499,34 @@ final class Formulario
         }
     }
 
-    /** Vuelve al formulario de fábrica. El banner no se toca. */
-    public static function restablecer(int $eventoId, ?int $usuarioId): void
+    /**
+     * Vuelve al formulario de fábrica. El banner no se toca.
+     *
+     * Con una excepción: los perfiles que agregó el evento y que alguien ya
+     * tiene se conservan, con su nombre, después de los de fábrica. Volver a
+     * la lista de fábrica sin ellos dejaría a esas personas con un perfil que
+     * no está en ninguna parte y un carnet sin el nombre que se le puso.
+     *
+     * @return array<int, string> los nombres de los perfiles que se conservaron
+     */
+    public static function restablecer(int $eventoId, ?int $usuarioId): array
     {
-        self::escribir($eventoId, ['campos' => null, 'listas' => null], $usuarioId);
+        $enUso = array_column(
+            Bd::filas('SELECT DISTINCT rol FROM {persona} WHERE evento_id = ?', [$eventoId]),
+            'rol'
+        );
+        $fabrica = self::listaPorDefecto('perfil');
+        $propios = array_values(array_filter(
+            (array) (self::delEvento($eventoId)->listas['perfil'] ?? []),
+            static fn(array $o): bool => in_array((string) $o['valor'], $enUso, true)
+                && !in_array((string) $o['valor'], array_column($fabrica, 'valor'), true)
+        ));
+
+        self::escribir($eventoId, [
+            'campos' => null,
+            'listas' => $propios === [] ? null : json_encode(['perfil' => array_merge($fabrica, $propios)], JSON_UNESCAPED_UNICODE),
+        ], $usuarioId);
+        return array_map(static fn(array $o): string => (string) $o['etiqueta'], $propios);
     }
 
     private static function escribir(int $eventoId, array $columnas, ?int $usuarioId): void
@@ -491,9 +556,10 @@ final class Formulario
      *
      * @param array<string, mixed> $entrada lo enviado, por lista
      * @param array<string, mixed> $antes   las listas como estaban
+     * @param array<string, int>   $perfilesEnUso cuántas personas del evento tienen cada perfil
      * @return array{0: array<string, mixed>, 1: array<string, string>}
      */
-    public static function leerListas(array $entrada, array $antes): array
+    public static function leerListas(array $entrada, array $antes, array $perfilesEnUso = []): array
     {
         $listas = [];
         $errores = [];
@@ -503,7 +569,7 @@ final class Formulario
                 $listas[$clave] = match ($definicion['clase']) {
                     'codigos'    => self::leerCodigos($clave, is_array($dato) ? $dato : [], (array) ($antes[$clave] ?? [])),
                     'texto'      => self::leerTexto((string) (is_string($dato) ? $dato : ''), (int) $definicion['largo']),
-                    'perfiles'   => self::leerPerfiles(is_array($dato) ? $dato : []),
+                    'perfiles'   => self::leerPerfiles(is_array($dato) ? $dato : [], (array) ($antes[$clave] ?? []), $perfilesEnUso),
                     'territorio' => self::leerTerritorio((string) (is_string($dato) ? $dato : '')),
                     'minutos'    => self::leerMinutos((string) (is_string($dato) ? $dato : '')),
                 };
@@ -613,15 +679,131 @@ final class Formulario
         return $salida;
     }
 
-    /** @return array<string, bool> */
-    private static function leerPerfiles(array $marcados): array
+    /**
+     * Los perfiles de asistencia: se agregan, se renombran, se apagan y se
+     * eliminan.
+     *
+     * Llegan como filas: las que ya existían, con su clave —la que se guarda
+     * en cada persona y no cambia—, su nombre, si está activo y si se pidió
+     * eliminarlo; y las nuevas, con solo un nombre, del que sale la clave.
+     *
+     * Lo que no se puede saltar con un envío hecho a mano:
+     *   · «Participante» siempre está y siempre se ofrece: es el de quien no
+     *     elige ninguno. Ni él ni «Expositor» se eliminan: la plataforma los
+     *     usa por su clave. Se pueden renombrar.
+     *   · Staff y Organizador no entran, ni con otro nombre.
+     *   · Un perfil que tiene alguien no se elimina: se apaga. Eliminarlo
+     *     dejaría a esas personas con un perfil sin nombre en su carnet.
+     *   · Una fila que no llega se queda como estaba: eliminar es una casilla
+     *     marcada, no la falta de una fila.
+     *
+     * @param array<string, int> $enUso cuántas personas del evento tienen cada clave
+     * @return array<int, array{valor: string, etiqueta: string, activo: bool}>
+     */
+    private static function leerPerfiles(array $filas, array $antes, array $enUso): array
     {
+        $largo = (int) self::LISTAS['perfil']['largo'];
+        $antes = self::listaValida('perfil', $antes) ?? self::listaPorDefecto('perfil');
+
+        $nuevos = [];
+        $enviados = [];
+        foreach ($filas as $fila) {
+            if (!is_array($fila)) {
+                continue;
+            }
+            $nombre = trim(preg_replace('/\s+/u', ' ', (string) ($fila['etiqueta'] ?? '')) ?? '');
+            if (mb_strlen($nombre) > $largo) {
+                throw new \DomainException('«' . mb_substr($nombre, 0, 30) . '…» es demasiado largo para el carnet: '
+                    . 'el máximo es ' . $largo . ' caracteres.');
+            }
+            if (!array_key_exists('valor', $fila)) {
+                if ($nombre !== '') {
+                    $nuevos[] = $nombre;   // la fila vacía de «agregar» no crea nada
+                }
+                continue;
+            }
+            $enviados[(string) $fila['valor']] ??= ['nombre' => $nombre, 'activo' => !empty($fila['activo']),
+                'eliminar' => !empty($fila['eliminar'])];
+        }
+
+        // En el orden de antes. Una clave enviada que no estaba —inventada a
+        // mano— no entra por aquí.
         $salida = [];
-        foreach (Persona::ROLES_PUBLICOS as $rol) {
-            // «Participante» siempre: es el perfil de quien no elige ninguno.
-            $salida[$rol] = $rol === 'participante' || in_array($rol, $marcados, true);
+        foreach ($antes as $opcion) {
+            $clave = (string) $opcion['valor'];
+            $enviado = $enviados[$clave] ?? null;
+            if ($enviado === null) {
+                $salida[] = $opcion;
+                continue;
+            }
+            if ($enviado['eliminar'] && !in_array($clave, Persona::PERFILES_DEL_SISTEMA, true)) {
+                $usan = (int) ($enUso[$clave] ?? 0);
+                if ($usan > 0) {
+                    throw new \DomainException('«' . $opcion['etiqueta'] . '» no se puede eliminar: lo '
+                        . ($usan === 1 ? 'tiene 1 persona' : 'tienen ' . $usan . ' personas') . ' de este evento. '
+                        . 'Apágalo para que no se ofrezca más; quien ya lo tiene lo conserva.');
+                }
+                continue;
+            }
+            $salida[] = [
+                'valor'    => $clave,
+                'etiqueta' => $enviado['nombre'] !== '' ? $enviado['nombre'] : (string) $opcion['etiqueta'],
+                'activo'   => $clave === 'participante' || $enviado['activo'],
+            ];
+        }
+
+        // Dos perfiles con el mismo nombre serían indistinguibles en el carnet.
+        // Los de administrador cuentan: un «Staff» de mentira confundiría en la
+        // puerta.
+        $nombres = [];
+        foreach (Persona::PERFILES_DE_ADMIN as $nombre) {
+            $nombres[mb_strtolower($nombre)] = true;
+        }
+        foreach ($salida as $opcion) {
+            $minusculas = mb_strtolower((string) $opcion['etiqueta']);
+            if (isset($nombres[$minusculas])) {
+                throw new \DomainException('«' . $opcion['etiqueta'] . '» está dos veces, o es el nombre de un perfil que '
+                    . 'solo pone un administrador. Usa otro nombre.');
+            }
+            $nombres[$minusculas] = true;
+        }
+
+        $ocupadas = array_merge(array_column($salida, 'valor'), array_keys(Persona::PERFILES_DE_ADMIN), array_keys($enUso));
+        foreach ($nuevos as $nombre) {
+            if (isset($nombres[mb_strtolower($nombre)])) {
+                throw new \DomainException('«' . $nombre . '» ya está en la lista, o es el nombre de un perfil que solo pone '
+                    . 'un administrador.');
+            }
+            $nombres[mb_strtolower($nombre)] = true;
+            $clave = self::claveDePerfil($nombre, $ocupadas);
+            $ocupadas[] = $clave;
+            $salida[] = ['valor' => $clave, 'etiqueta' => $nombre, 'activo' => true];
         }
         return $salida;
+    }
+
+    /**
+     * La clave de un perfil nuevo: «Rueda de Negocios» → «rueda_de_negocios».
+     *
+     * Sin tildes ni espacios, porque va en la base y en el atributo con el que
+     * el carnet escoge su color. Si ya está ocupada —también por alguien que
+     * tenga un perfil que ya no existe— se le agrega un número.
+     *
+     * @param array<int, string> $ocupadas
+     */
+    private static function claveDePerfil(string $nombre, array $ocupadas): string
+    {
+        $simple = strtr($nombre, [
+            'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ü' => 'u', 'ñ' => 'n',
+            'Á' => 'a', 'É' => 'e', 'Í' => 'i', 'Ó' => 'o', 'Ú' => 'u', 'Ü' => 'u', 'Ñ' => 'n',
+        ]);
+        $base = trim(strtolower((string) preg_replace('/[^A-Za-z0-9]+/', '_', $simple)), '_');
+        $base = substr($base !== '' ? $base : 'perfil', 0, 36);
+        $clave = $base;
+        for ($n = 2; in_array($clave, $ocupadas, true); $n++) {
+            $clave = $base . '_' . $n;
+        }
+        return $clave;
     }
 
     /**
@@ -721,7 +903,7 @@ final class Formulario
             'genero'         => $codigos(Datos::GENEROS),
             'etnia'          => $codigos(Datos::ETNIAS),
             'discapacidad'   => $codigos(Datos::DISCAPACIDADES),
-            'perfil'         => array_fill_keys(Persona::ROLES_PUBLICOS, true),
+            'perfil'         => $codigos(Persona::PERFILES_DE_FABRICA),
             'rango_edad'     => Datos::RANGOS_EDAD,
             'ubicacion'      => array_map(
                 static fn(array $m): array => array_values(array_unique($m)),
@@ -761,9 +943,50 @@ final class Formulario
                 }
                 return $activas > 0 ? array_values($valor) : null;
             case 'perfiles':
+                // La 3.7 guardaba [clave => encendido] de los cuatro de entonces.
+                // Los de fábrica que llegaron después entran encendidos: esa
+                // configuración no decía nada sobre ellos.
+                if (!array_is_list($valor)) {
+                    $salida = [];
+                    foreach (Persona::PERFILES_DE_FABRICA as $clave => $nombre) {
+                        $salida[] = ['valor' => $clave, 'etiqueta' => $nombre, 'activo' => $clave === 'participante'
+                            || !array_key_exists($clave, $valor) || !empty($valor[$clave])];
+                    }
+                    return $salida;
+                }
                 $salida = [];
-                foreach (Persona::ROLES_PUBLICOS as $rol) {
-                    $salida[$rol] = $rol === 'participante' || !empty($valor[$rol]);
+                $vistas = [];
+                foreach ($valor as $o) {
+                    if (!is_array($o) || !isset($o['valor'], $o['etiqueta']) || !is_string($o['valor'])
+                        || !is_scalar($o['etiqueta'])) {
+                        return null;
+                    }
+                    $clave = $o['valor'];
+                    // Una clave sin forma, repetida, o de las que pone un
+                    // administrador —«staff» metido a mano en la base— no entra:
+                    // se ofrecería en el formulario público.
+                    if (!preg_match('/^[a-z0-9_]{1,40}$/', $clave) || isset($vistas[$clave])
+                        || isset(Persona::PERFILES_DE_ADMIN[$clave])) {
+                        continue;
+                    }
+                    $vistas[$clave] = true;
+                    $nombre = trim((string) $o['etiqueta']);
+                    $salida[] = [
+                        'valor'    => $clave,
+                        'etiqueta' => $nombre !== '' ? $nombre : (Persona::PERFILES_DE_FABRICA[$clave] ?? $clave),
+                        'activo'   => $clave === 'participante' || !empty($o['activo']),
+                    ];
+                }
+                // Los del sistema no pueden faltar.
+                foreach (Persona::PERFILES_DEL_SISTEMA as $clave) {
+                    if (!isset($vistas[$clave])) {
+                        $opcion = ['valor' => $clave, 'etiqueta' => Persona::PERFILES_DE_FABRICA[$clave], 'activo' => true];
+                        if ($clave === 'participante') {
+                            array_unshift($salida, $opcion);
+                        } else {
+                            $salida[] = $opcion;
+                        }
+                    }
                 }
                 return $salida;
             case 'territorio':

@@ -56,8 +56,7 @@ $sinCambios = static function () use ($fabrica): array {
     $entrada = [];
     foreach (Formulario::LISTAS as $clave => $def) {
         $entrada[$clave] = match ($def['clase']) {
-            'codigos'    => array_map(static fn(array $o): array => $o + [], $fabrica[$clave]),
-            'perfiles'   => array_keys(array_filter($fabrica[$clave])),
+            'codigos', 'perfiles' => array_map(static fn(array $o): array => $o + [], $fabrica[$clave]),
             'territorio' => Formulario::territorioComoTexto($fabrica[$clave]),
             'minutos'    => implode(', ', $fabrica[$clave]),
             default      => implode("\n", $fabrica[$clave]),
@@ -172,12 +171,114 @@ $entrada['duracion'] = '20, mucho';
 [$listas, $errores] = Formulario::leerListas($entrada, $fabrica);
 comprobar('una duración que no es número se rechaza', isset($errores['duracion']));
 
+echo "\nPerfiles de asistencia\n";
+$claves = static fn(array $lista): array => array_column($lista, 'valor');
+$opcionDe = static function (array $lista, string $clave): array {
+    foreach ($lista as $o) {
+        if ($o['valor'] === $clave) {
+            return $o;
+        }
+    }
+    return [];
+};
+/** La fila de un perfil como la manda la pantalla, con cambios. */
+$conFila = static function (array $entrada, string $clave, array $cambios): array {
+    foreach ($entrada['perfil'] as $i => $fila) {
+        if ($fila['valor'] === $clave) {
+            $entrada['perfil'][$i] = $cambios + $fila;
+            if (array_key_exists('activo', $cambios) && $cambios['activo'] === null) {
+                unset($entrada['perfil'][$i]['activo']);
+            }
+        }
+    }
+    return $entrada;
+};
+
+comprobar('de fábrica traen Rueda de Negocios y Comunicaciones, encendidos',
+    ($opcionDe($fabrica['perfil'], 'rueda_de_negocios')['etiqueta'] ?? '') === 'Rueda de Negocios'
+    && ($opcionDe($fabrica['perfil'], 'comunicaciones')['activo'] ?? false) === true);
+
 $entrada = $sinCambios();
-$entrada['perfil'] = ['prensa', 'staff'];
+$entrada['perfil'][] = ['etiqueta' => 'Aliados  Estratégicos'];
+$entrada['perfil'][] = ['etiqueta' => ''];   // la fila vacía de agregar
 [$listas, $errores] = Formulario::leerListas($entrada, $fabrica);
-comprobar('«participante» va siempre', $listas['perfil']['participante'] === true);
-comprobar('«staff» no se cuela aunque se mande', !isset($listas['perfil']['staff']));
-comprobar('y lo no marcado queda apagado', $listas['perfil']['visitante'] === false && $listas['perfil']['prensa'] === true);
+comprobar('se agrega uno nuevo, con una clave sin tildes ni espacios',
+    ($opcionDe($listas['perfil'], 'aliados_estrategicos')['etiqueta'] ?? '') === 'Aliados Estratégicos',
+    implode(',', $claves($listas['perfil'])));
+comprobar('encendido, y la fila vacía no crea nada', ($opcionDe($listas['perfil'], 'aliados_estrategicos')['activo'] ?? false) === true
+    && count($listas['perfil']) === count($fabrica['perfil']) + 1);
+
+$entrada = $sinCambios();
+$entrada['perfil'][] = ['etiqueta' => 'rueda de negocios'];
+[$listas, $errores] = Formulario::leerListas($entrada, $fabrica);
+comprobar('uno con el nombre de otro se rechaza', str_contains($errores['perfil'] ?? '', 'ya está'), $errores['perfil'] ?? '');
+$entrada = $sinCambios();
+$entrada['perfil'][] = ['etiqueta' => 'Staff'];
+[$listas, $errores] = Formulario::leerListas($entrada, $fabrica);
+comprobar('y uno que se llame como los de administrador también', isset($errores['perfil']), $errores['perfil'] ?? '');
+$entrada = $sinCambios();
+$entrada['perfil'][] = ['etiqueta' => str_repeat('x', 31)];
+[$listas, $errores] = Formulario::leerListas($entrada, $fabrica);
+comprobar('un nombre que no cabe en el carnet se rechaza', str_contains($errores['perfil'] ?? '', 'carnet'));
+
+$entrada = $conFila($sinCambios(), 'comunicaciones', ['etiqueta' => 'Comunicaciones y medios']);
+$entrada = $conFila($entrada, 'prensa', ['activo' => null]);
+[$listas, $errores] = Formulario::leerListas($entrada, $fabrica);
+comprobar('se renombra sin cambiar la clave', ($opcionDe($listas['perfil'], 'comunicaciones')['etiqueta'] ?? '') === 'Comunicaciones y medios');
+comprobar('y se apaga uno', ($opcionDe($listas['perfil'], 'prensa')['activo'] ?? null) === false);
+
+$entrada = $conFila($sinCambios(), 'participante', ['activo' => null, 'eliminar' => '1']);
+$entrada = $conFila($entrada, 'expositor', ['eliminar' => '1']);
+[$listas, $errores] = Formulario::leerListas($entrada, $fabrica);
+comprobar('«participante» no se apaga ni se elimina', ($opcionDe($listas['perfil'], 'participante')['activo'] ?? false) === true);
+comprobar('«expositor» no se elimina', in_array('expositor', $claves($listas['perfil']), true));
+
+$entrada = $conFila($sinCambios(), 'visitante', ['eliminar' => '1']);
+[$listas, $errores] = Formulario::leerListas($entrada, $fabrica, ['participante' => 40]);
+comprobar('uno que no tiene nadie se elimina', !in_array('visitante', $claves($listas['perfil']), true) && $errores === []);
+
+$entrada = $conFila($sinCambios(), 'prensa', ['eliminar' => '1']);
+[$listas, $errores] = Formulario::leerListas($entrada, $fabrica, ['prensa' => 3]);
+comprobar('uno que tienen 3 personas no se elimina, y se dice por qué',
+    str_contains($errores['perfil'] ?? '', '3 personas') && in_array('prensa', $claves($listas['perfil']), true),
+    $errores['perfil'] ?? '');
+
+$entrada = $sinCambios();
+array_splice($entrada['perfil'], 1, 1);   // la fila de «visitante» no llega
+$entrada['perfil'][] = ['valor' => 'staff', 'etiqueta' => 'Staff', 'activo' => '1'];
+[$listas, $errores] = Formulario::leerListas($entrada, $fabrica);
+comprobar('una fila que no llega no elimina nada', in_array('visitante', $claves($listas['perfil']), true));
+comprobar('«staff» no se cuela aunque se mande', !in_array('staff', $claves($listas['perfil']), true));
+
+$entrada = $sinCambios();
+$entrada['perfil'][] = ['etiqueta' => 'Invitados'];
+[$listas] = Formulario::leerListas($entrada, $fabrica, ['invitados' => 2]);
+comprobar('la clave nueva no toma la de alguien que ya la tenga', in_array('invitados_2', $claves($listas['perfil']), true),
+    implode(',', $claves($listas['perfil'])));
+
+// Lo que guardaba la 3.7: [clave => encendido] de los cuatro de entonces.
+[$listas] = Formulario::leerListas(['perfil' => []], ['perfil' => [
+    'participante' => true, 'visitante' => false, 'expositor' => true, 'prensa' => true,
+]] + $fabrica);
+comprobar('la configuración de la 3.7 se sigue leyendo',
+    ($opcionDe($listas['perfil'], 'visitante')['activo'] ?? null) === false
+    && ($opcionDe($listas['perfil'], 'prensa')['activo'] ?? null) === true);
+comprobar('y los perfiles nuevos le llegan encendidos', ($opcionDe($listas['perfil'], 'rueda_de_negocios')['activo'] ?? null) === true);
+
+$f = Formulario::delEvento(0);
+comprobar('el formulario ofrece los encendidos', in_array('comunicaciones', $f->perfiles(), true) && !in_array('staff', $f->perfiles(), true));
+comprobar('a quien tiene uno que ya no está se le sigue ofreciendo', in_array('de_antes', $f->perfiles('de_antes'), true));
+comprobar('pero nunca Staff, aunque lo tenga', !in_array('staff', $f->perfiles('staff'), true));
+comprobar('el equipo ve todos, con Staff y Organizador',
+    isset($f->todosLosPerfiles()['staff'], $f->todosLosPerfiles()['organizador'], $f->todosLosPerfiles()['rueda_de_negocios']));
+comprobar('el nombre sale de la lista', $f->nombrePerfil('rueda_de_negocios') === 'Rueda de Negocios' && $f->nombrePerfil('staff') === 'Staff');
+comprobar('y uno que ya no está no queda en blanco', $f->nombrePerfil('aliados_de_antes') === 'Aliados de antes');
+
+$ofrecidos = $f->perfiles();
+comprobar('desde el formulario no se sube a Staff', Persona::rolAdmitido('staff', 'participante', $ofrecidos) === 'participante');
+comprobar('ni Staff lo pierde al guardar sus datos', Persona::rolAdmitido('prensa', 'staff', $ofrecidos) === 'staff');
+comprobar('un perfil nuevo se puede elegir', Persona::rolAdmitido('rueda_de_negocios', 'participante', $ofrecidos) === 'rueda_de_negocios');
+comprobar('uno inventado no, y se conserva el que tenía', Persona::rolAdmitido('inventado', 'visitante', $ofrecidos) === 'visitante');
 
 echo "\nRegistro completo\n";
 comprobar('con nombre y documento, completo', Persona::registroCompleto(['nombre' => 'Ana', 'documento_huella' => 'x'], true));

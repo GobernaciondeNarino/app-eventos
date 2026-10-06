@@ -656,9 +656,12 @@ foreach (['hoja_vida', 'hoja_vida_tipo', 'exposicion', 'exposicion_tipo'] as $si
 comprobar('se quitaron las columnas de los adjuntos',
     $pdo->query("SHOW COLUMNS FROM {$BD['prefijo']}propuesta LIKE 'hoja_vida'")->fetchAll() === []);
 
-// Y el otro camino del ajuste de tipo: a un ENUM le entra un valor nuevo. Es lo
-// que se encuentra una instalación anterior a la 1.6.0, donde «staff» todavía
-// no existía como perfil de asistencia.
+// Y el otro camino del ajuste de tipo: una columna que era un ENUM. Es lo que
+// se encuentra una instalación anterior a la 1.6.0, donde «staff» todavía no
+// existía como perfil de asistencia; desde la 1.9.0 la columna es texto, para
+// los perfiles que configure cada evento.
+$perfilesAntes = $pdo->query("SELECT rol, COUNT(*) FROM {$BD['prefijo']}persona GROUP BY rol ORDER BY rol")
+    ->fetchAll(PDO::FETCH_KEY_PAIR);
 $pdo->exec("ALTER TABLE {$BD['prefijo']}persona MODIFY COLUMN rol
             ENUM('participante','visitante','expositor','organizador','prensa')
             NOT NULL DEFAULT 'participante'");
@@ -712,10 +715,11 @@ $porOmision = (string) $pdo->query("SELECT COLUMN_DEFAULT FROM information_schem
 comprobar('vacías por omisión, para las propuestas que ya estaban',
     trim($porOmision, "'") === '', $porOmision);
 
-comprobar('y al enum de perfiles le entra «staff»',
-    str_contains($tipoDelRol(), "'staff'"), $tipoDelRol());
-comprobar('sin perder los perfiles que ya tenía',
-    str_contains($tipoDelRol(), "'expositor'") && str_contains($tipoDelRol(), "'prensa'"));
+comprobar('y la columna del perfil pasa a texto: le entran Staff y los perfiles que se agreguen',
+    strtolower($tipoDelRol()) === 'varchar(40)', $tipoDelRol());
+comprobar('sin perder el perfil de nadie',
+    $pdo->query("SELECT rol, COUNT(*) FROM {$BD['prefijo']}persona GROUP BY rol ORDER BY rol")
+        ->fetchAll(PDO::FETCH_KEY_PAIR) === $perfilesAntes);
 comprobar('y vuelve la columna que dice quién selló cada ingreso',
     count($pdo->query("SHOW COLUMNS FROM {$BD['prefijo']}asistencia
                         LIKE 'operador_tipo'")->fetchAll()) === 1);
@@ -3213,8 +3217,9 @@ $listasDeFabrica = static function (): array {
     foreach (App\Modelos\Formulario::LISTAS as $clave => $def) {
         $valor = App\Modelos\Formulario::listaPorDefecto($clave);
         $listas[$clave] = match ($def['clase']) {
-            'codigos'    => array_map(static fn(array $o): array => ['valor' => $o['valor'], 'etiqueta' => $o['etiqueta'], 'activo' => '1'], $valor),
-            'perfiles'   => array_keys(array_filter($valor)),
+            'codigos', 'perfiles' => array_map(
+                static fn(array $o): array => ['valor' => $o['valor'], 'etiqueta' => $o['etiqueta'], 'activo' => '1'], $valor
+            ),
             'territorio' => App\Modelos\Formulario::territorioComoTexto($valor),
             'minutos'    => implode(', ', $valor),
             default      => implode("\n", $valor),
@@ -3527,6 +3532,127 @@ comprobar('sin la casilla de avisar, no sale ningún correo', $ultimoCorreo() ==
 $pdo->exec("UPDATE {$P}propuesta SET estado = " . $pdo->quote((string) $deLucia['estado'])
     . ', titulo = ' . $pdo->quote((string) $deLucia['titulo']) . ', duracion_min = ' . (int) $deLucia['duracion_min']
     . " WHERE id = $idLucia");
+
+/* =========================================================================
+   14 · Perfiles de asistencia configurables, y la entidad en los datos
+   principales
+   ========================================================================= */
+titulo('Perfiles de asistencia');
+
+$html = (new Cliente($BASE))->get('/registro');
+comprobar('el formulario ofrece Rueda de Negocios y Comunicaciones',
+    str_contains($html, 'value="rueda_de_negocios"') && str_contains($html, '>Rueda de Negocios<')
+    && str_contains($html, 'value="comunicaciones"') && str_contains($html, '>Comunicaciones<'));
+$dondeEntidad = strpos($html, 'id="entidad"');
+comprobar('la entidad va en los datos principales, antes de la foto y de la caracterización',
+    $dondeEntidad !== false && $dondeEntidad < strpos($html, 'Fotografía del carnet')
+    && $dondeEntidad < strpos($html, 'id="bloque-opcional"'));
+
+$rueda = new Cliente($BASE);
+$rueda->get('/registro');
+$html = $rueda->post('/registro', [
+    'correo' => 'rueda@narino.gov.co', 'nombre' => 'Empresaria De La Rueda', 'tipo_documento' => 'CC',
+    'documento' => '1085666001', 'rol' => 'rueda_de_negocios', 'entidad' => 'Cámara de Comercio de Pasto', 'habeas' => '1',
+]);
+comprobar('alguien se registra con el perfil Rueda de Negocios', str_contains($html, 'Registro completo'), substr(strip_tags($html), 0, 160));
+$html = $rueda->get('/carnet');
+comprobar('y su carnet lo dice, con su color', str_contains($html, 'RUEDA DE NEGOCIOS') && str_contains($html, 'data-rol="rueda_de_negocios"'));
+
+// Configurarlos: renombrar uno, apagar otro y agregar dos.
+$filasDePerfiles = static function () use ($listasDeFabrica): array {
+    $filas = $listasDeFabrica()['perfil'];
+    foreach ($filas as $i => $fila) {
+        if ($fila['valor'] === 'comunicaciones') {
+            $filas[$i]['etiqueta'] = 'Comunicaciones y medios';
+        }
+        if ($fila['valor'] === 'visitante') {
+            unset($filas[$i]['activo']);
+        }
+    }
+    return $filas;
+};
+$guardarPerfiles = static function (array $filas) use ($jefa, $aplanar, $camposDeFabrica, $listasDeFabrica): string {
+    $jefa->get('/admin/configuracion/registro');
+    return $jefa->subir('/admin/configuracion/registro', $aplanar([
+        'accion' => 'guardar', 'campos' => $camposDeFabrica, 'listas' => ['perfil' => $filas] + $listasDeFabrica(),
+    ]), []);
+};
+$html = $guardarPerfiles($filasDePerfiles() + ['nueva1' => ['etiqueta' => 'Aliados Estratégicos'], 'nueva2' => ['etiqueta' => 'Temporal']]);
+comprobar('los perfiles se guardan', str_contains($html, 'Formulario guardado'), substr(strip_tags($html), 0, 200));
+$html = (new Cliente($BASE))->get('/registro');
+comprobar('el formulario muestra el nombre nuevo y los agregados',
+    str_contains($html, '>Comunicaciones y medios<') && str_contains($html, 'value="aliados_estrategicos"')
+    && str_contains($html, '>Aliados Estratégicos<') && str_contains($html, 'value="temporal"'));
+comprobar('y ya no ofrece el que se apagó', !str_contains($html, 'value="visitante"'));
+comprobar('la persona que ya tenía Rueda de Negocios la conserva',
+    (string) $pdo->query("SELECT rol FROM {$P}persona WHERE correo = 'rueda@narino.gov.co'")->fetchColumn() === 'rueda_de_negocios');
+
+$aliado = new Cliente($BASE);
+$aliado->get('/registro');
+$aliado->post('/registro', [
+    'correo' => 'aliado@narino.gov.co', 'nombre' => 'Aliado Estratégico Uno', 'tipo_documento' => 'CC',
+    'documento' => '1085666002', 'rol' => 'aliados_estrategicos', 'habeas' => '1',
+]);
+$idAliado = (int) $pdo->query("SELECT id FROM {$P}persona WHERE correo = 'aliado@narino.gov.co'")->fetchColumn();
+comprobar('alguien elige el perfil agregado',
+    (string) $pdo->query("SELECT rol FROM {$P}persona WHERE id = $idAliado")->fetchColumn() === 'aliados_estrategicos');
+
+// Eliminar: el que tiene alguien no; el que no tiene nadie, sí.
+$actuales = $filasDePerfiles();
+$actuales[] = ['valor' => 'aliados_estrategicos', 'etiqueta' => 'Aliados Estratégicos', 'activo' => '1'];
+$actuales[] = ['valor' => 'temporal', 'etiqueta' => 'Temporal', 'activo' => '1'];
+$eliminando = static function (array $filas, string $clave): array {
+    foreach ($filas as $i => $fila) {
+        if (($fila['valor'] ?? '') === $clave) {
+            $filas[$i]['eliminar'] = '1';
+        }
+    }
+    return $filas;
+};
+$html = $jefa->get('/admin/configuracion/registro');
+comprobar('la configuración dice cuántos tienen cada perfil, y no ofrece eliminar el que está en uso',
+    str_contains($html, 'En uso') && !str_contains($html, 'Eliminar el perfil «Aliados Estratégicos»')
+    && str_contains($html, 'Eliminar el perfil «Temporal»'));
+$html = $guardarPerfiles($eliminando($actuales, 'aliados_estrategicos'));
+comprobar('uno que alguien tiene no se elimina aunque se mande, y se dice por qué',
+    str_contains($html, 'no se puede eliminar') && str_contains($html, '1 persona'), substr(strip_tags($html), 0, 300));
+comprobar('y sigue en el formulario', str_contains((new Cliente($BASE))->get('/registro'), 'value="aliados_estrategicos"'));
+$html = $guardarPerfiles($eliminando($actuales, 'temporal'));
+comprobar('uno que no tiene nadie sí se elimina',
+    str_contains($html, 'Formulario guardado') && !str_contains((new Cliente($BASE))->get('/registro'), 'value="temporal"'));
+
+// El equipo ve los nombres del evento: la ficha, el filtro, la exportación.
+$html = $jefa->get('/admin/registros/' . $idAliado);
+comprobar('la ficha muestra el perfil con su nombre', str_contains($html, 'Aliados Estratégicos'));
+comprobar('y deja poner también uno apagado', str_contains($html, 'value="visitante"') && str_contains($html, 'value="staff"'));
+$jefa->post('/admin/registros/perfil', ['persona' => (string) $idAliado, 'rol' => 'comunicaciones']);
+comprobar('se le puede poner otro perfil del evento',
+    (string) $pdo->query("SELECT rol FROM {$P}persona WHERE id = $idAliado")->fetchColumn() === 'comunicaciones');
+$html = $jefa->get('/admin/registros?rol=comunicaciones');
+comprobar('el filtro por perfil la encuentra, con el nombre nuevo',
+    str_contains($html, 'Aliado Estratégico Uno') && str_contains($html, 'Comunicaciones y medios'));
+$csv = $jefa->get('/admin/registros/exportar');
+comprobar('y la exportación usa el nombre del evento', str_contains($csv, 'Comunicaciones y medios'));
+$jefa->post('/admin/registros/perfil', ['persona' => (string) $idAliado, 'rol' => 'inventado_a_mano']);
+comprobar('un perfil que no existe en el evento no se pone',
+    (string) $pdo->query("SELECT rol FROM {$P}persona WHERE id = $idAliado")->fetchColumn() === 'comunicaciones');
+$jefa->post('/admin/registros/perfil', ['persona' => (string) $idAliado, 'rol' => 'aliados_estrategicos']);
+
+// Volver al de fábrica no deja huérfano a quien tiene un perfil propio.
+$jefa->get('/admin/configuracion/registro');
+$html = $jefa->post('/admin/configuracion/registro', ['accion' => 'restablecer']);
+comprobar('al volver al de fábrica, el perfil propio que alguien tiene se conserva y se avisa',
+    str_contains($html, '«Aliados Estratégicos»'), substr(strip_tags($html), 0, 300));
+$html = (new Cliente($BASE))->get('/registro');
+comprobar('con su nombre, y vuelven los de fábrica con los suyos',
+    str_contains($html, '>Aliados Estratégicos<') && str_contains($html, '>Comunicaciones<') && str_contains($html, 'value="visitante"'));
+
+// Dejarlo como estaba.
+$pdo->exec("DELETE FROM {$P}persona WHERE correo IN ('rueda@narino.gov.co', 'aliado@narino.gov.co')");
+$jefa->get('/admin/configuracion/registro');
+$jefa->post('/admin/configuracion/registro', ['accion' => 'restablecer']);
+comprobar('sin nadie con perfiles propios, el de fábrica queda limpio',
+    $pdo->query("SELECT listas FROM {$P}evento_formulario WHERE evento_id = $eventoId")->fetchColumn() === null);
 
 ajustarConfig($RAIZ, ['modo_correo' => $configAntesForm['modo_correo'] ?? null]);
 

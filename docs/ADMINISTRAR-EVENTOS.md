@@ -485,11 +485,14 @@ Cada campo del formulario tiene tres estados posibles:
 | **Opcional** | Aparece y se puede dejar en blanco |
 | **Oculto** | No aparece |
 
-Los que se configuran: identificación (tipo y número), teléfono, perfil de asistencia,
-fotografía, entidad, rango de edad, departamento y municipio, género, grupo étnico,
+Los que se configuran: identificación (tipo y número), entidad u organización, teléfono, perfil
+de asistencia, fotografía, rango de edad, departamento y municipio, género, grupo étnico,
 discapacidad, la propuesta de exposición y, dentro de ella, el día preferido, la duración y los
 requerimientos técnicos. Cuando a un campo no le cabe ser obligatorio —el perfil, la casilla
 de exponer— las opciones son *Visible* u *Oculto*.
+
+Desde la 3.8 **la entidad va en los datos principales**, debajo de la identificación, y no
+plegada con la caracterización: es lo que sale en el carnet debajo del nombre.
 
 Tres cosas no se pueden cambiar, y la pantalla dice por qué:
 
@@ -518,16 +521,50 @@ En *Opciones de las listas*, cada lista desplegable se abre y se cambia:
 | Lista | Cómo se edita |
 |---|---|
 | Tipos de documento | Activar o apagar cada uno, cambiar cómo se muestra, y agregar otros con su sigla —«PPT», Permiso por Protección Temporal—. La sigla es lo que sale en el carnet. La cédula y la tarjeta de identidad se validan como solo números; los demás admiten letras |
-| Perfiles de asistencia | Cuáles se ofrecen. *Participante* va siempre |
+| Perfiles de asistencia | Agregar, cambiar el nombre, apagar y eliminar (sección 9.3) |
 | Género, grupo étnico, discapacidad | Activar, apagar, cambiar el texto y agregar. «Prefiero no responder» no se puede apagar |
 | Rangos de edad, categorías de las propuestas | Una opción por línea, en el orden en que se muestran |
 | Departamentos y municipios | Un departamento por línea y, debajo, sus municipios con un guion: «Nariño» y en la siguiente «- Pasto» |
 | Duraciones de las exposiciones | En minutos, separadas por comas: «20, 40, 60» |
 
 **Las opciones de fábrica no se borran, se apagan.** Hay registros que las tienen guardadas, y
-borrarlas dejaría esos datos sin nombre en los reportes.
+borrarlas dejaría esos datos sin nombre en los reportes. Los perfiles son la excepción, con sus
+propias reglas.
 
-### 9.3 Lo que ya está registrado no cambia
+### 9.3 Los perfiles de asistencia
+
+El perfil es lo que sale en grande en el carnet —«EXPOSITOR», «PRENSA»—, lo que se mira a un
+metro en la fila. De fábrica vienen **Participante, Visitante, Expositor, Prensa, Rueda de
+Negocios y Comunicaciones**, y cada evento los ajusta en *Opciones de las listas → Perfiles de
+asistencia*:
+
+| Para | Cómo |
+|---|---|
+| **Agregar** uno | Se escribe su nombre en una fila vacía —«Aliados estratégicos»— y se guarda. Sale encendido |
+| **Cambiar el nombre** | Se corrige en su fila. Quien ya lo tiene pasa a llevar el nombre nuevo en su carnet, en las listas y en la exportación |
+| **Apagar** | Se desmarca *Activo*. Deja de ofrecerse en el formulario, pero quien ya lo tiene lo conserva y un administrador lo puede seguir poniendo desde la ficha. Sirve para un perfil que solo asigna la organización |
+| **Eliminar** | Se marca *Eliminar* y se guarda. Solo se puede con uno que **no tenga nadie**: la columna *Lo tienen* dice cuántas personas lo llevan, y en lugar de la casilla dice *En uso* |
+
+Lo que no se puede, y la pantalla lo dice:
+
+- **Participante** no se apaga ni se elimina: es el de quien no elige ninguno. **Expositor** se
+  apaga, pero no se elimina: va con las propuestas de exposición. Los dos se pueden renombrar.
+- **Staff y Organizador no están en la lista.** Los pone un administrador desde la ficha de la
+  persona (sección 5), y ningún perfil puede llamarse como ellos: un «Staff» de mentira en un
+  carnet confundiría en la puerta.
+- **Dos perfiles no pueden llamarse igual**, y el nombre tiene un máximo de 30 caracteres, para
+  que quepa en el carnet.
+
+Por dentro, cada perfil tiene una clave que no cambia aunque cambie el nombre —«Rueda de
+Negocios» se guarda como `rueda_de_negocios`—, así que renombrar no le mueve nada a nadie. Los
+perfiles que agrega el evento toman en el carnet el color de acento del evento; los de fábrica
+tienen el suyo.
+
+**Volver al formulario de fábrica** (9.6) devuelve también la lista de perfiles de fábrica, con
+una excepción: los perfiles que agregó el evento y que alguien ya tiene se conservan, con su
+nombre. El mensaje dice cuáles.
+
+### 9.4 Lo que ya está registrado no cambia
 
 Cambiar el formulario no toca a nadie que ya se registró:
 
@@ -538,7 +575,7 @@ Cambiar el formulario no toca a nadie que ya se registró:
 - **Un campo que se oculta conserva lo que ya tenía.** Ocultar el teléfono no borra el teléfono
   de quien ya lo dio; simplemente no se le vuelve a preguntar.
 
-### 9.4 El banner
+### 9.5 El banner
 
 Una imagen ancha arriba del formulario, antes del primer campo, con un título y un texto corto
 si se quiere —«Inscripciones abiertas hasta el 30 de octubre»—.
@@ -551,17 +588,18 @@ si se quiere —«Inscripciones abiertas hasta el 30 de octubre»—.
 - La casilla *Mostrar el banner* lo enciende y lo apaga sin perder la imagen. *Quitar esta
   imagen* la borra del servidor.
 
-### 9.5 Volver al de fábrica
+### 9.6 Volver al de fábrica
 
 Con el formulario cambiado aparece, abajo, **«Volver al formulario de fábrica»**: los campos y
 las listas vuelven a ser los de la plataforma —los mismos que tenía el evento antes de
-configurarlo—. El banner se conserva, porque se puso a propósito. Pide confirmación y queda en
-la bitácora, igual que cada vez que se guarda.
+configurarlo—. El banner se conserva, porque se puso a propósito, y también los perfiles que
+agregó el evento y que alguien ya tiene (9.3). Pide confirmación y queda en la bitácora, igual
+que cada vez que se guarda.
 
 Cada evento tiene su propio formulario. Al crear uno nuevo arranca con el de fábrica, aunque el
 anterior estuviera configurado.
 
-### 9.6 Cuando a alguien le falta un dato
+### 9.7 Cuando a alguien le falta un dato
 
 Si quien se registra pulsa *Completar registro* —o *Guardar cambios*— con un campo obligatorio
 vacío, **el formulario no se envía y se abre una ventana**: «Tu registro no fue guardado. Por

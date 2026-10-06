@@ -24,7 +24,7 @@ registra gente, se sella asistencia, se aprueban exposiciones y se exportan repo
 | **Instalación** | Asistente de seis pasos que crea, actualiza o anexa las tablas. Al subir una versión nueva, la base se pone al día sola en la primera visita |
 | **Autenticación** | Cinco formas de entrar: correo, QR personal, contraseña, WhatsApp y SMS. Se puede crear el acceso con solo correo y contraseña. El equipo, con contraseña y segundo factor |
 | **Códigos QR** | Generador **y lector** propios, verificados uno contra otro y contra una librería de referencia |
-| **Pruebas** | 571 comprobaciones de extremo a extremo, 154 de actualización desde la 1.0.0, 108 en navegador, y 610 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy y formulario de registro |
+| **Pruebas** | 615 comprobaciones de extremo a extremo, 160 de actualización desde la 1.0.0, 108 en navegador, y 634 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy y formulario de registro |
 
 ---
 
@@ -222,8 +222,11 @@ activo cambia toda la plataforma.
 
 - **Campos** obligatorios, opcionales u ocultos. El correo, el nombre y la autorización de datos
   van siempre; los datos sensibles —género, etnia, discapacidad— se pueden pedir, nunca exigir.
-- **Listas** con sus opciones: tipos de documento (con siglas nuevas, como PPT), perfiles,
-  rangos de edad, territorio, categorías y duraciones de las propuestas.
+- **Listas** con sus opciones: tipos de documento (con siglas nuevas, como PPT), rangos de
+  edad, territorio, categorías y duraciones de las propuestas.
+- **Perfiles de asistencia** propios: de fábrica vienen Participante, Visitante, Expositor,
+  Prensa, Rueda de Negocios y Comunicaciones; se agregan, se renombran, se apagan y se eliminan
+  los que no tenga nadie. El nombre es lo que sale en grande en el carnet.
 - **Banner** opcional arriba del formulario, con título y texto.
 
 Mientras no se toque, el formulario es el de siempre, y lo ya registrado no cambia al
@@ -348,9 +351,9 @@ el enrutado, las cookies, los testigos y los guardias, que es donde suelen estar
 Incluye 19 comprobaciones en el bloque específico de seguridad y otras tantas repartidas por
 los guardias de cada pantalla.
 
-Estado actual: **571 de 571** de extremo a extremo, **77** del asistente de instalación,
-**154** de actualización de una instalación en producción por siete caminos, **46** del
-segundo factor —los vectores del RFC 6238 y el reloj del servidor corrido—, **33** de la
+Estado actual: **615 de 615** de extremo a extremo, **77** del asistente de instalación,
+**160** de actualización de una instalación en producción por siete caminos, **46** del
+segundo factor —los vectores del RFC 6238 y el reloj del servidor corrido—, **57** de la
 configuración del formulario de registro, **22** del hash de contraseñas,
 **19** del correo saliente, **19** de la dirección del visitante detrás del proxy, **21** de la
 fotografía del carnet, **61** de los adjuntos del expositor, **17** del saneado de logos SVG,

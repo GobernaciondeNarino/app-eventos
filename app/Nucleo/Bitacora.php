@@ -125,6 +125,8 @@ final class Bitacora
             'jornada_eliminada'  => "$quien eliminó un día del evento"
                 . (!empty($detalle['renumeradas']) ? ' y se renumeraron los siguientes' : ''),
             'jornadas_renumeradas' => "$quien dejó seguidos los números de los días",
+            'perfil_cambiado'    => "$quien cambió el perfil de asistencia de una persona"
+                . (isset($detalle['de'], $detalle['a']) ? ' (' . etiquetaRol((string) $detalle['de']) . ' → ' . etiquetaRol((string) $detalle['a']) . ')' : ''),
             'identidad_guardada' => "$quien cambió la identidad del evento",
             'exportacion'        => "$quien exportó registros" . (($detalle['sensible'] ?? false) ? ' con caracterización' : ''),
             'contacto_creado'    => 'Intercambio de contacto entre asistentes',

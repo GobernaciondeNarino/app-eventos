@@ -7,6 +7,7 @@ defined('EVENTOS_TIC') || exit;
 
 use App\Modelos\Formulario;
 use App\Nucleo\App;
+use App\Nucleo\Bd;
 use App\Nucleo\Bitacora;
 use App\Nucleo\Guardia;
 use App\Nucleo\Imagen;
@@ -45,14 +46,25 @@ final class Configuracion
         $errores = [];
         $escrito = [];
 
+        // Cuántas personas tienen cada perfil: uno en uso no se elimina, se
+        // apaga. La pantalla lo dice al lado de cada uno.
+        $perfilesEnUso = [];
+        foreach (Bd::filas('SELECT rol, COUNT(*) AS n FROM {persona} WHERE evento_id = ? GROUP BY rol', [$eventoId]) as $fila) {
+            $perfilesEnUso[(string) $fila['rol']] = (int) $fila['n'];
+        }
+
         if ($peticion->esPost()) {
             $usuarioId = (int) (Guardia::usuarioActual()['id'] ?? 0) ?: null;
 
             if ($peticion->campo('accion') === 'restablecer') {
-                Formulario::restablecer($eventoId, $usuarioId);
-                Bitacora::registrar('formulario_restablecido', 'evento', $eventoId);
+                $conservados = Formulario::restablecer($eventoId, $usuarioId);
+                Bitacora::registrar('formulario_restablecido', 'evento', $eventoId,
+                    $conservados === [] ? [] : ['perfiles_conservados' => implode(', ', $conservados)]);
                 Respuesta::redirigir('/admin/configuracion/registro',
-                    'El formulario volvió a ser el de fábrica. El banner se conservó como estaba.');
+                    'El formulario volvió a ser el de fábrica. El banner se conservó como estaba.'
+                    . ($conservados === [] ? '' : ' También los perfiles ' . implode(', ', array_map(
+                        static fn(string $n): string => '«' . $n . '»', $conservados
+                    )) . ', porque hay personas que los tienen.'));
             }
 
             $antes = Formulario::delEvento($eventoId)->paraEditar();
@@ -64,7 +76,7 @@ final class Configuracion
                 }
             }
             $escrito = $peticion->campoEstructurado('listas');
-            [$listas, $errores] = Formulario::leerListas($escrito, $antes['listas']);
+            [$listas, $errores] = Formulario::leerListas($escrito, $antes['listas'], $perfilesEnUso);
             Formulario::guardar($eventoId, $campos, $listas, $usuarioId);
 
             $banner = [
@@ -117,6 +129,7 @@ final class Configuracion
             'pantalla'   => 'configuracion',
             'formulario' => $formulario,
             'edicion'    => $formulario->paraEditar(),
+            'perfilesEnUso' => $perfilesEnUso,
             'errores'    => $errores,
             // Lo que se escribió en una lista que no se pudo guardar, para
             // corregirlo sin tener que volver a escribirlo entero.

@@ -289,6 +289,10 @@
   font-weight: 700; font-size: 25px; letter-spacing: .22em;
   color: var(--rol, var(--c-accent)); text-transform: uppercase;
 }
+/* Nombres de perfil largos: más chicos, para que el carnet no se quede sin sitio
+   para la entidad. La talla la escoge tallaRol() según el largo del nombre. */
+.carnet__rol--medio { font-size: 18px; letter-spacing: .16em; }
+.carnet__rol--largo { font-size: 14px; letter-spacing: .12em; line-height: 1.25; }
 .carnet__fields { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 0 8px 4px; }
 .carnet__field { display: flex; flex-direction: column; gap: 3px; border-left: 1px solid var(--a-40); padding-left: 10px; }
 .carnet__k { font-family: var(--f-mono); font-size: 8.5px; letter-spacing: .24em; text-transform: uppercase; color: var(--c-muted); }
@@ -313,6 +317,8 @@
 .carnet[data-rol="organizador"]  { --rol: var(--c-rol-organizador); }
 .carnet[data-rol="prensa"]       { --rol: var(--c-rol-prensa); }
 .carnet[data-rol="staff"]        { --rol: var(--c-rol-staff); }
+.carnet[data-rol="rueda_de_negocios"] { --rol: var(--c-rol-rueda-de-negocios); }
+.carnet[data-rol="comunicaciones"]    { --rol: var(--c-rol-comunicaciones); }
 
 /* -------------------------------------------------------------------------
    Tanda de carnets: una cara por persona, con el código dentro.
@@ -338,6 +344,8 @@
 .carnet-uno[data-rol="organizador"]  { --rol: var(--c-rol-organizador); }
 .carnet-uno[data-rol="prensa"]       { --rol: var(--c-rol-prensa); }
 .carnet-uno[data-rol="staff"]        { --rol: var(--c-rol-staff); }
+.carnet-uno[data-rol="rueda_de_negocios"] { --rol: var(--c-rol-rueda-de-negocios); }
+.carnet-uno[data-rol="comunicaciones"]    { --rol: var(--c-rol-comunicaciones); }
 
 .carnet-uno__head { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .carnet-uno__rol {
@@ -797,9 +805,32 @@ a.tabs__btn { text-decoration: none; display: inline-flex; align-items: center; 
 
 .config-opciones { display: flex; flex-direction: column; gap: 6px; }
 .config-opciones__fila {
-  display: grid; grid-template-columns: 34px minmax(64px, 140px) minmax(0, 1fr);
+  display: grid; grid-template-columns: 54px minmax(64px, 140px) minmax(0, 1fr);
   gap: 10px; align-items: center;
 }
+/* Perfiles: activo, nombre, cuántos lo tienen, eliminar. En el celular, el
+   nombre ocupa su propia línea y lo demás va debajo: cuatro columnas en 390 px
+   dejaban «Participante» cortado en «Participar». */
+.config-opciones--perfiles .config-opciones__fila {
+  grid-template-columns: 54px minmax(0, 1fr) 72px 84px;
+  grid-template-areas: "activo nombre uso borrar";
+}
+.config-opciones--perfiles .cp-activo { grid-area: activo; }
+.config-opciones--perfiles .cp-nombre { grid-area: nombre; }
+.config-opciones--perfiles .cp-uso    { grid-area: uso; }
+.config-opciones--perfiles .cp-borrar { grid-area: borrar; }
+.config-opciones--perfiles .cp-borrar__texto { display: none; }
+@media (max-width: 600px) {
+  .config-opciones--perfiles .config-opciones__fila {
+    grid-template-columns: 30px minmax(0, 1fr) auto;
+    grid-template-areas: "activo nombre nombre" ". uso borrar";
+    row-gap: 4px;
+  }
+  .config-opciones--perfiles .config-opciones__cabeza { display: none; }
+  .config-opciones--perfiles .cp-uso::before { content: "Lo tienen: "; }
+  .config-opciones--perfiles .cp-borrar__texto { display: inline; }
+}
+.config-opciones__cabeza > span { white-space: nowrap; }
 .config-opciones__cabeza {
   font-family: var(--f-mono); font-size: 10px; letter-spacing: .12em;
   text-transform: uppercase; color: var(--c-muted);

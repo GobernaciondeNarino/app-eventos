@@ -42,6 +42,9 @@
   --c-rol-organizador: #7CF7C8;
   --c-rol-prensa: #FF5FD1;
   --c-rol-staff: #C8B5FF;
+  --c-rol-rueda-de-negocios: #FFE066;
+  --c-rol-comunicaciones: #FF8A80;
+  /* Los perfiles que agregue cada evento usan el acento del evento. */
 
   /* ---- Identidad del evento: tipografía -------------------------------- */
   --f-display: 'Chakra Petch', 'Segoe UI', system-ui, sans-serif;

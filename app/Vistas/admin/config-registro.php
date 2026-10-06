@@ -6,6 +6,7 @@
  * @var array $edicion  campos, listas y banner tal como están guardados
  * @var array $errores  por lista, y 'banner_imagen'
  * @var array $escrito  lo enviado, para no perder lo que no se pudo guardar
+ * @var array $perfilesEnUso cuántas personas tienen cada perfil
  * @var array $evento
  */
 defined('EVENTOS_TIC') || exit;
@@ -186,7 +187,7 @@ $pestana = 'registro';
           $oculta = !$formulario->visible($definicion['campo']);
           $resumen = match ($definicion['clase']) {
               'codigos'    => count(array_filter($valor, static fn(array $o): bool => !empty($o['activo']) && $o['valor'] !== '')) . ' activas',
-              'perfiles'   => count(array_filter($valor)) . ' de ' . count($valor),
+              'perfiles'   => count(array_filter($valor, static fn(array $o): bool => !empty($o['activo']))) . ' de ' . count($valor) . ' activos',
               'territorio' => count($valor) . ' departamentos · ' . array_sum(array_map('count', $valor)) . ' municipios',
               'minutos'    => implode(', ', $valor) . ' minutos',
               default      => count($valor) . ' opciones',
@@ -243,19 +244,55 @@ $pestana = 'registro';
                 <?php endif; ?>
 
               <?php elseif ($definicion['clase'] === 'perfiles'): ?>
-                <div class="row" style="gap:14px">
-                  <?php foreach (Persona::ROLES_PUBLICOS as $rol): ?>
-                    <label class="row" style="gap:8px;cursor:pointer">
-                      <input type="checkbox" name="listas[perfil][]" value="<?= e($rol) ?>"
-                             <?= !empty($valor[$rol]) ? 'checked' : '' ?> <?= $rol === 'participante' ? 'disabled' : '' ?>
+                <div class="config-opciones config-opciones--perfiles">
+                  <div class="config-opciones__fila config-opciones__cabeza">
+                    <span class="cp-activo">Activo</span><span class="cp-nombre">Nombre</span>
+                    <span class="cp-uso">Lo tienen</span><span class="cp-borrar">Eliminar</span>
+                  </div>
+                  <?php foreach ($valor as $i => $opcion):
+                    $clave = (string) $opcion['valor'];
+                    $delSistema = in_array($clave, Persona::PERFILES_DEL_SISTEMA, true);
+                    $usan = (int) ($perfilesEnUso[$clave] ?? 0);
+                  ?>
+                    <div class="config-opciones__fila">
+                      <input type="hidden" name="listas[perfil][<?= (int) $i ?>][valor]" value="<?= e($clave) ?>">
+                      <input type="checkbox" class="cp-activo" name="listas[perfil][<?= (int) $i ?>][activo]" value="1"
+                             aria-label="Ofrecer «<?= e($opcion['etiqueta']) ?>» en el formulario"
+                             <?= !empty($opcion['activo']) ? 'checked' : '' ?> <?= $clave === 'participante' ? 'disabled' : '' ?>
                              style="width:18px;height:18px;accent-color:var(--c-accent)">
-                      <span><?= e(etiquetaRol($rol)) ?></span>
-                    </label>
+                      <input class="input cp-nombre" name="listas[perfil][<?= (int) $i ?>][etiqueta]" maxlength="30"
+                             value="<?= e($opcion['etiqueta']) ?>" aria-label="Nombre del perfil «<?= e($opcion['etiqueta']) ?>»">
+                      <span class="cp-uso mono muted" style="font-size:12px"
+                            aria-label="<?= $usan === 1 ? 'Lo tiene 1 persona' : 'Lo tienen ' . $usan . ' personas' ?>"><?= $usan ?></span>
+                      <span class="cp-borrar">
+                        <?php if ($delSistema): ?>
+                          <span class="muted" style="font-size:11px" title="La plataforma lo usa: se puede renombrar, no eliminar">—</span>
+                        <?php elseif ($usan > 0): ?>
+                          <span class="muted" style="font-size:11px" title="Lo tiene alguien: apágalo para que no se ofrezca más">En uso</span>
+                        <?php else: ?>
+                          <label class="row" style="gap:6px;cursor:pointer">
+                            <input type="checkbox" name="listas[perfil][<?= (int) $i ?>][eliminar]" value="1"
+                                   aria-label="Eliminar el perfil «<?= e($opcion['etiqueta']) ?>»"
+                                   style="width:18px;height:18px;accent-color:var(--c-danger)">
+                            <span class="cp-borrar__texto muted" style="font-size:11px">Eliminar</span>
+                          </label>
+                        <?php endif; ?>
+                      </span>
+                    </div>
+                  <?php endforeach; ?>
+                  <?php foreach (['nueva1', 'nueva2'] as $nueva): ?>
+                    <div class="config-opciones__fila">
+                      <span class="cp-activo muted" aria-hidden="true">＋</span>
+                      <input class="input cp-nombre" name="listas[perfil][<?= $nueva ?>][etiqueta]" maxlength="30"
+                             placeholder="Nuevo perfil" aria-label="Nombre de un perfil nuevo">
+                    </div>
                   <?php endforeach; ?>
                 </div>
                 <span class="help" style="margin:0">
-                  «Participante» va siempre: es el de quien no elige otro. Staff y Organizador no se
-                  ofrecen nunca en el formulario; los pone un administrador desde la ficha.
+                  Apagado, un perfil no se ofrece en el formulario, pero quien ya lo tiene lo conserva y
+                  un administrador lo puede seguir poniendo desde la ficha de la persona. Solo se elimina
+                  uno que no tenga nadie. «Participante» y «Expositor» se renombran, pero no se eliminan.
+                  Staff y Organizador no están aquí: los pone un administrador desde la ficha.
                 </span>
 
               <?php elseif ($definicion['clase'] === 'territorio'): ?>
@@ -292,7 +329,7 @@ $pestana = 'registro';
 
   <?php if ($formulario->personalizado()): ?>
     <form method="post" action="<?= e(u('/admin/configuracion/registro')) ?>" class="row row--end"
-          data-confirmar="Los campos y las listas vuelven a ser los de fábrica. El banner se conserva. ¿Continuar?">
+          data-confirmar="Los campos y las listas vuelven a ser los de fábrica. Se conservan el banner y los perfiles propios que alguien ya tenga. ¿Continuar?">
       <?= testigo() ?>
       <input type="hidden" name="accion" value="restablecer">
       <button class="btn btn--sm" type="submit">Volver al formulario de fábrica</button>

@@ -21,22 +21,49 @@ use App\Nucleo\Imagen;
  */
 final class Persona
 {
-    /** Todos los perfiles de asistencia que existen. */
-    public const ROLES = ['participante', 'visitante', 'expositor', 'organizador', 'prensa', 'staff'];
+    /**
+     * Los perfiles de asistencia que trae la plataforma, con su nombre.
+     *
+     * Desde la 3.8 cada evento los cambia en Configuración → Registro: agrega
+     * los suyos, les cambia el nombre, los apaga o los elimina
+     * (App\Modelos\Formulario). Lo que se guarda en la persona es la clave de
+     * la izquierda, que no cambia aunque cambie el nombre: así renombrar un
+     * perfil no le cambia nada a quien ya lo tiene.
+     */
+    public const PERFILES_DE_FABRICA = [
+        'participante'      => 'Participante',
+        'visitante'         => 'Visitante',
+        'expositor'         => 'Expositor',
+        'prensa'            => 'Prensa',
+        'rueda_de_negocios' => 'Rueda de Negocios',
+        'comunicaciones'    => 'Comunicaciones',
+    ];
 
     /**
-     * Los que puede elegir quien llena el formulario.
-     *
-     * «staff» queda fuera, y no es un detalle de presentación: ese perfil da
-     * acceso a la plataforma —ver los carnets de todo el mundo, con su cédula, y
-     * sellar ingresos—, así que ofrecerlo en un formulario abierto al público
-     * sería dejar que cualquiera se lo asignara. Esconder la opción no basta:
-     * un envío hecho a mano no pasa por la pantalla. Por eso la lista está aquí
-     * y es contra esta contra la que valida el registro público.
-     *
-     * Lo asigna un administrador desde la ficha de la persona.
+     * Los que la plataforma usa por su clave: se renombran, pero no se eliminan.
+     * «Participante» es el de quien no elige ninguno; «expositor» va con las
+     * propuestas de exposición.
      */
-    public const ROLES_PUBLICOS = ['participante', 'visitante', 'expositor', 'prensa'];
+    public const PERFILES_DEL_SISTEMA = ['participante', 'expositor'];
+
+    /**
+     * Los que solo pone un administrador, desde la ficha de la persona.
+     *
+     * No entran en la lista configurable ni se ofrecen nunca en el formulario,
+     * y no es un detalle de presentación: «staff» da acceso a la plataforma
+     * —ver los carnets de todo el mundo, con su cédula, y sellar ingresos—, así
+     * que ofrecerlo en un formulario abierto al público sería dejar que
+     * cualquiera se lo asignara. Esconder la opción no basta: un envío hecho a
+     * mano no pasa por la pantalla. Por eso el registro público valida contra
+     * la lista del evento, que nunca los contiene.
+     */
+    public const PERFILES_DE_ADMIN = ['staff' => 'Staff', 'organizador' => 'Organizador'];
+
+    /**
+     * Los valores que admitía la columna antes de la 1.9.0, cuando era un ENUM.
+     * Una base que todavía no se puso al día solo acepta estos.
+     */
+    public const PERFILES_DE_ANTES = ['participante', 'visitante', 'expositor', 'organizador', 'prensa'];
 
     /** ¿Este perfil da acceso a acreditar y a ver los carnets? */
     public static function esStaff(?array $persona): bool
@@ -49,24 +76,25 @@ final class Persona
      *
      * Dos reglas, y la segunda es la que no se ve venir:
      *
-     * 1. No se puede subir. El enviado vale solo si está en ROLES_PUBLICOS.
+     * 1. No se puede subir. El enviado vale solo si está entre los que ofrece
+     *    el formulario del evento ($ofrecidos), que nunca tiene los de admin.
      * 2. Tampoco se puede perder. Un perfil que solo pone un administrador
      *    —«staff», «organizador»— se conserva pase lo que pase en el envío. Si
      *    no, a alguien del staff le bastaba con abrir «mis datos» y guardar para
      *    quedarse sin su perfil: el selector del formulario no tiene su opción,
      *    así que el navegador manda la primera de la lista.
+     *
+     * @param array<int, string> $ofrecidos las claves que ofrece el formulario
      */
-    public static function rolAdmitido(string $enviado, string $actual): string
+    public static function rolAdmitido(string $enviado, string $actual, array $ofrecidos): string
     {
-        $esDeAdmin = in_array($actual, self::ROLES, true)
-            && !in_array($actual, self::ROLES_PUBLICOS, true);
-        if ($esDeAdmin) {
+        if (isset(self::PERFILES_DE_ADMIN[$actual])) {
             return $actual;
         }
-        if (in_array($enviado, self::ROLES_PUBLICOS, true)) {
+        if (in_array($enviado, $ofrecidos, true) && !isset(self::PERFILES_DE_ADMIN[$enviado])) {
             return $enviado;
         }
-        return in_array($actual, self::ROLES, true) ? $actual : 'participante';
+        return $actual !== '' ? $actual : 'participante';
     }
 
     public static function porId(int $id): ?array
@@ -231,7 +259,8 @@ final class Persona
                 // corregir su teléfono se quedaría sin su perfil.
                 'rol'               => self::rolAdmitido(
                     (string) ($datos['rol'] ?? ''),
-                    $existente ? (string) $existente['rol'] : 'participante'
+                    $existente ? (string) $existente['rol'] : 'participante',
+                    Formulario::delEvento($eventoId)->perfiles($existente ? (string) $existente['rol'] : '')
                 ),
             ];
 
@@ -337,7 +366,9 @@ final class Persona
 
             $donde[] = $campos . ')';
         }
-        if (!empty($filtros['rol']) && in_array($filtros['rol'], self::ROLES, true)) {
+        // Los perfiles los configura cada evento: basta con que tenga forma de
+        // clave. Va en un parámetro, así que no hay nada que inyectar.
+        if (!empty($filtros['rol']) && preg_match('/^[a-z0-9_]{1,40}$/', (string) $filtros['rol'])) {
             $donde[] = 'p.rol = :rol';
             $parametros['rol'] = $filtros['rol'];
         }

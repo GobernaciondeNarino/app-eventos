@@ -144,9 +144,15 @@ $qrAcceso = $qrAcceso ?? '';
           <input type="hidden" name="persona" value="<?= e((string) $id) ?>">
           <label class="sr-only" for="perfil-<?= e((string) $id) ?>">Perfil de asistencia</label>
           <select class="select" id="perfil-<?= e((string) $id) ?>" name="rol" style="flex:1">
-            <?php foreach (\App\Modelos\Persona::ROLES as $unRol): ?>
-              <option value="<?= e($unRol) ?>" <?= (string) $persona['rol'] === $unRol ? 'selected' : '' ?>>
-                <?= e(etiquetaRol($unRol)) ?>
+            <?php
+            // Los del evento de esta persona. Si el suyo ya no está en la lista
+            // —uno que se eliminó a mano en la base—, igual se muestra: si no,
+            // el navegador marcaría el primero y «Cambiar» se lo cambiaría.
+            $perfilesFicha = perfilesDelEvento((int) $persona['evento_id']);
+            $perfilesFicha += [(string) $persona['rol'] => etiquetaRol((string) $persona['rol'], (int) $persona['evento_id'])];
+            foreach ($perfilesFicha as $unRol => $nombreRol): ?>
+              <option value="<?= e((string) $unRol) ?>" <?= (string) $persona['rol'] === (string) $unRol ? 'selected' : '' ?>>
+                <?= e($nombreRol) ?>
               </option>
             <?php endforeach; ?>
           </select>

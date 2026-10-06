@@ -385,6 +385,12 @@ restauró no es una copia.
    alguien la agrandó a mano— se deja como está. Mientras nadie entre a **Configuración →
    Registro**, el formulario es exactamente el de antes.
 
+   La 3.8 convierte el perfil de asistencia de cada persona (`persona.rol`) de una lista
+   cerrada a texto, para los perfiles que configure cada evento. El perfil de cada quien no
+   cambia. Lo que sí se nota sin tocar nada: el formulario ofrece dos perfiles más, *Rueda de
+   Negocios* y *Comunicaciones*, y la entidad aparece en los datos principales en vez de en la
+   caracterización.
+
    Si el usuario de la base de datos no tiene permiso de `ALTER` —pasa en algunos
    alojamientos—, la actualización automática no puede hacerse: lo anota en el registro,
    vuelve a intentarlo cada cinco minutos y la plataforma sigue funcionando. Para hacerlo a

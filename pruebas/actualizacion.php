@@ -225,6 +225,7 @@ function sembrar(): array
         'correo_admin' => 'prod.admin@narino.gov.co',
         'documentos' => array_combine($personas, $documentos),
         'pasaporte' => $personas[2],
+        'expositor' => $personas[0],
         'caracterizada' => $personas[1], 'caracterizacion' => $caracterizacion,
         'conteos' => cuentas(),
     ];
@@ -277,7 +278,10 @@ function verificar(string $camino, array $s, string $llave): void
           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = 'rol'",
         [$P . 'persona']
     );
-    comprobar("[$camino] el perfil admite Staff", str_contains($tipoRol, "'staff'"), $tipoRol);
+    // Desde la 1.9.0 es texto: admite Staff y los perfiles que configure cada evento.
+    comprobar("[$camino] el perfil admite Staff y los que configure el evento", strtolower($tipoRol) === 'varchar(40)', $tipoRol);
+    comprobar("[$camino] y nadie perdió el suyo",
+        Bd::valor('SELECT rol FROM {persona} WHERE id = ?', [$s['expositor']]) === 'expositor');
 
     // Las columnas que la 1.8.0 ensancha: lo guardado sigue igual.
     $tipos = [];

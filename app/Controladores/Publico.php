@@ -243,8 +243,7 @@ final class Publico
             // uno. Sale de lo guardado y nunca de lo enviado: con lo enviado,
             // a cualquiera que mandara «rol=staff» a mano se le pintaba la
             // etiqueta de Staff como si ya lo fuera.
-            'perfilFijo'    => $yo !== null
-                && !in_array((string) $yo['rol'], Persona::ROLES_PUBLICOS, true)
+            'perfilFijo'    => $yo !== null && isset(Persona::PERFILES_DE_ADMIN[(string) $yo['rol']])
                 ? (string) $yo['rol'] : '',
         ]);
     }

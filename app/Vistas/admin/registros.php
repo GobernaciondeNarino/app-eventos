@@ -76,8 +76,8 @@ guiones('registros.js');
       <label class="sr-only" for="rol">Perfil</label>
       <select class="select" id="rol" name="rol">
         <option value="">Todos los perfiles</option>
-        <?php foreach (Persona::ROLES as $rol): ?>
-          <option value="<?= e($rol) ?>" <?= $filtros['rol'] === $rol ? 'selected' : '' ?>><?= e(etiquetaRol($rol)) ?></option>
+        <?php foreach (perfilesDelEvento() as $rol => $nombreRol): ?>
+          <option value="<?= e($rol) ?>" <?= $filtros['rol'] === $rol ? 'selected' : '' ?>><?= e($nombreRol) ?></option>
         <?php endforeach; ?>
       </select>
 

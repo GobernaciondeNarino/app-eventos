@@ -9,6 +9,8 @@ defined('EVENTOS_TIC') || exit;
 
 $marca = require __DIR__ . '/../parciales/marca.php';
 $rol = (string) $persona['rol'];
+// El nombre del perfil, como lo configuró el evento de esta persona.
+$nombreRol = etiquetaRol($rol, (int) $persona['evento_id']);
 $foto = (string) ($persona['foto'] ?? '') !== '' ? u('/medios/foto/' . (int) $persona['id']) : '';
 guiones('carnet.js');
 ?>
@@ -41,7 +43,7 @@ guiones('carnet.js');
             </div>
           </div>
 
-          <div class="carnet__rol"><?= e(mb_strtoupper(etiquetaRol($rol))) ?></div>
+          <div class="carnet__rol<?= tallaRol($nombreRol) ?>"><?= e(mb_strtoupper($nombreRol)) ?></div>
 
           <div class="carnet__fields">
             <?php foreach ([
@@ -157,7 +159,7 @@ guiones('carnet.js');
       <div class="card__body--tight">
         <?php foreach ([
           ['Credencial', $credencial['codigo']],
-          ['Perfil', etiquetaRol($rol)],
+          ['Perfil', $nombreRol],
           ['Documento', identificacion($persona['tipo_documento'], $documento) ?: 'No registrado'],
           ['Correo', $persona['correo']],
           ['Municipio', $persona['municipio'] ?: 'Sin registrar'],

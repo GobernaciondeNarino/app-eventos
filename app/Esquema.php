@@ -15,7 +15,7 @@ use App\Nucleo\Bd;
  */
 final class Esquema
 {
-    public const VERSION = '1.8.0';
+    public const VERSION = '1.9.0';
 
     /**
      * Columnas que ya existen pero cambiaron de tipo.
@@ -53,13 +53,17 @@ final class Esquema
             'tipo'    => 'CHAR(64) NULL DEFAULT NULL',
             'si'      => 'no_nulable',
         ],
+        // 1.9.0: los perfiles de asistencia se configuran por evento —Rueda de
+        // Negocios, Comunicaciones, los que se agreguen—, así que la columna
+        // deja de ser un ENUM. Era el ajuste que le metía «staff» (1.6.0); una
+        // base de antes pasa directo a VARCHAR, con «staff» incluido. Los
+        // valores que ya hay se quedan como estaban.
         [
             'tabla'   => 'persona',
             'columna' => 'rol',
-            'tipo'    => "ENUM('participante','visitante','expositor','organizador','prensa','staff') "
-                         . "NOT NULL DEFAULT 'participante'",
-            'si'      => 'falta_en_tipo',
-            'busca'   => "'staff'",
+            'tipo'    => "VARCHAR(40) NOT NULL DEFAULT 'participante'",
+            'si'      => 'mas_corta',
+            'largo'   => 40,
         ],
         // 1.8.0: los tipos de documento se configuran por evento —PPT, PEP,
         // registro civil—, así que la columna deja de ser una lista cerrada.
@@ -204,11 +208,13 @@ final class Esquema
                     'entidad'            => "VARCHAR(160) NOT NULL DEFAULT ''",
                     'departamento'       => "VARCHAR(80) NOT NULL DEFAULT ''",
                     'municipio'          => "VARCHAR(80) NOT NULL DEFAULT ''",
-                    // «staff» da acceso a la plataforma —ver y acreditar—, así
-                    // que solo lo asigna un administrador desde la ficha. El
-                    // formulario público no lo acepta ni enviándolo a mano:
-                    // ver Persona::ROLES_PUBLICOS.
-                    'rol'                => "ENUM('participante','visitante','expositor','organizador','prensa','staff') NOT NULL DEFAULT 'participante'",
+                    // La clave del perfil de asistencia. Los perfiles los
+                    // configura cada evento (Persona::PERFILES_DE_FABRICA y
+                    // Configuración → Registro). «staff» da acceso a la
+                    // plataforma —ver y acreditar—, así que solo lo asigna un
+                    // administrador desde la ficha; el formulario público no lo
+                    // acepta ni enviándolo a mano: ver Persona::PERFILES_DE_ADMIN.
+                    'rol'                => "VARCHAR(40) NOT NULL DEFAULT 'participante'",
                     'comparte_telefono'  => 'TINYINT(1) NOT NULL DEFAULT 1',
                     // Métodos de acceso distintos del código por correo.
                     // Van aquí y no en una tabla aparte porque son uno por

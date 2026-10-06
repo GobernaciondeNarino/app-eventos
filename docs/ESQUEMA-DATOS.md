@@ -1,6 +1,6 @@
 # Esquema de datos
 
-Plataforma de Eventos TIC · versión del esquema **1.8.0**
+Plataforma de Eventos TIC · versión del esquema **1.9.0**
 
 > Documento generado con `php herramientas/generar-doc-esquema.php` a partir de
 > `app/Esquema.php`, la misma definición que el instalador usa para crear y actualizar
@@ -169,7 +169,7 @@ Quien se preregistra. El documento va cifrado, con una huella aparte para detect
 | `entidad` | `VARCHAR(160) NOT NULL DEFAULT ''` |
 | `departamento` | `VARCHAR(80) NOT NULL DEFAULT ''` |
 | `municipio` | `VARCHAR(80) NOT NULL DEFAULT ''` |
-| `rol` | `ENUM('participante','visitante','expositor','organizador','prensa','staff') NOT NULL DEFAULT 'participante'` |
+| `rol` | `VARCHAR(40) NOT NULL DEFAULT 'participante'` |
 | `comparte_telefono` | `TINYINT(1) NOT NULL DEFAULT 1` |
 | `clave_hash` | `VARCHAR(255) NOT NULL DEFAULT ''` |
 | `foto` | `VARCHAR(80) NOT NULL DEFAULT ''` |

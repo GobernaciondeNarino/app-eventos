@@ -635,8 +635,16 @@ que llega del público (`App\Modelos\Formulario`):
 - **Los datos sensibles nunca son obligatorios.** Género, pertenencia étnica y discapacidad
   solo admiten «visible» u «oculto»; un envío manipulado que los marque obligatorios se guarda
   como opcional. «Prefiero no responder» no se puede apagar.
-- **Los perfiles que dan permisos no se ofrecen nunca.** La lista de perfiles se elige entre
-  los públicos; Staff y Organizador no están entre ellos, por mucho que se envíen a mano.
+- **Los perfiles que dan permisos no se ofrecen nunca.** Desde la 3.8 cada evento agrega,
+  renombra, apaga y elimina perfiles de asistencia, pero Staff y Organizador no entran en esa
+  lista por mucho que se envíen a mano, ni metidos en la base: al leerla, una clave de
+  administrador se descarta. Ningún perfil puede llamarse como ellos, para que un «Staff» de
+  mentira no confunda en la puerta. Lo que da permisos es la clave `staff` y nada más: un perfil
+  que agregue el evento, se llame como se llame, es solo un rótulo en el carnet.
+- **Un perfil en uso no se elimina.** Se apaga. Eliminarlo dejaría a esas personas con un perfil
+  sin nombre; por lo mismo, volver al formulario de fábrica conserva los perfiles propios que
+  alguien ya tenga. Las claves nuevas salen del nombre, sin tildes ni espacios, y nunca toman una
+  que ya tenga alguien.
 - **Lo enviado se acota antes de leerlo.** `Peticion::campoEstructurado()` corta a tres niveles,
   500 elementos por nivel y 20 000 caracteres por texto. Una opción más larga que la columna
   donde se guardaría se rechaza diciendo cuál, y una sigla de documento solo admite de 2 a 8

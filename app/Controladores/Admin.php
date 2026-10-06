@@ -311,18 +311,23 @@ final class Admin
             Respuesta::redirigir('/admin/registros', 'Esa persona no existe en este evento.', 'warn');
         }
 
+        // Los del evento —encendidos o no: apagado es que no se ofrece en el
+        // formulario, pero un administrador lo puede seguir poniendo— y los
+        // que solo pone un administrador.
         $nuevo = $peticion->campo('rol');
-        if (!in_array($nuevo, Persona::ROLES, true)) {
+        $perfiles = \App\Modelos\Formulario::delEvento((int) $evento['id'])->todosLosPerfiles();
+        if (!isset($perfiles[$nuevo])) {
             Respuesta::redirigir('/admin/registros/' . $id, 'Ese perfil no existe.', 'warn');
         }
 
-        // «staff» es un valor del ENUM de la columna, y una base atrasada no lo
-        // tiene: el UPDATE fallaría con «Data truncated» y la pantalla con un
-        // 500. Se dice qué falta en vez de dejar que reviente.
+        // Hasta la 1.9.0 la columna era un ENUM con cinco valores —seis desde
+        // la 1.6.0, con «staff»—, y una base atrasada no admite los demás: el
+        // UPDATE fallaría con «Data truncated» y la pantalla con un 500. Se
+        // dice qué falta en vez de dejar que reviente.
         [$atrasada] = \App\Esquema::revisionPendiente();
-        if ($atrasada && $nuevo === 'staff') {
+        if ($atrasada && !in_array($nuevo, Persona::PERFILES_DE_ANTES, true)) {
             Respuesta::redirigir('/admin/registros/' . $id,
-                'Falta actualizar la base de datos: el perfil Staff todavía no existe en ella. '
+                'Falta actualizar la base de datos: el perfil ' . $perfiles[$nuevo] . ' todavía no cabe en ella. '
                 . 'Pulsa «Actualizar la base de datos» en el panel y vuelve a intentarlo.', 'warn');
         }
 

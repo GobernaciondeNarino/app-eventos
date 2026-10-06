@@ -256,11 +256,14 @@ final class Evento
      * base a mano. Quien llama tiene que haber confirmado explícitamente y la
      * bitácora anota cuánto se llevó por delante.
      *
-     * Los números NO se renumeran. El número está impreso en el pliego de la
-     * puerta y sale en el historial de cada asistente; corrigiéndolo, el «día
-     * 3» de un carnet pasaría a señalar otra fecha.
+     * Desde la 3.7.1 los días que siguen se renumeran: al eliminar el día 1, el
+     * 2 pasa a ser el 1 y el 3 el 2. Hasta entonces los números se quedaban
+     * con el hueco, y un evento que perdía su primer día de prueba arrancaba
+     * en el «día 2». Ver renumerar().
+     *
+     * @return array<int, int> [número anterior => número nuevo] de los días que cambiaron
      */
-    public static function eliminarJornada(int $eventoId, int $numero, bool $forzar = false): void
+    public static function eliminarJornada(int $eventoId, int $numero, bool $forzar = false): array
     {
         $jornada = self::jornada($eventoId, $numero);
         if (!$jornada) {
@@ -293,7 +296,7 @@ final class Evento
             );
         }
 
-        Bd::transaccion(static function () use ($eventoId, $jornada): void {
+        $mapa = Bd::transaccion(static function () use ($eventoId, $jornada): array {
             // Las asistencias y las charlas se van en cascada por su clave
             // foránea; la propuesta del expositor NO, y así tiene que ser:
             // sigue aprobada y se le puede asignar otro día.
@@ -302,14 +305,142 @@ final class Evento
                 'UPDATE {evento} SET jornadas = (SELECT COUNT(*) FROM {evento_dia} WHERE evento_id = ?) WHERE id = ?',
                 [$eventoId, $eventoId]
             );
+            // En la misma transacción: nadie llega a ver la lista con el hueco.
+            return self::renumerar($eventoId);
         });
 
         Bitacora::registrar('jornada_eliminada', 'evento_dia', $numero, [
-            'evento'   => $eventoId,
-            'fecha'    => (string) $jornada['fecha'],
-            'ingresos' => $contenido['ingresos'],
-            'charlas'  => $contenido['charlas'],
+            'evento'      => $eventoId,
+            'fecha'       => (string) $jornada['fecha'],
+            'ingresos'    => $contenido['ingresos'],
+            'charlas'     => $contenido['charlas'],
+            'renumeradas' => self::renumeracionEnPalabras($mapa),
         ]);
+        return $mapa;
+    }
+
+    /**
+     * ¿Los números de estas jornadas van seguidos desde el 1?
+     *
+     * Un evento que eliminó días con una versión anterior a la 3.7.1 puede
+     * tenerlos con huecos —2, 3—: entonces la pantalla de los códigos ofrece
+     * dejarlos seguidos.
+     *
+     * @param array<int, array{numero: int|string}> $jornadas en orden, como las da jornadas()
+     */
+    public static function jornadasSeguidas(array $jornadas): bool
+    {
+        return self::mapaSeguido(array_column($jornadas, 'numero')) === [];
+    }
+
+    /**
+     * Cómo quedarían seguidos estos números, en este orden.
+     *
+     * [2, 3] → [2 => 1, 3 => 2]. Solo los que cambian. Es lo que hace
+     * renumerar(), dicho antes de hacerlo: para que la confirmación de
+     * eliminar un día diga qué día pasa a cuál.
+     *
+     * @param array<int, int|string> $numeros
+     * @return array<int, int>
+     */
+    public static function mapaSeguido(array $numeros): array
+    {
+        $mapa = [];
+        foreach (array_values($numeros) as $i => $numero) {
+            if ((int) $numero !== $i + 1) {
+                $mapa[(int) $numero] = $i + 1;
+            }
+        }
+        return $mapa;
+    }
+
+    /**
+     * Deja seguidos los números de un evento que quedó con huecos.
+     *
+     * @return array<int, int> [número anterior => número nuevo] de los días que cambiaron
+     */
+    public static function dejarJornadasSeguidas(int $eventoId): array
+    {
+        $mapa = Bd::transaccion(static fn(): array => self::renumerar($eventoId));
+        if ($mapa !== []) {
+            Bitacora::registrar('jornadas_renumeradas', 'evento', $eventoId, [
+                'renumeradas' => self::renumeracionEnPalabras($mapa),
+            ]);
+        }
+        return $mapa;
+    }
+
+    /** [2 => 1, 3 => 2] → «el día 2 pasa a ser el 1 y el 3 pasa a ser el 2». */
+    public static function renumeracionEnPalabras(array $mapa): string
+    {
+        $partes = [];
+        foreach ($mapa as $viejo => $nuevo) {
+            $partes[] = ($partes === [] ? 'el día ' : 'el ') . $viejo . ' pasa a ser el ' . $nuevo;
+        }
+        if (count($partes) < 2) {
+            return implode('', $partes);
+        }
+        $ultima = array_pop($partes);
+        return implode(', ', $partes) . ' y ' . $ultima;
+    }
+
+    /**
+     * Deja los números de las jornadas seguidos —1, 2, 3…— en el orden en que
+     * estaban. Corre dentro de la transacción de quien la llama.
+     *
+     * Lo único que cambia es el número que se ve. Cada jornada conserva su
+     * fecha, su horario y su código QR —los pliegos ya pegados siguen
+     * sirviendo—, y lo que cuelga de ella —ingresos, charlas— la señala por su
+     * id, no por su número.
+     *
+     * El día preferido de las propuestas sí es un número, así que se traduce
+     * con ellas: quien pidió el día 3 sigue pidiendo esa misma fecha aunque
+     * ahora se llame día 2. Si la fecha que pidió ya no existe, queda sin
+     * preferencia (0) en vez de apuntar sin avisar a otra.
+     *
+     * @return array<int, int> [número anterior => número nuevo] de los días que cambiaron
+     */
+    private static function renumerar(int $eventoId): array
+    {
+        // FOR UPDATE: dos eliminaciones a la vez se ponen en fila en vez de
+        // repartirse los mismos números.
+        $jornadas = Bd::filas(
+            'SELECT id, numero FROM {evento_dia} WHERE evento_id = ? ORDER BY numero FOR UPDATE',
+            [$eventoId]
+        );
+
+        $nuevos = [];
+        $mapa = [];
+        foreach ($jornadas as $i => $jornada) {
+            $viejo = (int) $jornada['numero'];
+            $nuevo = $i + 1;
+            $nuevos[$viejo] = $nuevo;
+            if ($viejo === $nuevo) {
+                continue;
+            }
+            // De menor a mayor, el número nuevo siempre está libre: es menor
+            // que el actual, y quien lo tenía ya lo dejó. Así la llave única
+            // (evento, número) no choca en ningún paso.
+            Bd::ejecutar('UPDATE {evento_dia} SET numero = ? WHERE id = ?', [$nuevo, (int) $jornada['id']]);
+            $mapa[$viejo] = $nuevo;
+        }
+
+        $propuestas = Bd::filas(
+            'SELECT pr.id, pr.dia_preferido
+               FROM {propuesta} pr
+               JOIN {persona} p ON p.id = pr.persona_id
+              WHERE p.evento_id = ? AND pr.dia_preferido > 0',
+            [$eventoId]
+        );
+        foreach ($propuestas as $propuesta) {
+            $antes = (int) $propuesta['dia_preferido'];
+            $ahora = $nuevos[$antes] ?? 0;
+            if ($ahora !== $antes) {
+                Bd::ejecutar('UPDATE {propuesta} SET dia_preferido = ? WHERE id = ?', [$ahora, (int) $propuesta['id']]);
+            }
+        }
+
+        return $mapa;
     }
 
     /** Cambia la fecha y el horario de una jornada. */

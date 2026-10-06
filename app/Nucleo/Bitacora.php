@@ -120,6 +120,11 @@ final class Bitacora
             'formulario_guardado' => "$quien cambió el formulario de registro",
             'formulario_restablecido' => "$quien devolvió el formulario de registro al de fábrica",
             'token_dia_rotado'   => "$quien regeneró el código de un día",
+            'jornada_agregada'   => "$quien agregó un día al evento",
+            'jornada_ajustada'   => "$quien cambió la fecha o el horario de un día",
+            'jornada_eliminada'  => "$quien eliminó un día del evento"
+                . (!empty($detalle['renumeradas']) ? ' y se renumeraron los siguientes' : ''),
+            'jornadas_renumeradas' => "$quien dejó seguidos los números de los días",
             'identidad_guardada' => "$quien cambió la identidad del evento",
             'exportacion'        => "$quien exportó registros" . (($detalle['sensible'] ?? false) ? ' con caracterización' : ''),
             'contacto_creado'    => 'Intercambio de contacto entre asistentes',

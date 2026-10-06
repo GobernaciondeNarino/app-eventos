@@ -2026,6 +2026,109 @@ comprobar('el evento vuelve a tener tres jornadas para lo que sigue',
                         WHERE evento_id = $idEvento")->fetchColumn() === 3);
 
 /* =========================================================================
+   Al eliminar un día, los siguientes se renumeran
+   -------------------------------------------------------------------------
+   Si se elimina el día 1, el 2 pasa a ser el 1 y el 3 pasa a ser el 2. Cada
+   día conserva su fecha, su código y lo que cuelga de él; el día preferido de
+   las propuestas, que es un número, se traduce con su día.
+   ========================================================================= */
+titulo('Renumerar al eliminar un día');
+
+$PF = $BD['prefijo'];
+$diasDel = static fn(): array => $pdo->query(
+    "SELECT id, numero, fecha, token FROM {$PF}evento_dia WHERE evento_id = $idEvento ORDER BY numero"
+)->fetchAll(PDO::FETCH_ASSOC);
+$numerosDe = static fn(array $dias): array => array_map('intval', array_column($dias, 'numero'));
+
+$antes = $diasDel();
+comprobar('se parte de tres días seguidos', $numerosDe($antes) === [1, 2, 3], implode(',', $numerosDe($antes)));
+[$d1, $d2, $d3] = $antes;
+
+// Tres propuestas: una pide el día que se va a eliminar, otra el último, y la
+// tercera ya está agendada en el último.
+$duenia = (int) $pdo->query("SELECT id FROM {$PF}persona WHERE evento_id = $idEvento ORDER BY id LIMIT 1")->fetchColumn();
+$nuevaPropuesta = static function (string $titulo, int $dia, string $estado = 'pendiente') use ($pdo, $PF, $duenia): int {
+    $pdo->prepare("INSERT INTO {$PF}propuesta (persona_id, titulo, categoria, detalle, dia_preferido, estado)
+                   VALUES (?, ?, 'Gobierno digital', 'Propuesta de la prueba de renumeración, larga a propósito.', ?, ?)")
+        ->execute([$duenia, $titulo, $dia, $estado]);
+    return (int) $pdo->lastInsertId();
+};
+$pideElPrimero = $nuevaPropuesta('Renumerar: pide el día que se elimina', 1);
+$pideElUltimo = $nuevaPropuesta('Renumerar: pide el último', 3);
+$agendada = $nuevaPropuesta('Renumerar: agendada en el último', 3, 'aprobada');
+$pdo->exec("INSERT INTO {$PF}charla (propuesta_id, evento_dia_id, hora_inicio, salon) VALUES ($agendada, {$d3['id']}, '10:00:00', 'Sala Renumeración')");
+$preferido = static fn(int $id): int => (int) $pdo->query("SELECT dia_preferido FROM {$PF}propuesta WHERE id = $id")->fetchColumn();
+
+$html = $admin->get('/admin/qr-dias');
+comprobar('la confirmación dice qué día pasa a cuál antes de eliminar',
+    str_contains($html, 'Los siguientes se renumeran: el día 2 pasa a ser el 1 y el 3 pasa a ser el 2'));
+comprobar('y cada botón lleva la identidad de su día', str_contains($html, 'name="jornada" value="' . $d1['id'] . '"'));
+
+$html = $admin->post('/admin/qr-dias/eliminar', ['numero' => '1', 'jornada' => (string) $d1['id'], 'forzar' => '1']);
+$despues = $diasDel();
+comprobar('al eliminar el día 1, los demás quedan como 1 y 2', $numerosDe($despues) === [1, 2], implode(',', $numerosDe($despues)));
+comprobar('el 2 pasó a ser el 1 y el 3 el 2, con sus fechas y sus códigos',
+    $despues[0]['id'] === $d2['id'] && $despues[0]['fecha'] === $d2['fecha'] && $despues[0]['token'] === $d2['token']
+    && $despues[1]['id'] === $d3['id'] && $despues[1]['fecha'] === $d3['fecha'] && $despues[1]['token'] === $d3['token']);
+comprobar('el mensaje lo dice', str_contains($html, 'Los siguientes se renumeraron: el día 2 pasa a ser el 1 y el 3 pasa a ser el 2'));
+comprobar('quien pidió el último sigue pidiendo esa fecha, que ahora es el día 2', $preferido($pideElUltimo) === 2,
+    (string) $preferido($pideElUltimo));
+comprobar('quien pidió el día eliminado queda sin día preferido', $preferido($pideElPrimero) === 0,
+    (string) $preferido($pideElPrimero));
+comprobar('la charla agendada sigue en su misma fecha',
+    (int) $pdo->query("SELECT evento_dia_id FROM {$PF}charla WHERE propuesta_id = $agendada")->fetchColumn() === (int) $d3['id']);
+$bitacora = (string) $pdo->query("SELECT detalle FROM {$PF}bitacora WHERE accion = 'jornada_eliminada' ORDER BY id DESC LIMIT 1")->fetchColumn();
+comprobar('la bitácora anota la renumeración', str_contains($bitacora, 'pasa a ser'), $bitacora);
+
+$html = $admin->get('/admin/expositores');
+comprobar('la lista de propuestas muestra el día asignado, con su número nuevo', str_contains($html, 'Día 2 · 10:00'));
+comprobar('y la que pidió el día eliminado dice que no tiene', str_contains($html, 'Sin día preferido'));
+
+// Una pantalla abierta antes de eliminar todavía dice «día 1» para la fecha
+// que ya no existe. Su botón no puede llevarse por delante el día 1 de ahora.
+$html = $admin->post('/admin/qr-dias/eliminar', ['numero' => '1', 'jornada' => (string) $d1['id'], 'forzar' => '1']);
+comprobar('un formulario de antes de renumerar no elimina otro día',
+    count($diasDel()) === 2 && str_contains($html, 'cambiaron de número'), substr(strip_tags($html), 0, 200));
+$html = $admin->post('/admin/qr-dias/ajustar', [
+    'numero' => '2', 'jornada' => (string) $d2['id'], 'fecha' => date('Y-m-d', strtotime('+200 day')),
+]);
+comprobar('ni le cambia la fecha a otro', $diasDel()[1]['fecha'] === $d3['fecha'] && str_contains($html, 'cambiaron de número'));
+
+// Aprobar elige la jornada por su identidad: si se eliminó mientras se
+// revisaba, no se aprueba en otra.
+$html = $admin->post('/admin/expositores/decidir', [
+    'propuesta' => (string) $pideElUltimo, 'decision' => 'aprobada', 'jornada' => (string) $d1['id'], 'hora' => '11:00',
+]);
+comprobar('aprobar en un día que ya no existe no aprueba nada',
+    (string) $pdo->query("SELECT estado FROM {$PF}propuesta WHERE id = $pideElUltimo")->fetchColumn() === 'pendiente'
+    && str_contains($html, 'ya no existe'), substr(strip_tags($html), 0, 200));
+$admin->post('/admin/expositores/decidir', [
+    'propuesta' => (string) $pideElUltimo, 'decision' => 'aprobada', 'jornada' => (string) $d3['id'], 'hora' => '11:00',
+]);
+comprobar('y con su identidad se agenda en esa fecha, aunque su número haya cambiado',
+    (int) $pdo->query("SELECT evento_dia_id FROM {$PF}charla WHERE propuesta_id = $pideElUltimo")->fetchColumn() === (int) $d3['id']);
+
+// Un evento que ya traía huecos de una versión anterior: se avisa y se ofrece
+// dejarlos seguidos.
+$pdo->exec("UPDATE {$PF}evento_dia SET numero = numero + 1 WHERE evento_id = $idEvento ORDER BY numero DESC");
+$html = $admin->get('/admin/qr-dias');
+comprobar('con huecos, la pantalla lo avisa y ofrece dejarlos seguidos',
+    str_contains($html, 'no van seguidos') && str_contains($html, 'Dejarlos seguidos')
+    && str_contains($html, 'el día 2 pasa a ser el 1 y el 3 pasa a ser el 2'));
+$html = $admin->post('/admin/qr-dias/renumerar', []);
+comprobar('y el botón los deja seguidos', $numerosDe($diasDel()) === [1, 2] && str_contains($html, 'Los códigos QR no cambiaron'));
+comprobar('sin que cambien los códigos', array_column($diasDel(), 'token') === [$d2['token'], $d3['token']]);
+comprobar('ya no hay aviso', !str_contains($admin->get('/admin/qr-dias'), 'no van seguidos'));
+comprobar('queda en la bitácora',
+    (int) $pdo->query("SELECT COUNT(*) FROM {$PF}bitacora WHERE accion = 'jornadas_renumeradas'")->fetchColumn() === 1);
+
+// Dejarlo como estaba: tres días y sin las propuestas de la prueba.
+$pdo->exec("DELETE FROM {$PF}propuesta WHERE id IN ($pideElPrimero, $pideElUltimo, $agendada)");
+$admin->get('/admin/qr-dias');
+$admin->post('/admin/qr-dias/agregar', ['fecha' => date('Y-m-d', strtotime($d3['fecha'] . ' +1 day'))]);
+comprobar('el evento vuelve a tener tres días seguidos', $numerosDe($diasDel()) === [1, 2, 3], implode(',', $numerosDe($diasDel())));
+
+/* =========================================================================
    Los adjuntos del expositor
    -------------------------------------------------------------------------
    Se prueba con subidas multipart de verdad y no llamando a las clases: lo que

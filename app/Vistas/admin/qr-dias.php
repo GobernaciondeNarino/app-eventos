@@ -2,7 +2,11 @@
 /**
  * Códigos QR por jornada.
  * @var array $jornadas @var bool $puedeRotar @var bool $puedeEditarDias
- * @var string $siguienteFecha
+ * @var string $siguienteFecha @var bool $seguidas @var string $paraSeguirlas
+ *
+ * Cada formulario manda el número del día y el id de la jornada: al eliminar
+ * un día los siguientes se renumeran, y el servidor no toca nada si el número
+ * cambió de dueño desde que se abrió esta pantalla.
  */
 defined('EVENTOS_TIC') || exit;
 
@@ -18,6 +22,26 @@ $hoy = date('Y-m-d');
       entrada; cada escaneo queda sellado con la fecha y la hora del día correspondiente.
     </p>
   </div>
+
+  <?php if (!$seguidas && $puedeEditarDias): ?>
+    <!-- Huecos de una eliminación anterior a la 3.7.1, que no renumeraba. -->
+    <div class="notice notice--warn" role="status">
+      <span class="notice__icon" aria-hidden="true">i</span>
+      <div class="stack stack--2" style="flex:1;min-width:0">
+        <span>
+          Los números de los días no van seguidos
+          (<?= e(implode(', ', array_map(static fn(array $j): string => (string) $j['numero'], $jornadas))) ?>):
+          quedaron así de un día que se eliminó antes de esta versión. Ahora, al eliminar un día,
+          los siguientes se renumeran solos.
+        </span>
+        <form method="post" action="<?= e(u('/admin/qr-dias/renumerar')) ?>"
+              data-confirmar="Se renumeran los días: <?= e($paraSeguirlas) ?>. Sus códigos QR no cambian. ¿Continuar?">
+          <?= testigo() ?>
+          <button class="btn btn--sm" type="submit">Dejarlos seguidos</button>
+        </form>
+      </div>
+    </div>
+  <?php endif; ?>
 
   <div class="grid-3">
     <?php foreach ($jornadas as $j):
@@ -70,6 +94,7 @@ $hoy = date('Y-m-d');
               <form method="post" action="<?= e(u('/admin/qr-dias/ajustar')) ?>" class="stack stack--3">
                 <?= testigo() ?>
                 <input type="hidden" name="numero" value="<?= e((string) $j['numero']) ?>">
+                <input type="hidden" name="jornada" value="<?= (int) $j['id'] ?>">
                 <div class="field">
                   <label class="label" for="fecha-<?= (int) $j['numero'] ?>">Fecha</label>
                   <input class="input" type="date" id="fecha-<?= (int) $j['numero'] ?>"
@@ -92,9 +117,10 @@ $hoy = date('Y-m-d');
 
               <?php if ((int) $j['ingresos'] === 0): ?>
                 <form method="post" action="<?= e(u('/admin/qr-dias/eliminar')) ?>"
-                      data-confirmar="Se eliminará el día <?= e((string) $j['numero']) ?> y su código QR dejará de servir. ¿Continuar?">
+                      data-confirmar="Se eliminará el día <?= e((string) $j['numero']) ?> y su código QR dejará de servir.<?= $j['al_eliminar'] !== '' ? e(' Los siguientes se renumeran: ' . $j['al_eliminar'] . '; sus códigos no cambian.') : '' ?> ¿Continuar?">
                   <?= testigo() ?>
                   <input type="hidden" name="numero" value="<?= e((string) $j['numero']) ?>">
+                  <input type="hidden" name="jornada" value="<?= (int) $j['id'] ?>">
                   <button class="btn btn--sm btn--danger btn--block" type="submit">Eliminar este día</button>
                 </form>
               <?php else: ?>
@@ -103,9 +129,10 @@ $hoy = date('Y-m-d');
                          justamente probando, y sin esta salida la única forma
                          de limpiar era entrar a la base a mano. */ ?>
                 <form method="post" action="<?= e(u('/admin/qr-dias/eliminar')) ?>"
-                      data-confirmar="El día <?= e((string) $j['numero']) ?> tiene <?= e(numero($j['ingresos'])) ?> ingreso(s) registrado(s). Se eliminarán con él y no hay deshacer. ¿Continuar?">
+                      data-confirmar="El día <?= e((string) $j['numero']) ?> tiene <?= e(numero($j['ingresos'])) ?> ingreso(s) registrado(s). Se eliminarán con él y no hay deshacer.<?= $j['al_eliminar'] !== '' ? e(' Los siguientes se renumeran: ' . $j['al_eliminar'] . '; sus códigos no cambian.') : '' ?> ¿Continuar?">
                   <?= testigo() ?>
                   <input type="hidden" name="numero" value="<?= e((string) $j['numero']) ?>">
+                  <input type="hidden" name="jornada" value="<?= (int) $j['id'] ?>">
                   <input type="hidden" name="forzar" value="1">
                   <p class="help" style="margin:0 0 8px">
                     Tiene <?= e(numero($j['ingresos'])) ?> ingreso<?= (int) $j['ingresos'] === 1 ? '' : 's' ?>
@@ -198,6 +225,7 @@ $hoy = date('Y-m-d');
         <form method="post" action="<?= e(u('/admin/qr-dias/rotar')) ?>" class="row row--end">
           <?= testigo() ?>
           <input type="hidden" name="numero" value="<?= e((string) $j['numero']) ?>">
+          <input type="hidden" name="jornada" value="<?= (int) $j['id'] ?>">
           <button class="btn" type="button" data-cerrar-modal>Cancelar</button>
           <button class="btn btn--primary" type="submit">Regenerar</button>
         </form>

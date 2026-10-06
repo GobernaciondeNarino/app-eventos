@@ -166,6 +166,7 @@ $enrutador->get('/admin/qr-dias/{numero:num}/imprimir', [Admin::class, 'imprimir
 $enrutador->post('/admin/qr-dias/rotar', [Admin::class, 'rotarCodigo'], 'admin:administrador');
 $enrutador->post('/admin/qr-dias/agregar', [Admin::class, 'agregarJornada'], 'admin:administrador');
 $enrutador->post('/admin/qr-dias/eliminar', [Admin::class, 'eliminarJornada'], 'admin:administrador');
+$enrutador->post('/admin/qr-dias/renumerar', [Admin::class, 'renumerarJornadas'], 'admin:administrador');
 $enrutador->post('/admin/qr-dias/ajustar', [Admin::class, 'ajustarJornada'], 'admin:administrador');
 
 $enrutador->get('/admin/expositores', [Admin::class, 'expositores'], 'admin:administrador');

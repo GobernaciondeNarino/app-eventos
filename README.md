@@ -153,7 +153,7 @@ proceso, y no ofrece la opción que borra tablas.
 | Escanear carnet | Acreditar a alguien cuyo código de puerta falló; búsqueda a mano por identificación, nombre o correo |
 | Registros | Listado con filtros y exportación a CSV; desde la ficha se asigna el perfil **Staff** |
 | Carnets | Todos los del evento, para imprimirlos en tanda: una cara por persona, con el QR |
-| QR por día | Un código por jornada, imprimible a página completa y regenerable |
+| QR por día | Un código por jornada, imprimible a página completa y regenerable. Al eliminar un día, los siguientes se renumeran: el 2 pasa a ser el 1 |
 | Expositores | Hoja de revisión por propuesta: los datos completos de quien la presenta, sus dos documentos para bajar, y aprobar, devolver o rechazar. Se le avisa por correo, con los cambios y las observaciones |
 | Organizadores | Equipo, roles y estado del segundo factor; restablecer el de quien perdió el teléfono |
 | Eventos | Varios eventos a la vez; el activo es el que ven los asistentes |

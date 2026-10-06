@@ -463,12 +463,18 @@ final class Admin
         $evento = App::eventoExigido();
         $jornadas = Evento::jornadas((int) $evento['id']);
 
-        foreach ($jornadas as &$j) {
+        $numeros = array_column($jornadas, 'numero');
+        foreach ($jornadas as $k => &$j) {
             $j['url'] = Url::absoluta('/d/' . $j['token']);
             $j['qr'] = Qr::svg($j['url'], [
                 'nivel' => 'M', 'silencio' => 2, 'clase' => 'qr',
                 'titulo' => 'Código de acceso del día ' . $j['numero'],
             ]);
+            // Lo que pasaría con los demás si se elimina este: la confirmación
+            // lo dice antes de hacerlo.
+            $restantes = $numeros;
+            unset($restantes[$k]);
+            $j['al_eliminar'] = Evento::renumeracionEnPalabras(Evento::mapaSeguido($restantes));
         }
         unset($j);
 
@@ -484,6 +490,8 @@ final class Admin
             'puedeRotar' => Guardia::puede('administrador'),
             'puedeEditarDias' => Guardia::puede('administrador'),
             'siguienteFecha'  => $siguiente,
+            'seguidas'        => Evento::jornadasSeguidas($jornadas),
+            'paraSeguirlas'   => Evento::renumeracionEnPalabras(Evento::mapaSeguido($numeros)),
         ]);
     }
 
@@ -543,25 +551,67 @@ final class Admin
     public function eliminarJornada(Peticion $peticion): void
     {
         $evento = App::eventoExigido();
-        $numero = $peticion->entero('numero');
+        $numero = (int) $this->jornadaDelFormulario($peticion, $evento)['numero'];
         $forzar = $peticion->marcado('forzar');
 
         try {
-            Evento::eliminarJornada((int) $evento['id'], $numero, $forzar);
+            $mapa = Evento::eliminarJornada((int) $evento['id'], $numero, $forzar);
         } catch (\DomainException $e) {
             Respuesta::redirigir('/admin/qr-dias', $e->getMessage(), 'warn');
         }
 
         App::olvidarEvento();
-        Respuesta::redirigir('/admin/qr-dias', $forzar
+        $mensaje = $forzar
             ? 'Día ' . $numero . ' eliminado, con los ingresos y las charlas que tenía.'
-            : 'Día ' . $numero . ' eliminado.', $forzar ? 'warn' : 'ok');
+            : 'Día ' . $numero . ' eliminado.';
+        if ($mapa !== []) {
+            $mensaje .= ' Los siguientes se renumeraron: ' . Evento::renumeracionEnPalabras($mapa) . '.';
+        }
+        Respuesta::redirigir('/admin/qr-dias', $mensaje, $forzar ? 'warn' : 'ok');
+    }
+
+    /** Para un evento que quedó con números salteados de una versión anterior. */
+    public function renumerarJornadas(Peticion $peticion): void
+    {
+        $evento = App::eventoExigido();
+        $mapa = Evento::dejarJornadasSeguidas((int) $evento['id']);
+
+        App::olvidarEvento();
+        Respuesta::redirigir('/admin/qr-dias', $mapa === []
+            ? 'Los días ya estaban seguidos.'
+            : 'Listo: ' . Evento::renumeracionEnPalabras($mapa) . '. Los códigos QR no cambiaron.');
+    }
+
+    /**
+     * La jornada sobre la que actúa un formulario de esta pantalla.
+     *
+     * Los formularios mandan el número, que es lo que se ve, y el id de la
+     * jornada. Desde que se eliminan días renumerando los siguientes, un número
+     * puede cambiar de dueño mientras la pantalla sigue abierta en otra
+     * pestaña: el «día 2» de esa pestaña ya es otra fecha. Si no cuadran, no se
+     * toca nada y se pide mirar otra vez.
+     *
+     * Sin id —un envío de antes de la 3.7.1— vale el número solo.
+     */
+    private function jornadaDelFormulario(Peticion $peticion, array $evento): array
+    {
+        $jornada = Evento::jornada((int) $evento['id'], $peticion->entero('numero'));
+        $id = $peticion->entero('jornada');
+        if (!$jornada) {
+            Respuesta::redirigir('/admin/qr-dias', 'Esa jornada no existe.', 'warn');
+        }
+        if ($id > 0 && (int) $jornada['id'] !== $id) {
+            Respuesta::redirigir('/admin/qr-dias',
+                'Los días cambiaron de número mientras tenías esta pantalla abierta, así que no se hizo '
+                . 'nada. Revisa la lista y vuelve a intentarlo.', 'warn');
+        }
+        return $jornada;
     }
 
     public function ajustarJornada(Peticion $peticion): void
     {
         $evento = App::eventoExigido();
-        $numero = $peticion->entero('numero');
+        $numero = (int) $this->jornadaDelFormulario($peticion, $evento)['numero'];
 
         try {
             Evento::ajustarJornada(
@@ -582,10 +632,7 @@ final class Admin
     public function rotarCodigo(Peticion $peticion): void
     {
         $evento = App::eventoExigido();
-        $numero = $peticion->entero('numero');
-        if (!Evento::jornada((int) $evento['id'], $numero)) {
-            Respuesta::redirigir('/admin/qr-dias', 'Esa jornada no existe.', 'warn');
-        }
+        $numero = (int) $this->jornadaDelFormulario($peticion, $evento)['numero'];
 
         Evento::rotarToken((int) $evento['id'], $numero);
         Respuesta::redirigir('/admin/qr-dias',
@@ -618,10 +665,12 @@ final class Admin
                     p.comparte_telefono, p.tipo_documento, p.documento_cifrado,
                     p.entidad, p.municipio, p.departamento, p.rol, p.foto,
                     p.creado_en AS registrado_en,
-                    c.id AS charla_id, c.hora_inicio, c.salon
+                    c.id AS charla_id, c.hora_inicio, c.salon,
+                    c.evento_dia_id AS jornada_asignada, dc.numero AS dia_asignado
                FROM {propuesta} pr
                JOIN {persona} p ON p.id = pr.persona_id
           LEFT JOIN {charla} c ON c.propuesta_id = pr.id
+          LEFT JOIN {evento_dia} dc ON dc.id = c.evento_dia_id
               WHERE ' . implode(' AND ', $donde) . '
            ORDER BY FIELD(pr.estado, "pendiente", "observada", "aprobada", "rechazada"), pr.creado_en DESC',
             $parametros
@@ -689,10 +738,33 @@ final class Admin
         // válido, y queda anotado para contárselo al expositor.
         [$ajustes, $cambios] = $this->ajustesDePropuesta($peticion, $propuesta, $formulario);
 
+        // El día asignado, antes de tocar nada. Llega por su id: al eliminar un
+        // día los siguientes se renumeran, y el «día 2» de una pantalla abierta
+        // antes ya sería otra fecha. El número queda para los envíos de antes
+        // de la 3.7.1.
+        $jornada = null;
+        if ($decision === 'aprobada') {
+            $jornadaId = $peticion->entero('jornada');
+            if ($jornadaId > 0) {
+                $jornada = Bd::fila(
+                    'SELECT * FROM {evento_dia} WHERE id = ? AND evento_id = ?',
+                    [$jornadaId, (int) $evento['id']]
+                );
+                if (!$jornada) {
+                    Respuesta::redirigir('/admin/expositores',
+                        'El día que elegiste ya no existe: se eliminó mientras revisabas la propuesta. '
+                        . 'No se cambió nada; elige otro día y vuelve a aprobarla.', 'warn');
+                }
+            } else {
+                $jornada = Evento::jornada((int) $evento['id'], $peticion->entero('dia', (int) $propuesta['dia_preferido']))
+                    ?? Evento::jornada((int) $evento['id'], (int) $propuesta['dia_preferido']);
+            }
+        }
+
         $usuario = Guardia::usuarioActual();
         $agenda = null;
 
-        Bd::transaccion(static function () use ($propuesta, $decision, $observacion, $usuario, $peticion, $evento, $ajustes, &$agenda): void {
+        Bd::transaccion(static function () use ($propuesta, $decision, $observacion, $usuario, $peticion, $jornada, $ajustes, &$agenda): void {
             Bd::actualizar('propuesta', [
                 'estado'       => $decision,
                 'observacion'  => $observacion !== '' ? $observacion : null,
@@ -705,9 +777,6 @@ final class Admin
                 return;
             }
 
-            $numero = $peticion->entero('dia', (int) $propuesta['dia_preferido']);
-            $jornada = Evento::jornada((int) $evento['id'], $numero)
-                ?? Evento::jornada((int) $evento['id'], (int) $propuesta['dia_preferido']);
             if (!$jornada) {
                 return;
             }
@@ -739,7 +808,7 @@ final class Admin
         // tiene que saber: puede que ese día no pueda. Solo si el formulario
         // le preguntó: oculto, el día guardado es el de omisión, no uno que
         // haya elegido.
-        if ($agenda !== null && $formulario->visible('dia_preferido')
+        if ($agenda !== null && $formulario->visible('dia_preferido') && (int) $propuesta['dia_preferido'] > 0
             && $agenda['dia'] !== (int) $propuesta['dia_preferido']) {
             $cambios[] = 'Día: pediste el día ' . (int) $propuesta['dia_preferido'] . '; quedó el día '
                 . $agenda['dia'] . ' (' . fecha($agenda['fecha']) . ').';

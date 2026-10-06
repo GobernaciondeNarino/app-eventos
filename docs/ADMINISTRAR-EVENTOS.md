@@ -150,9 +150,35 @@ salida la única forma de limpiar era entrar a la base de datos a mano.
 **Lo que no se puede** es quedarse sin ninguna jornada: un evento sin días no tiene dónde
 registrar un ingreso. Si el evento entero sobra, elimínalo desde *Eventos*.
 
-**Los números no se renumeran.** Al borrar el día 2 de tres, quedan el 1 y el 3. Es
-deliberado: el número está impreso en el pliego de la puerta y sale en el historial de cada
-asistente; corregirlo haría que el «día 3» de un carnet señalara otra fecha.
+### 3.4 Los días siguientes se renumeran
+
+Desde la versión 3.7.1, al eliminar un día **los que siguen toman el número consecutivo**: si
+se elimina el día 1 de tres, el 2 pasa a ser el 1 y el 3 pasa a ser el 2. La confirmación lo
+dice antes de hacerlo, día por día, y el mensaje de después lo repite.
+
+Lo único que cambia es el número que se ve. Cada día conserva:
+
+- **su fecha y su horario**;
+- **su código QR**: los pliegos ya pegados en la entrada siguen funcionando. Lo que queda
+  desactualizado es el número impreso en el pliego —decía «Día 2» y ahora es el día 1—, así que
+  conviene reimprimirlo si se va a ver;
+- **sus ingresos y sus charlas**, que en el historial de cada asistente y en la agenda salen con
+  el número nuevo y la misma fecha.
+
+**El día preferido de las propuestas** se traduce con su día: quien pidió el día 3 sigue
+pidiendo esa misma fecha, que ahora se llama día 2. Si pidió justo el día que se eliminó, queda
+«Sin día preferido», en vez de apuntar sin avisar a otra fecha.
+
+**Si la pantalla estaba abierta en otra pestaña** cuando alguien eliminó un día, sus botones
+todavía muestran los números de antes. Por eso cada botón —eliminar, cambiar fecha u horario,
+regenerar el código— lleva también la identidad de su día: si el número cambió de dueño, no se
+hace nada y la pantalla pide revisar la lista. Lo mismo al aprobar una propuesta, que elige la
+jornada por su identidad y no por su número.
+
+**Un evento que ya tenía huecos** —días que se eliminaron con una versión anterior, que no
+renumeraba— no se toca solo al actualizar. *QR por día* lo avisa arriba, con los números
+actuales, y ofrece **«Dejarlos seguidos»**: aplica la misma renumeración, con su confirmación,
+y queda en la bitácora.
 
 ---
 
@@ -189,7 +215,10 @@ imprime con lo que diga el perfil.
 | **Rechazar** | Queda fuera del evento. Pide confirmación |
 
 **Ninguna es definitiva.** Se puede volver a entrar y cambiarla; al dejar de estar aprobada, la
-charla se quita de la agenda.
+charla se quita de la agenda. Al volver a abrir una propuesta ya aprobada, la jornada aparece en
+el día que se le asignó —no en el que había pedido—, así que cambiar el salón o la hora no mueve
+la charla de día sin querer. La lista de propuestas muestra también el día asignado; las que no
+están agendadas dicen el día que piden.
 
 ### 4.3 El correo al expositor
 
@@ -555,8 +584,10 @@ Una lista corta para no llevarse sorpresas:
    sí, y en la lista de exportaciones también aparecen.
 2. **Comprueba las fechas de las jornadas** en *QR por día*. Son las que deciden qué día sella
    cada escaneo.
-3. **Imprime los pliegos después de fijar las fechas.** Cambiar la fecha no invalida el código,
-   pero regenerarlo sí: si vas a regenerar, hazlo antes de imprimir.
+3. **Imprime los pliegos después de fijar las fechas y los días.** Cambiar la fecha no invalida
+   el código, pero regenerarlo sí; y eliminar un día renumera los siguientes, con lo que el
+   número impreso deja de coincidir. Si vas a hacer cualquiera de las dos cosas, hazla antes de
+   imprimir.
 4. **Deja el evento bueno activo** y los demás desactivados.
 5. **Revisa el formulario** en *Configuración → Registro* y ábrelo con «Ver el formulario»
    desde una ventana privada: es lo que va a ver la gente.

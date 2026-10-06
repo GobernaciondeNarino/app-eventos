@@ -102,7 +102,13 @@ $columnas = 'grid-template-columns:1.7fr 1.1fr 1fr .8fr .9fr';
             </div>
             <span style="color:var(--c-text);font-size:13px"><?= e($p['categoria']) ?></span>
             <span class="mono" style="font-size:12.5px;color:var(--c-text)">
-              Día <?= e((string) $p['dia_preferido']) ?><?= $p['hora_inicio'] ? ' · ' . e(substr((string) $p['hora_inicio'], 0, 5)) : '' ?>
+              <?php if ($p['dia_asignado'] !== null): ?>
+                Día <?= e((string) $p['dia_asignado']) ?><?= $p['hora_inicio'] ? ' · ' . e(substr((string) $p['hora_inicio'], 0, 5)) : '' ?>
+              <?php elseif ((int) $p['dia_preferido'] > 0): ?>
+                <span class="muted">Pide el día <?= e((string) $p['dia_preferido']) ?></span>
+              <?php else: ?>
+                <span class="muted">Sin día</span>
+              <?php endif; ?>
             </span>
             <span><span class="tag <?= e($clase) ?>"><?= e($etiqueta) ?></span></span>
           </button>
@@ -132,7 +138,11 @@ $columnas = 'grid-template-columns:1.7fr 1.1fr 1fr .8fr .9fr';
         <h2 style="font-size:24px"><?= e($p['titulo']) ?></h2>
 
         <div class="row">
-          <span class="tag">Día preferido: <?= e((string) $p['dia_preferido']) ?></span>
+          <?php if ((int) $p['dia_preferido'] > 0): ?>
+            <span class="tag">Día preferido: <?= e((string) $p['dia_preferido']) ?></span>
+          <?php else: ?>
+            <span class="tag tag--mute" title="El día que había pedido se eliminó del evento">Sin día preferido</span>
+          <?php endif; ?>
           <span class="tag tag--mute"><?= e((string) $p['duracion_min']) ?> minutos</span>
           <?php if ($p['requerimientos'] !== ''): ?>
             <span class="tag tag--mute"><?= e($p['requerimientos']) ?></span>
@@ -283,9 +293,17 @@ $columnas = 'grid-template-columns:1.7fr 1.1fr 1fr .8fr .9fr';
           <div class="grid-3">
             <div class="field">
               <label class="label" for="dia-<?= (int) $p['id'] ?>">Jornada asignada</label>
-              <select class="select" id="dia-<?= (int) $p['id'] ?>" name="dia">
-                <?php foreach ($jornadas as $j): ?>
-                  <option value="<?= e((string) $j['numero']) ?>" <?= (int) $j['numero'] === (int) $p['dia_preferido'] ? 'selected' : '' ?>>
+              <?php /* Por id y no por número: si alguien elimina un día mientras
+                       esta pantalla está abierta, los siguientes se renumeran.
+                       Arranca en el día ya asignado —volver a decidir para
+                       cambiar el salón no puede mover la charla de día— y, si
+                       no hay, en el que pidió. */ ?>
+              <select class="select" id="dia-<?= (int) $p['id'] ?>" name="jornada">
+                <?php foreach ($jornadas as $j):
+                  $elegida = $p['jornada_asignada'] !== null
+                      ? (int) $j['id'] === (int) $p['jornada_asignada']
+                      : (int) $j['numero'] === (int) $p['dia_preferido']; ?>
+                  <option value="<?= (int) $j['id'] ?>" <?= $elegida ? 'selected' : '' ?>>
                     Día <?= e((string) $j['numero']) ?> — <?= e(fecha((string) $j['fecha'])) ?>
                   </option>
                 <?php endforeach; ?>

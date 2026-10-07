@@ -5,6 +5,12 @@
  * Qué campos lleva y qué opciones trae cada lista lo decide Configuración →
  * Registro, evento por evento (App\Modelos\Formulario).
  *
+ * La misma vista sirve al formulario privado de expositores (3.9), al que se
+ * llega por un enlace que la organización envía aparte: $accion es a dónde se
+ * envía cada uno, y $deExpositores cambia el encabezado, el perfil por
+ * omisión y deja marcada la propuesta para quien llega nuevo.
+ *
+ * @var string $accion @var bool $deExpositores @var bool $tienePropuesta
  * @var array $valores @var array $errores @var array $departamentos
  * @var array $municipios @var array $categorias @var array $jornadas @var bool $yaRegistrado
  * @var bool $completo @var bool $pideClave @var int $claveMinima
@@ -30,7 +36,11 @@ if (($valores['correo'] ?? '') === '' && isset($_GET['correo'])) {
 
 $v = static fn(string $clave, string $porDefecto = ''): string => (string) ($valores[$clave] ?? $porDefecto);
 $err = static fn(string $clave): string => (string) ($errores[$clave] ?? '');
-$hayPropuesta = $v('tema') !== '' || !empty($valores['expositor']);
+// En el de expositores, «Voy a exponer» viene marcado para quien todavía no
+// tiene una propuesta: a eso llegó por ese enlace. Si el envío volvió con
+// errores, manda lo que se envió.
+$hayPropuesta = $v('tema') !== '' || !empty($valores['expositor'])
+    || ($deExpositores && $errores === [] && !$tienePropuesta);
 
 // La caracterización arranca plegada: es opcional, son ocho campos, y puesta
 // por delante hace que el formulario parezca el triple de largo de lo que es.
@@ -53,7 +63,7 @@ guiones('foto.js', 'preregistro.js', 'claves.js', 'registro-incompleto.js');
 ?>
 <!-- enctype: sin esto el navegador manda solo los nombres de los archivos y
      $_FILES llega vacío, así que la foto se perdía sin ningún error visible. -->
-<form class="view view--narrow stack stack--4" method="post" action="<?= e(u('/registro')) ?>"
+<form class="view view--narrow stack stack--4" method="post" action="<?= e(u($accion)) ?>"
       enctype="multipart/form-data" novalidate data-registro>
   <?= testigo() ?>
 
@@ -75,8 +85,10 @@ guiones('foto.js', 'preregistro.js', 'claves.js', 'registro-incompleto.js');
   <?php endif; ?>
 
   <div class="stack stack--2">
-    <span class="kicker">Fase 01 · Datos del participante</span>
-    <h1><?= $yaRegistrado ? ($completo ? 'Mis datos' : 'Completa tu registro') : 'Formulario de registro' ?></h1>
+    <span class="kicker"><?= $deExpositores ? 'Expositores · Datos y propuesta' : 'Fase 01 · Datos del participante' ?></span>
+    <h1><?= $yaRegistrado
+        ? ($completo ? 'Mis datos' : 'Completa tu registro')
+        : ($deExpositores ? 'Registro de expositores' : 'Formulario de registro') ?></h1>
     <p class="help">
       <?php if (!$yaRegistrado):
         $palabras = $f->obligatoriosEnPalabras();
@@ -124,7 +136,7 @@ guiones('foto.js', 'preregistro.js', 'claves.js', 'registro-incompleto.js');
           Te enviaremos un código de seis dígitos a ese buzón. Es la forma de comprobar que la
           cuenta es tuya antes de dejar cambiar nada.
         </span>
-        <span><a href="<?= e(u('/entrar', ['destino' => '/registro'])) ?>">Entrar con mi código ›</a></span>
+        <span><a href="<?= e(u('/entrar', ['destino' => $accion])) ?>">Entrar con mi código ›</a></span>
       </span>
     </div>
   <?php endif; ?>
@@ -207,7 +219,7 @@ guiones('foto.js', 'preregistro.js', 'claves.js', 'registro-incompleto.js');
           // $perfilFijo sale de lo guardado y no de $valores: con lo enviado,
           // a cualquiera que mandara «rol=staff» a mano se le pintaba esta
           // etiqueta como si ya lo fuera.
-          $suyo = $v('rol', 'participante');
+          $suyo = $v('rol', $deExpositores ? 'expositor' : 'participante');
           ?>
           <?php if ($perfilFijo !== ''): ?>
             <div class="row" style="gap:10px;min-height:42px;align-items:center">
@@ -436,7 +448,7 @@ guiones('foto.js', 'preregistro.js', 'claves.js', 'registro-incompleto.js');
         <div class="field">
           <label class="label" for="departamento">Departamento<?= $req('ubicacion') ?></label>
           <select class="select<?= $err('departamento') ? ' is-invalid' : '' ?>" id="departamento" name="departamento"
-                  data-municipios="<?= e(u('/municipios/')) ?>" <?= $exige('ubicacion') ?>>
+                  data-municipios="<?= e(u($deExpositores ? '/municipios/expositores/' : '/municipios/')) ?>" <?= $exige('ubicacion') ?>>
             <option value="">Selecciona…</option>
             <?php foreach ($departamentos as $d): ?>
               <option value="<?= e($d) ?>" <?= $v('departamento') === $d ? 'selected' : '' ?>><?= e($d) ?></option>

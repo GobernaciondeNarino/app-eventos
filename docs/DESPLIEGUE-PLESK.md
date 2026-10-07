@@ -391,6 +391,10 @@ restauró no es una copia.
    Negocios* y *Comunicaciones*, y la entidad aparece en los datos principales en vez de en la
    caracterización.
 
+   La 3.9 agrega una tabla, la del formulario privado de expositores. Ese formulario no aparece
+   en ningún menú: el público no ve ningún cambio. Su enlace se consigue en **Configuración →
+   Registro de expositores**.
+
    Si el usuario de la base de datos no tiene permiso de `ALTER` —pasa en algunos
    alojamientos—, la actualización automática no puede hacerse: lo anota en el registro,
    vuelve a intentarlo cada cinco minutos y la plataforma sigue funcionando. Para hacerlo a

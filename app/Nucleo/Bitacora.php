@@ -117,8 +117,11 @@ final class Bitacora
             // leyendo con palabras y no con identificadores.
             'preregistro'        => 'Nuevo registro',
             'propuesta_decidida' => "$quien resolvió una propuesta de exposición" . (!empty($detalle['avisado']) ? ' y se le avisó por correo' : ''),
-            'formulario_guardado' => "$quien cambió el formulario de registro",
-            'formulario_restablecido' => "$quien devolvió el formulario de registro al de fábrica",
+            'formulario_guardado' => "$quien cambió el formulario de registro"
+                . (($detalle['formulario'] ?? '') === 'expositores' ? ' de expositores' : ''),
+            'formulario_restablecido' => "$quien devolvió el formulario de registro"
+                . (($detalle['formulario'] ?? '') === 'expositores' ? ' de expositores' : '') . ' al de fábrica',
+            'enlace_expositores_regenerado' => "$quien generó un enlace nuevo para el registro de expositores; el anterior dejó de servir",
             'token_dia_rotado'   => "$quien regeneró el código de un día",
             'jornada_agregada'   => "$quien agregó un día al evento",
             'jornada_ajustada'   => "$quien cambió la fecha o el horario de un día",

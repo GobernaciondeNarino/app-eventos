@@ -209,6 +209,10 @@ option { background: var(--c-surface); color: var(--c-title); }
 .sheet__list { padding: var(--sp-2); overflow-y: auto; max-height: 56vh; }
 .sheet__list .navlink { border-left: 0; border-radius: 8px; font-size: 12px; padding: 13px 12px; }
 
+/* Lo que se abre con un enlace a #algo queda con aire arriba, no pegado al
+   borde de la ventana. */
+:target { scroll-margin-top: var(--sp-4); }
+
 /* =========================================================================
    Adaptación a pantallas pequeñas
    ========================================================================= */
@@ -217,6 +221,11 @@ option { background: var(--c-surface); color: var(--c-title); }
   .topbar { display: flex; }
   .tabbar { display: flex; }
   .main { padding: var(--sp-5) var(--sp-3) 118px; }
+
+  /* La barra de arriba es fija: sin esto, lo que se abre con un enlace a
+     #algo —«Perfiles de asistencia» desde Registro de expositores— queda
+     con el título escondido debajo de ella. */
+  :target { scroll-margin-top: 96px; }
 
   /* .split--balanced faltaba en esta lista, y es la que arma la portada.
      El resultado era que en el celular la portada seguía en dos columnas de

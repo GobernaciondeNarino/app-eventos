@@ -1,6 +1,6 @@
 # Esquema de datos
 
-Plataforma de Eventos TIC · versión del esquema **1.9.0**
+Plataforma de Eventos TIC · versión del esquema **1.10.0**
 
 > Documento generado con `php herramientas/generar-doc-esquema.php` a partir de
 > `app/Esquema.php`, la misma definición que el instalador usa para crear y actualizar
@@ -16,6 +16,7 @@ poder compartir la base con otras aplicaciones del alojamiento.
 | `evt_evento` | 9 | Un registro por evento. La plataforma es multievento desde el día uno. |
 | `evt_evento_tema` | 7 | Identidad visual: paleta, tipografía y logo. Es lo que se convierte en variables CSS. |
 | `evt_evento_formulario` | 11 | Cómo es el formulario de registro de cada evento: qué campos pide, las opciones de cada lista y el banner. Lo que no está guardado —campos o listas en NULL, una lista que no aparece— es el de fábrica. |
+| `evt_evento_formulario_expositores` | 13 | El formulario de registro privado de los expositores: el mismo formulario, con su propia configuración, al que se llega solo por un enlace con token que se envía aparte. Los perfiles de asistencia son los del formulario público. |
 | `evt_evento_dia` | 9 | Las jornadas. El código QR de acceso cuelga de aquí, no del evento: por eso cambia cada día. |
 | `evt_persona` | 21 | Quien se preregistra. El documento va cifrado, con una huella aparte para detectar duplicados sin descifrar. |
 | `evt_persona_caracterizacion` | 5 | Datos sensibles (Ley 1581, art. 5) en tabla aparte: las consultas del día a día no los tocan y su lectura se audita. |
@@ -128,6 +129,32 @@ Llaves e índices:
 
 - `PRIMARY KEY (evento_id)`
 - `CONSTRAINT fk_formulario_evento FOREIGN KEY (evento_id) REFERENCES `evt_evento` (id) ON DELETE CASCADE`
+
+### `evt_evento_formulario_expositores`
+
+El formulario de registro privado de los expositores: el mismo formulario, con su propia configuración, al que se llega solo por un enlace con token que se envía aparte. Los perfiles de asistencia son los del formulario público.
+
+| Columna | Tipo |
+|---|---|
+| `evento_id` | `INT UNSIGNED NOT NULL` |
+| `token` | `CHAR(32) NOT NULL` |
+| `token_rotado_en` | `DATETIME NULL` |
+| `campos` | `TEXT NULL` |
+| `listas` | `MEDIUMTEXT NULL` |
+| `banner_activo` | `TINYINT(1) NOT NULL DEFAULT 0` |
+| `banner_imagen` | `VARCHAR(120) NOT NULL DEFAULT ''` |
+| `banner_tipo` | `VARCHAR(40) NOT NULL DEFAULT ''` |
+| `banner_titulo` | `VARCHAR(160) NOT NULL DEFAULT ''` |
+| `banner_texto` | `VARCHAR(600) NOT NULL DEFAULT ''` |
+| `banner_alt` | `VARCHAR(200) NOT NULL DEFAULT ''` |
+| `actualizado_en` | `DATETIME NULL` |
+| `actualizado_por` | `INT UNSIGNED NULL` |
+
+Llaves e índices:
+
+- `PRIMARY KEY (evento_id)`
+- `UNIQUE KEY uq_formulario_exp_token (token)`
+- `CONSTRAINT fk_formulario_exp_evento FOREIGN KEY (evento_id) REFERENCES `evt_evento` (id) ON DELETE CASCADE`
 
 ### `evt_evento_dia`
 

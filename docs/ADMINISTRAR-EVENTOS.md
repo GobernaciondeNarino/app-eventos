@@ -462,11 +462,12 @@ Por consola, quien tenga acceso al servidor: `php herramientas/cuenta.php sin-2f
 ## 9. Configuración
 
 Desde la versión 3.7, todo lo que se ajusta una vez y no se toca a diario está en una sola
-entrada del menú, **Administración → Configuración**, con cuatro pestañas:
+entrada del menú, **Administración → Configuración**, con cinco pestañas:
 
 | Pestaña | Qué se configura | Quién |
 |---|---|---|
 | **Registro** | El formulario de registro del evento activo: campos, listas y banner | Administrador |
+| **Registro de expositores** | El formulario privado de los expositores (9.8): su enlace, y sus propios campos, listas y banner | Administrador |
 | **Identidad** | Colores, tipografía y logo del evento, con la revisión de contraste | Administrador |
 | **Acceso y correo** | Las formas de entrar de los asistentes y el envío de correo | Administrador |
 | **Mi cuenta** | La verificación en dos pasos y la contraseña de quien está dentro | Todo el equipo |
@@ -612,6 +613,47 @@ se conserva.
 
 Lo obligatorio es lo de la sección 9.1: la ventana sigue a la configuración del evento.
 
+### 9.8 El formulario privado de expositores
+
+Desde la 3.9 hay un **segundo formulario de registro, solo para quienes van a exponer**. Es el
+mismo formulario —los mismos campos, la misma ventana si falta algo, el mismo carnet al
+terminar—, con dos diferencias:
+
+- **No está en ningún menú.** Se llega a él solo con su enlace, que se envía aparte, por correo o
+  por WhatsApp, a cada expositor. El enlace lleva un código al azar imposible de adivinar:
+  `…/registro/expositores/3f9c…`.
+- **Tiene su propia configuración**, en *Configuración → Registro de expositores*. Lo que se
+  cambie ahí —un campo obligatorio, una categoría de propuesta, el banner— no toca el formulario
+  público, y al revés.
+
+**El enlace** está arriba de esa pestaña, con un botón para copiarlo y otro para abrirlo. También
+en *Expositores* hay una línea que lleva a él. Si se filtra —se compartió en un grupo abierto,
+se publicó por error—, **«Generar un enlace nuevo»** lo cambia: el anterior deja de abrir el
+formulario en el acto y responde como una dirección que no existe. Quien ya se registró no
+pierde nada; a quienes falten hay que enviarles el nuevo. Queda en la bitácora.
+
+**Quien entra por el enlace:**
+
+| Situación | Qué pasa |
+|---|---|
+| Llega nuevo | Queda con el perfil **Expositor**, y «Voy a exponer» viene marcado: la propuesta está lista para llenar |
+| Ya estaba registrado como participante | Al guardar por el enlace, pasa a **Expositor** |
+| Tiene otro perfil especial —Prensa, Staff— | Lo conserva |
+| Su correo ya está registrado y no ha entrado | Se le ofrece entrar con su código, y vuelve a este mismo formulario |
+
+De fábrica, este formulario **no pregunta el perfil** —quien llega por ahí es expositor—; si se
+pone *Visible*, ofrece los perfiles del evento con Expositor elegido. Los **perfiles de
+asistencia** son del evento, no de un formulario: se configuran solo en la pestaña *Registro* y
+este los usa tal cual.
+
+**La identificación**, si este formulario la deja opcional, también deja completo el registro de
+quien no la dio: recibe su carnet sin que la plataforma lo mande a completar el formulario
+público, que sí la pide. El documento cuenta para dar por completo un registro solo cuando los
+dos formularios lo exigen.
+
+Las propuestas que llegan por aquí van a la misma lista de **Expositores**, con el mismo correo
+de decisión (sección 4).
+
 ---
 
 ## 10. Antes de abrir al público
@@ -628,6 +670,7 @@ Una lista corta para no llevarse sorpresas:
    imprimir.
 4. **Deja el evento bueno activo** y los demás desactivados.
 5. **Revisa el formulario** en *Configuración → Registro* y ábrelo con «Ver el formulario»
-   desde una ventana privada: es lo que va a ver la gente.
+   desde una ventana privada: es lo que va a ver la gente. Si vas a invitar expositores, haz lo
+   mismo con el de *Registro de expositores* antes de enviar su enlace.
 6. **Comprueba el tamaño máximo de subida** en el diagnóstico, si esperas exposiciones. Es lo
    único de esta lista que se arregla fuera de la plataforma, y por tanto lo que más tarda.

@@ -55,9 +55,14 @@ $enrutador->get('/', [Publico::class, 'inicio']);
 // conserva porque está en correos ya enviados y en enlaces compartidos.
 $enrutador->ambos('/registro', [Publico::class, 'registro']);
 $enrutador->ambos('/preregistro', [Publico::class, 'registro']);
+// El mismo formulario para los expositores, con su propia configuración. No
+// está en ningún menú: se llega solo por el enlace privado que la organización
+// envía aparte. Sin el token vigente responde 404.
+$enrutador->ambos('/registro/expositores/{token:token}', [Publico::class, 'registroExpositores']);
 $enrutador->get('/agenda', [Publico::class, 'agenda']);
 $enrutador->get('/agenda/{id:num}', [Publico::class, 'charla']);
 $enrutador->get('/municipios/{departamento:texto}', [Publico::class, 'municipios']);
+$enrutador->get('/municipios/expositores/{departamento:texto}', [Publico::class, 'municipiosExpositores']);
 
 /* =========================================================================
    Acceso del asistente — correo y código de un solo uso
@@ -136,6 +141,8 @@ $enrutador->get('/admin', [Admin::class, 'panel'], 'admin:consulta');
 // depender de alguien con acceso al servidor—; las demás, de administrador.
 $enrutador->get('/admin/configuracion', [Configuracion::class, 'inicio'], 'admin:consulta');
 $enrutador->ambos('/admin/configuracion/registro', [Configuracion::class, 'registro'], 'admin:administrador');
+$enrutador->ambos('/admin/configuracion/expositores', [Configuracion::class, 'expositores'], 'admin:administrador');
+$enrutador->post('/admin/configuracion/expositores/enlace', [Configuracion::class, 'nuevoEnlace'], 'admin:administrador');
 $enrutador->ambos('/admin/cuenta', [Cuenta::class, 'ver'], 'admin:consulta');
 
 // Aplica al esquema lo que falte para esta versión del código. Solo agrega
@@ -211,6 +218,7 @@ $enrutador->post('/admin/correo/local', [Admin::class, 'usarCorreoLocal'], 'admi
    ========================================================================= */
 $enrutador->get('/medios/logo/{evento:num}', [Medios::class, 'logo']);
 $enrutador->get('/medios/banner/{evento:num}', [Medios::class, 'banner']);
+$enrutador->get('/medios/banner/{evento:num}/expositores', [Medios::class, 'bannerExpositores']);
 
 // Sin guardia en la tabla: la foto de una persona la puede ver ella misma y el
 // equipo organizador, y eso lo decide el propio método. Con un guardia fijo,

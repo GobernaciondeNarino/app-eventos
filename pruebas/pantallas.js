@@ -32,7 +32,7 @@ const PUBLICAS = ['/', '/registro', '/entrar/crear', '/agenda', '/entrar', '/adm
 const ASISTENTE_RUTAS = ['/carnet', '/checkin', '/contactos'];
 const ADMIN_RUTAS = ['/admin', '/admin/escaner', '/admin/registros', '/admin/qr-dias',
                      '/admin/expositores', '/admin/organizadores', '/admin/eventos', '/admin/identidad', '/admin/autenticacion',
-                     '/admin/cuenta', '/admin/configuracion/registro'];
+                     '/admin/cuenta', '/admin/configuracion/registro', '/admin/configuracion/expositores'];
 
 let fallos = 0;
 
@@ -148,7 +148,24 @@ async function revisar(page, ruta, etiqueta) {
   if (!entro) fallos++;
 
   for (const ruta of ADMIN_RUTAS) await revisar(adm, ruta, 'admin');
+
+  // El formulario privado de expositores: no está en ningún menú, así que su
+  // dirección se toma de su pestaña de configuración y se abre sin sesión.
+  await adm.goto(BASE + '/admin/configuracion/expositores', { waitUntil: 'networkidle' });
+  const enlace = await adm.locator('#enlace-expositores').inputValue().catch(() => '');
   await ctxAdmin.close();
+  if (enlace.includes('/registro/expositores/')) {
+    const ctxPrivado = await navegador.newContext({
+      viewport: { width: ANCHO, height: 900 },
+      isMobile: ANCHO < 700,
+      hasTouch: ANCHO < 700,
+    });
+    await revisar(await ctxPrivado.newPage(), enlace.slice(enlace.indexOf('/registro/expositores/')), 'privado');
+    await ctxPrivado.close();
+  } else {
+    console.log('! no se encontró el enlace del formulario de expositores');
+    fallos++;
+  }
 
   await navegador.close();
   console.log('\n' + (fallos ? fallos + ' pantalla(s) con problemas' : 'Todas las pantallas se ven limpias'));

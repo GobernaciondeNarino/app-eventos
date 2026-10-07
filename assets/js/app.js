@@ -233,6 +233,13 @@
     avisar(ok);
   });
 
+  /* ---- Un enlace a una sección plegada la abre ----------------------------
+     Registro de expositores remite a «Perfiles de asistencia» de la pestaña
+     Registro, que viene plegada: llegar y tener que buscar dónde abrirla
+     sería medio enlace.                                                   */
+  var plegada = location.hash ? document.getElementById(location.hash.slice(1)) : null;
+  if (plegada && plegada.tagName === 'DETAILS') plegada.open = true;
+
   /* ---- Confirmación antes de una acción que no se deshace -----------------
      Va en el formulario, no en el botón: así protege también los envíos
      hechos con Enter desde un campo.                                      */

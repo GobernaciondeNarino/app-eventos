@@ -44,7 +44,11 @@ $columnas = 'grid-template-columns:1.7fr 1.1fr 1fr .8fr .9fr';
     <div class="stack stack--2">
       <span class="kicker">Administrador</span>
       <h1>Propuestas de exposición</h1>
-      <p class="help">Al aprobar una propuesta se publica en la agenda y el expositor recibe su carnet con el rótulo correspondiente.</p>
+      <p class="help">
+        Al aprobar una propuesta se publica en la agenda y el expositor recibe su carnet con el rótulo correspondiente.
+        El enlace privado para invitar expositores está en
+        <a href="<?= e(u('/admin/configuracion/expositores')) ?>">Configuración → Registro de expositores</a>.
+      </p>
     </div>
     <div class="row" role="group" aria-label="Filtrar por estado">
       <a class="chip<?= $estado === '' ? ' is-active' : '' ?>" href="<?= e(u('/admin/expositores')) ?>">Todas</a>

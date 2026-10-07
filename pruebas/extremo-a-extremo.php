@@ -3654,6 +3654,143 @@ $jefa->post('/admin/configuracion/registro', ['accion' => 'restablecer']);
 comprobar('sin nadie con perfiles propios, el de fábrica queda limpio',
     $pdo->query("SELECT listas FROM {$P}evento_formulario WHERE evento_id = $eventoId")->fetchColumn() === null);
 
+/* =========================================================================
+   15 · El formulario privado de expositores
+   -------------------------------------------------------------------------
+   El mismo formulario de registro, con su propia configuración, al que se
+   llega solo por un enlace que la organización envía aparte. No está en
+   ningún menú.
+   ========================================================================= */
+titulo('Registro de expositores');
+
+$html = $jefa->get('/admin/configuracion/registro');
+comprobar('Configuración tiene la pestaña Registro de expositores', str_contains($html, '>Registro de expositores<'));
+$html = $jefa->get('/admin/configuracion/expositores');
+preg_match('#/registro/expositores/([a-f0-9]{32})#', $html, $m);
+$tokenExp = $m[1] ?? '';
+$rutaExp = '/registro/expositores/' . $tokenExp;
+comprobar('la pestaña da el enlace privado, listo para copiar',
+    $tokenExp !== '' && str_contains($html, 'data-copiar="') && str_contains($html, 'Generar un enlace nuevo'),
+    substr(strip_tags($html), 0, 200));
+comprobar('y la de Expositores dice dónde está', str_contains($jefa->get('/admin/expositores'), '/admin/configuracion/expositores'));
+
+$fuera = new Cliente($BASE);
+$enAlgunMenu = false;
+foreach (['/', '/registro', '/agenda', '/entrar'] as $ruta) {
+    $enAlgunMenu = $enAlgunMenu || str_contains($fuera->get($ruta), '/registro/expositores');
+}
+comprobar('el enlace no aparece en ningún menú ni en ninguna página pública', !$enAlgunMenu);
+$fuera->get('/registro/expositores/' . str_repeat('ab', 16), false);
+comprobar('un enlace que no es el vigente responde 404', $fuera->codigo === 404, (string) $fuera->codigo);
+
+$html = $fuera->get($rutaExp);
+comprobar('el vigente abre el formulario de expositores', $fuera->codigo === 200 && str_contains($html, 'Registro de expositores'));
+comprobar('que se envía a su propia dirección',
+    preg_match('#<form[^>]+action="[^"]*' . preg_quote($rutaExp, '#') . '"#', $html) === 1);
+comprobar('con «Voy a exponer» marcado y sin preguntar el perfil',
+    preg_match('#name="expositor"[^>]*\bchecked#', $html) === 1 && !str_contains($html, 'name="rol"'));
+
+// Su configuración es suya: exige el teléfono, deja la identificación
+// opcional y trae una categoría propia. El público no cambia.
+$camposExp = ['telefono' => 'obligatorio', 'documento' => 'opcional']
+    + App\Modelos\Formulario::camposPorDefecto(App\Modelos\Formulario::EXPOSITORES);
+$listasExp = $listasDeFabrica();
+unset($listasExp['perfil']);   // en esta pestaña no se editan: son del evento
+$listasExp['categoria'] .= "\nInvestigación aplicada";
+$jefa->get('/admin/configuracion/expositores');
+$html = $jefa->subir('/admin/configuracion/expositores', $aplanar([
+    'accion' => 'guardar', 'campos' => $camposExp, 'listas' => $listasExp,
+    'banner_activo' => '1', 'banner_titulo' => 'Convocatoria de expositores',
+]), []);
+comprobar('la configuración del de expositores se guarda', str_contains($html, 'enlace de expositores'), substr(strip_tags($html), 0, 200));
+$filaExp = $pdo->query("SELECT * FROM {$P}evento_formulario_expositores WHERE evento_id = $eventoId")->fetch(PDO::FETCH_ASSOC) ?: [];
+comprobar('en su propia tabla, junto a su enlace',
+    ($filaExp['token'] ?? '') === $tokenExp && str_contains((string) ($filaExp['campos'] ?? ''), '"telefono":"obligatorio"'));
+comprobar('y sin tocar los perfiles, que son del evento', !str_contains((string) ($filaExp['listas'] ?? ''), '"perfil"'));
+$html = (new Cliente($BASE))->get('/registro');
+comprobar('el formulario público no cambia',
+    !str_contains($html, 'Investigación aplicada') && !str_contains($html, 'Convocatoria de expositores'));
+$html = (new Cliente($BASE))->get($rutaExp);
+comprobar('el de expositores sí, con su banner y su categoría',
+    str_contains($html, 'Convocatoria de expositores') && str_contains($html, 'Investigación aplicada'));
+comprobar('y su selector de municipios pide su propia lista', str_contains($html, '/municipios/expositores/'));
+$municipios = json_decode((new Cliente($BASE))->get('/municipios/expositores/' . rawurlencode('Nariño')), true);
+comprobar('que responde', !empty($municipios['municipios']));
+
+// Una expositora invitada se registra por el enlace.
+$invitada = new Cliente($BASE);
+$invitada->get($rutaExp);
+$datosInvitada = [
+    'correo' => 'invitada@narino.gov.co', 'nombre' => 'Expositora Invitada', 'tipo_documento' => 'CC',
+    'documento' => '', 'entidad' => 'Universidad Mariana', 'habeas' => '1', 'expositor' => '1',
+    'tema' => 'Inteligencia artificial para la gestión pública', 'categoria' => 'Investigación aplicada',
+    'detalle' => 'Cómo los municipios pueden usar modelos de lenguaje para atender mejor a la ciudadanía.',
+    'dia_preferido' => '1', 'duracion' => '40',
+];
+$html = $invitada->subir($rutaExp, $datosInvitada, $adjuntosDe('invitada'));
+$invitadaExiste = static fn(): int => (int) $pdo->query(
+    "SELECT COUNT(*) FROM {$P}persona WHERE correo = 'invitada@narino.gov.co'"
+)->fetchColumn();
+comprobar('sin el teléfono que este formulario exige, no se guarda',
+    $invitadaExiste() === 0 && str_contains($html, 'Escribe un teléfono de contacto'), substr(strip_tags($html), 0, 200));
+$html = $invitada->subir($rutaExp, $datosInvitada + ['telefono' => '+57 300 555 0199'], $adjuntosDe('invitada'));
+comprobar('con todo, se registra', str_contains($html, 'Registro completo'), substr(strip_tags($html), 0, 200));
+$inv = $pdo->query("SELECT * FROM {$P}persona WHERE correo = 'invitada@narino.gov.co'")->fetch(PDO::FETCH_ASSOC) ?: [];
+comprobar('y queda como Expositor', ($inv['rol'] ?? '') === 'expositor', (string) ($inv['rol'] ?? ''));
+comprobar('sin identificación, porque este formulario no la pide, y con carnet',
+    array_key_exists('documento_huella', $inv) && $inv['documento_huella'] === null
+    && (int) $pdo->query("SELECT COUNT(*) FROM {$P}credencial WHERE persona_id = " . (int) ($inv['id'] ?? 0))->fetchColumn() === 1);
+$propInvitada = $pdo->query("SELECT * FROM {$P}propuesta WHERE persona_id = " . (int) ($inv['id'] ?? 0))->fetch(PDO::FETCH_ASSOC) ?: [];
+comprobar('su propuesta llega con la categoría de este formulario y sus documentos',
+    ($propInvitada['categoria'] ?? '') === 'Investigación aplicada' && ($propInvitada['hoja_vida'] ?? '') !== '');
+$invitada->get('/carnet', false);
+comprobar('y entra a su carnet sin que la manden a completar el formulario público', $invitada->codigo === 200,
+    $invitada->codigo . ' → ' . $invitada->cabecera('Location'));
+$detalleRegistro = (string) $pdo->query("SELECT detalle FROM {$P}bitacora WHERE accion = 'registro' AND entidad_id = "
+    . (int) ($inv['id'] ?? 0))->fetchColumn();
+comprobar('la bitácora anota por qué formulario llegó', str_contains($detalleRegistro, 'expositores'), $detalleRegistro);
+
+// Quien ya estaba registrada como participante y entra por el enlace queda
+// como Expositor.
+$paula->get($rutaExp);
+$paula->post($rutaExp, [
+    'nombre' => 'Paula Montenegro Erazo', 'tipo_documento' => 'CC', 'documento' => '27155331',
+    'telefono' => '+57 301 555 0101', 'entidad' => 'Gobernación de Nariño', 'habeas' => '1',
+]);
+comprobar('quien era participante y entra por el enlace queda como Expositor',
+    (string) $pdo->query("SELECT rol FROM {$P}persona WHERE correo = 'pmontenegro@narino.gov.co'")->fetchColumn() === 'expositor');
+
+// Un correo ya registrado: se ofrece entrar con el código y volver a este enlace.
+$otro = new Cliente($BASE);
+$otro->get($rutaExp);
+$html = $otro->subir($rutaExp, $datosInvitada + ['telefono' => '+57 300 555 0199'], $adjuntosDe('otro'));
+comprobar('a un correo ya registrado se le ofrece entrar y volver a este mismo enlace',
+    str_contains(html_entity_decode($html), 'destino=' . rawurlencode($rutaExp)));
+
+// Un enlace nuevo deja sin efecto el anterior.
+$jefa->get('/admin/configuracion/expositores');
+$html = $jefa->post('/admin/configuracion/expositores/enlace', []);
+preg_match('#/registro/expositores/([a-f0-9]{32})#', $html, $m);
+$tokenNuevo = $m[1] ?? '';
+comprobar('se genera un enlace nuevo', $tokenNuevo !== '' && $tokenNuevo !== $tokenExp && str_contains($html, 'El anterior ya no'));
+$fuera->get($rutaExp, false);
+comprobar('y el anterior deja de abrir el formulario', $fuera->codigo === 404, (string) $fuera->codigo);
+$fuera->get('/registro/expositores/' . $tokenNuevo);
+comprobar('el nuevo sí', $fuera->codigo === 200);
+
+// Volver al de fábrica no toca el enlace ni el formulario público.
+$jefa->get('/admin/configuracion/expositores');
+$jefa->post('/admin/configuracion/expositores', ['accion' => 'restablecer']);
+$filaExp = $pdo->query("SELECT * FROM {$P}evento_formulario_expositores WHERE evento_id = $eventoId")->fetch(PDO::FETCH_ASSOC) ?: [];
+comprobar('volver al de fábrica limpia campos y listas, y conserva el enlace',
+    array_key_exists('campos', $filaExp) && $filaExp['campos'] === null && $filaExp['listas'] === null
+    && $filaExp['token'] === $tokenNuevo);
+
+// Dejarlo como estaba.
+$pdo->exec("DELETE FROM {$P}persona WHERE correo = 'invitada@narino.gov.co'");
+$pdo->exec("UPDATE {$P}persona SET rol = 'participante' WHERE correo = 'pmontenegro@narino.gov.co'");
+$pdo->exec("UPDATE {$P}evento_formulario_expositores SET banner_activo = 0, banner_titulo = '' WHERE evento_id = $eventoId");
+
 ajustarConfig($RAIZ, ['modo_correo' => $configAntesForm['modo_correo'] ?? null]);
 
 /* =========================================================================

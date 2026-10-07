@@ -14,6 +14,7 @@ use App\Nucleo\Imagen;
 use App\Nucleo\Peticion;
 use App\Nucleo\Registro;
 use App\Nucleo\Respuesta;
+use App\Nucleo\Url;
 
 /**
  * El módulo Configuración: todo lo que se ajusta una vez y vale para el evento.
@@ -31,16 +32,49 @@ final class Configuracion
         Respuesta::redirigir(Guardia::puede('administrador') ? '/admin/configuracion/registro' : '/admin/cuenta');
     }
 
+    /** Dónde se configura cada formulario. */
+    private const RUTAS = [
+        Formulario::PUBLICO     => '/admin/configuracion/registro',
+        Formulario::EXPOSITORES => '/admin/configuracion/expositores',
+    ];
+
+    /** El formulario de registro público: campos, listas y banner. */
+    public function registro(Peticion $peticion): void
+    {
+        $this->editar($peticion, Formulario::PUBLICO);
+    }
+
     /**
-     * El formulario de registro: campos, listas y banner.
+     * El formulario privado de expositores: lo mismo, con su propia
+     * configuración, y además el enlace que se les envía.
+     */
+    public function expositores(Peticion $peticion): void
+    {
+        $this->editar($peticion, Formulario::EXPOSITORES);
+    }
+
+    /** Un enlace nuevo para el de expositores. El anterior deja de servir en el acto. */
+    public function nuevoEnlace(Peticion $peticion): void
+    {
+        $evento = App::eventoExigido();
+        Formulario::nuevoTokenExpositores((int) $evento['id']);
+        Bitacora::registrar('enlace_expositores_regenerado', 'evento', (int) $evento['id']);
+        Respuesta::redirigir(self::RUTAS[Formulario::EXPOSITORES],
+            'Enlace nuevo listo. El anterior ya no abre el formulario: envía este a quienes falten por registrarse.', 'warn');
+    }
+
+    /**
+     * Campos, listas y banner de uno de los dos formularios.
      *
      * Se guarda todo junto. Si una lista trae un error —una sigla de documento
      * con espacios, un municipio sin departamento—, esa lista se queda como
      * estaba y lo demás se guarda igual: perder el resto de los cambios por una
      * línea mal escrita sería castigar de más.
      */
-    public function registro(Peticion $peticion): void
+    private function editar(Peticion $peticion, string $tipo): void
     {
+        $ruta = self::RUTAS[$tipo];
+        $deExpositores = $tipo === Formulario::EXPOSITORES;
         $evento = App::eventoExigido();
         $eventoId = (int) $evento['id'];
         $errores = [];
@@ -57,17 +91,19 @@ final class Configuracion
             $usuarioId = (int) (Guardia::usuarioActual()['id'] ?? 0) ?: null;
 
             if ($peticion->campo('accion') === 'restablecer') {
-                $conservados = Formulario::restablecer($eventoId, $usuarioId);
+                $conservados = Formulario::restablecer($eventoId, $usuarioId, $tipo);
                 Bitacora::registrar('formulario_restablecido', 'evento', $eventoId,
-                    $conservados === [] ? [] : ['perfiles_conservados' => implode(', ', $conservados)]);
-                Respuesta::redirigir('/admin/configuracion/registro',
-                    'El formulario volvió a ser el de fábrica. El banner se conservó como estaba.'
+                    ($deExpositores ? ['formulario' => $tipo] : [])
+                    + ($conservados === [] ? [] : ['perfiles_conservados' => implode(', ', $conservados)]));
+                Respuesta::redirigir($ruta,
+                    'El formulario volvió a ser el de fábrica. '
+                    . ($deExpositores ? 'El banner y el enlace se conservaron como estaban.' : 'El banner se conservó como estaba.')
                     . ($conservados === [] ? '' : ' También los perfiles ' . implode(', ', array_map(
                         static fn(string $n): string => '«' . $n . '»', $conservados
                     )) . ', porque hay personas que los tienen.'));
             }
 
-            $antes = Formulario::delEvento($eventoId)->paraEditar();
+            $antes = Formulario::delEvento($eventoId, $tipo)->paraEditar();
 
             $campos = [];
             foreach ($peticion->campoEstructurado('campos') as $clave => $estado) {
@@ -77,7 +113,7 @@ final class Configuracion
             }
             $escrito = $peticion->campoEstructurado('listas');
             [$listas, $errores] = Formulario::leerListas($escrito, $antes['listas'], $perfilesEnUso);
-            Formulario::guardar($eventoId, $campos, $listas, $usuarioId);
+            Formulario::guardar($eventoId, $campos, $listas, $usuarioId, $tipo);
 
             $banner = [
                 'activo' => $peticion->marcado('banner_activo'),
@@ -100,14 +136,14 @@ final class Configuracion
                 $banner['imagen'] = '';
                 $banner['tipo'] = '';
             }
-            Formulario::guardarBanner($eventoId, $banner, $usuarioId);
+            Formulario::guardarBanner($eventoId, $banner, $usuarioId, $tipo);
             // La imagen anterior se borra solo cuando la nueva ya quedó anotada.
             if (array_key_exists('imagen', $banner) && $anterior !== '' && $anterior !== $banner['imagen']) {
                 Imagen::borrarBanner($anterior);
             }
 
-            $guardado = Formulario::delEvento($eventoId);
-            Bitacora::registrar('formulario_guardado', 'evento', $eventoId, [
+            $guardado = Formulario::delEvento($eventoId, $tipo);
+            Bitacora::registrar('formulario_guardado', 'evento', $eventoId, ($deExpositores ? ['formulario' => $tipo] : []) + [
                 'ocultos'      => implode(', ', array_keys(array_filter(
                     Formulario::CAMPOS, static fn(array $d, string $c): bool => !$guardado->visible($c), ARRAY_FILTER_USE_BOTH
                 ))),
@@ -118,15 +154,22 @@ final class Configuracion
             ]);
 
             if ($errores === []) {
-                Respuesta::redirigir('/admin/configuracion/registro',
-                    'Formulario guardado. Así lo ve desde ahora quien se registra.');
+                Respuesta::redirigir($ruta, $deExpositores
+                    ? 'Formulario guardado. Así lo ve desde ahora quien entra por el enlace de expositores.'
+                    : 'Formulario guardado. Así lo ve desde ahora quien se registra.');
             }
         }
 
-        $formulario = Formulario::delEvento($eventoId);
+        $formulario = Formulario::delEvento($eventoId, $tipo);
         Respuesta::vista('admin/config-registro', [
-            'titulo'     => 'Configuración del registro',
+            'titulo'     => $deExpositores ? 'Configuración del registro de expositores' : 'Configuración del registro',
             'pantalla'   => 'configuracion',
+            'pestana'    => $deExpositores ? 'expositores' : 'registro',
+            'tipo'       => $tipo,
+            'accionForm' => $ruta,
+            // El enlace privado: se crea la primera vez que se abre esta pestaña.
+            'enlace'     => $deExpositores
+                ? Url::absoluta('/registro/expositores/' . Formulario::tokenExpositores($eventoId)) : '',
             'formulario' => $formulario,
             'edicion'    => $formulario->paraEditar(),
             'perfilesEnUso' => $perfilesEnUso,

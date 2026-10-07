@@ -280,6 +280,19 @@ comprobar('ni Staff lo pierde al guardar sus datos', Persona::rolAdmitido('prens
 comprobar('un perfil nuevo se puede elegir', Persona::rolAdmitido('rueda_de_negocios', 'participante', $ofrecidos) === 'rueda_de_negocios');
 comprobar('uno inventado no, y se conserva el que tenía', Persona::rolAdmitido('inventado', 'visitante', $ofrecidos) === 'visitante');
 
+echo "\nEl formulario de expositores\n";
+$fx = Formulario::delEvento(0, Formulario::EXPOSITORES);
+comprobar('es el de expositores', $fx->tipo() === Formulario::EXPOSITORES && Formulario::delEvento(0)->tipo() === Formulario::PUBLICO);
+comprobar('de fábrica no pregunta el perfil: quien entra es Expositor',
+    $fx->estado('rol') === Formulario::OCULTO && Formulario::delEvento(0)->estado('rol') === Formulario::OPCIONAL);
+comprobar('lo demás, como el público', array_diff_assoc(Formulario::camposPorDefecto(Formulario::EXPOSITORES),
+    Formulario::camposPorDefecto()) === ['rol' => Formulario::OCULTO]);
+comprobar('siempre puede dar el perfil Expositor', in_array('expositor', $fx->perfiles(), true));
+comprobar('sus perfiles son los del evento', $fx->todosLosPerfiles() === Formulario::delEvento(0)->todosLosPerfiles());
+comprobar('sin configurar, es el de fábrica', !$fx->personalizado() && $fx->banner() === null);
+comprobar('un token sin forma ni se busca', Formulario::eventoDelToken('../../config') === null
+    && Formulario::eventoDelToken(str_repeat('z', 32)) === null);
+
 echo "\nRegistro completo\n";
 comprobar('con nombre y documento, completo', Persona::registroCompleto(['nombre' => 'Ana', 'documento_huella' => 'x'], true));
 comprobar('sin documento, incompleto si el evento lo exige', !Persona::registroCompleto(['nombre' => 'Ana', 'documento_huella' => null], true));

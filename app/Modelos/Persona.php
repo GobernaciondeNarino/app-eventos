@@ -165,11 +165,11 @@ final class Persona
         if (trim((string) ($persona['nombre'] ?? '')) === '') {
             return false;
         }
-        // La identificación cuenta solo si el formulario de su evento la exige:
-        // desde la 3.7 se puede dejar opcional o quitar, y entonces el carnet
-        // sale con el nombre.
+        // La identificación cuenta solo si el evento la exige: desde la 3.7 se
+        // puede dejar opcional o quitar, y entonces el carnet sale con el
+        // nombre. Con dos formularios (3.9), si alguno la deja opcional.
         $exigeDocumento ??= isset($persona['evento_id'])
-            ? Formulario::delEvento((int) $persona['evento_id'])->obligatorio('documento')
+            ? Formulario::exigeDocumento((int) $persona['evento_id'])
             : true;
         return !$exigeDocumento || ($persona['documento_huella'] ?? null) !== null;
     }
@@ -216,14 +216,16 @@ final class Persona
      * Se admite que una persona vuelva a diligenciar el formulario con el mismo
      * correo: pasa todo el tiempo, porque el enlace se comparte y la gente lo
      * llena dos veces. En ese caso se actualizan sus datos en vez de fallar.
+     *
+     * @param string $formulario por cuál llegó: Formulario::PUBLICO o ::EXPOSITORES
      */
-    public static function registrar(int $eventoId, array $datos): array
+    public static function registrar(int $eventoId, array $datos, string $formulario = Formulario::PUBLICO): array
     {
         $correo = mb_strtolower(trim((string) $datos['correo']));
         $documento = self::normalizarDocumento((string) ($datos['documento'] ?? ''));
         $huella = $documento === '' ? null : Cripto::huella($documento);
 
-        return Bd::transaccion(static function () use ($eventoId, $datos, $correo, $documento, $huella): array {
+        return Bd::transaccion(static function () use ($eventoId, $datos, $correo, $documento, $huella, $formulario): array {
             $existente = self::porCorreo($eventoId, $correo);
 
             // El documento pertenece a otro correo del mismo evento: son dos
@@ -260,7 +262,7 @@ final class Persona
                 'rol'               => self::rolAdmitido(
                     (string) ($datos['rol'] ?? ''),
                     $existente ? (string) $existente['rol'] : 'participante',
-                    Formulario::delEvento($eventoId)->perfiles($existente ? (string) $existente['rol'] : '')
+                    Formulario::delEvento($eventoId, $formulario)->perfiles($existente ? (string) $existente['rol'] : '')
                 ),
             ];
 
@@ -283,15 +285,13 @@ final class Persona
             // nombre ni identificación no sirve de nada en la puerta, y
             // emitirlo antes deja credenciales huérfanas de quien creó su
             // acceso y no volvió.
-            $credencial = self::registroCompleto(
-                $campos,
-                Formulario::delEvento($eventoId)->obligatorio('documento')
-            ) ? Credencial::asegurar($id) : null;
+            $credencial = self::registroCompleto($campos, Formulario::exigeDocumento($eventoId))
+                ? Credencial::asegurar($id) : null;
 
             Bitacora::registrar($nueva ? 'registro' : 'registro_actualizado', 'persona', $id, [
                 'rol' => $campos['rol'],
                 'municipio' => $campos['municipio'],
-            ]);
+            ] + ($formulario === Formulario::PUBLICO ? [] : ['formulario' => $formulario]));
 
             return ['id' => $id, 'nueva' => $nueva, 'credencial' => $credencial];
         });

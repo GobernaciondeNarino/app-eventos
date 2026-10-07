@@ -1,7 +1,12 @@
 <?php
 /**
- * Configuración → Registro: cómo es el formulario de registro de este evento.
+ * Configuración → Registro y → Registro de expositores: cómo es cada uno de
+ * los dos formularios de registro de este evento.
  *
+ * @var string $tipo        Formulario::PUBLICO o ::EXPOSITORES
+ * @var string $pestana     la pestaña activa
+ * @var string $accionForm  a dónde se envía esta pantalla
+ * @var string $enlace      el enlace privado, en la de expositores
  * @var \App\Modelos\Formulario $formulario
  * @var array $edicion  campos, listas y banner tal como están guardados
  * @var array $errores  por lista, y 'banner_imagen'
@@ -36,7 +41,7 @@ $textoDe = static function (string $clave, string $guardado) use ($escrito, $err
     return $guardado;
 };
 
-$pestana = 'registro';
+$deExpositores = $tipo === Formulario::EXPOSITORES;
 ?>
 <div class="view view--wide stack stack--4">
 
@@ -45,14 +50,19 @@ $pestana = 'registro';
   <div class="row row--between" style="align-items:flex-end">
     <div class="stack stack--2">
       <span class="kicker">Configuración · <?= e((string) $evento['nombre']) ?></span>
-      <h1>Formulario de registro</h1>
+      <h1><?= $deExpositores ? 'Registro de expositores' : 'Formulario de registro' ?></h1>
       <p class="help" style="max-width:70ch">
-        Qué se le pide a quien se registra en este evento, qué opciones trae cada lista y si arriba
-        va un banner. Se aplica al guardar. Lo que ya está registrado no cambia: una opción que
-        quites sigue apareciendo en los datos de quien la eligió.
+        <?php if ($deExpositores): ?>
+          El mismo formulario de registro, para quienes van a exponer, con su propia configuración:
+          lo que cambies aquí no toca el formulario público. Lo que ya está registrado no cambia.
+        <?php else: ?>
+          Qué se le pide a quien se registra en este evento, qué opciones trae cada lista y si arriba
+          va un banner. Se aplica al guardar. Lo que ya está registrado no cambia: una opción que
+          quites sigue apareciendo en los datos de quien la eligió.
+        <?php endif; ?>
       </p>
     </div>
-    <a class="btn btn--sm" href="<?= e(u('/registro')) ?>" target="_blank" rel="noopener">Ver el formulario ›</a>
+    <a class="btn btn--sm" href="<?= e($deExpositores ? $enlace : u('/registro')) ?>" target="_blank" rel="noopener">Ver el formulario ›</a>
   </div>
 
   <?php if ($errores): ?>
@@ -65,7 +75,34 @@ $pestana = 'registro';
     </div>
   <?php endif; ?>
 
-  <form method="post" action="<?= e(u('/admin/configuracion/registro')) ?>" enctype="multipart/form-data"
+  <?php if ($deExpositores): ?>
+    <!-- El enlace privado. No está en ningún menú: es lo que se le envía a cada
+         expositor. Va fuera del formulario de abajo porque tiene su propio botón. -->
+    <section class="card" id="enlace">
+      <div class="card__head"><span>Enlace privado para los expositores</span></div>
+      <div class="card__body stack stack--3">
+        <p class="help" style="margin:0">
+          Este formulario no aparece en ningún menú: se llega a él solo con este enlace. Envíalo por
+          correo o por WhatsApp a quienes van a exponer. Quien entra por él queda con el perfil
+          Expositor y con la propuesta lista para llenar.
+        </p>
+        <div class="row" style="gap:10px;flex-wrap:wrap">
+          <input class="input input--mono" id="enlace-expositores" value="<?= e($enlace) ?>" readonly
+                 aria-label="Enlace privado del formulario de expositores" style="flex:1;min-width:240px">
+          <button class="btn btn--sm btn--primary" type="button" data-copiar="<?= e($enlace) ?>">Copiar</button>
+          <a class="btn btn--sm" href="<?= e($enlace) ?>" target="_blank" rel="noopener">Abrir ›</a>
+        </div>
+        <form method="post" action="<?= e(u('/admin/configuracion/expositores/enlace')) ?>" class="row" style="gap:10px;flex-wrap:wrap"
+              data-confirmar="El enlace actual dejará de abrir el formulario en el acto. Quien ya se registró no pierde nada, pero a quienes falten habrá que enviarles el nuevo. ¿Continuar?">
+          <?= testigo() ?>
+          <button class="btn btn--sm" type="submit">Generar un enlace nuevo</button>
+          <span class="help" style="margin:0">Si se filtró: se compartió en un grupo abierto, se publicó por error.</span>
+        </form>
+      </div>
+    </section>
+  <?php endif; ?>
+
+  <form method="post" action="<?= e(u($accionForm)) ?>" enctype="multipart/form-data"
         class="stack stack--4" novalidate>
     <?= testigo() ?>
     <input type="hidden" name="accion" value="guardar">
@@ -89,7 +126,7 @@ $pestana = 'registro';
 
         <?php if ($banner['imagen'] !== ''): ?>
           <div class="stack stack--2">
-            <img class="config-banner__vista" src="<?= e(u('/medios/banner/' . (int) $evento['id'], ['v' => substr(md5($banner['imagen']), 0, 10)])) ?>"
+            <img class="config-banner__vista" src="<?= e(u('/medios/banner/' . (int) $evento['id'] . ($deExpositores ? '/expositores' : ''), ['v' => substr(md5($banner['imagen']), 0, 10)])) ?>"
                  alt="El banner que está cargado">
             <label class="row" style="gap:8px;cursor:pointer">
               <input type="checkbox" name="quitar_banner" value="1" style="width:18px;height:18px;accent-color:var(--c-accent)">
@@ -153,8 +190,16 @@ $pestana = 'registro';
                   <?php if (!empty($definicion['sensible'])): ?>
                     <span class="help" style="margin:0">Dato sensible: se puede pedir, nunca exigir (Ley 1581, art. 6).</span>
                   <?php endif; ?>
-                  <?php if (!empty($definicion['nota'])): ?>
-                    <span class="help" style="margin:0"><?= e($definicion['nota']) ?></span>
+                  <?php
+                  $nota = $definicion['nota'] ?? '';
+                  if ($deExpositores && $clave === 'rol') {
+                      $nota = 'Oculto, quien entra por este enlace queda como Expositor; quien ya tenía otro perfil '
+                          . 'especial —Prensa, Staff— lo conserva. Visible, se le ofrecen los perfiles del evento con '
+                          . 'Expositor elegido.';
+                  }
+                  ?>
+                  <?php if ($nota !== ''): ?>
+                    <span class="help" style="margin:0"><?= e($nota) ?></span>
                   <?php endif; ?>
                 </div>
                 <div class="config-campo__estados" role="radiogroup" aria-labelledby="rotulo-<?= e($clave) ?>">
@@ -183,6 +228,18 @@ $pestana = 'registro';
         </p>
 
         <?php foreach (Formulario::LISTAS as $clave => $definicion):
+          // Los perfiles son del evento: en el de expositores no se editan, se
+          // remite a donde se configuran.
+          if ($deExpositores && $clave === 'perfil'): ?>
+            <div class="config-lista" id="lista-perfil" style="padding:12px 14px">
+              <strong><?= e($definicion['etiqueta']) ?></strong>
+              <p class="help" style="margin:6px 0 0">
+                Son del evento, los mismos del formulario público: se agregan y se renombran en la
+                pestaña <a href="<?= e(u('/admin/configuracion/registro')) ?>#lista-perfil">Registro</a>.
+                Quien entra por el enlace de expositores queda como Expositor.
+              </p>
+            </div>
+          <?php continue; endif;
           $valor = $edicion['listas'][$clave];
           $oculta = !$formulario->visible($definicion['campo']);
           $resumen = match ($definicion['clase']) {
@@ -328,8 +385,10 @@ $pestana = 'registro';
   </form>
 
   <?php if ($formulario->personalizado()): ?>
-    <form method="post" action="<?= e(u('/admin/configuracion/registro')) ?>" class="row row--end"
-          data-confirmar="Los campos y las listas vuelven a ser los de fábrica. Se conservan el banner y los perfiles propios que alguien ya tenga. ¿Continuar?">
+    <form method="post" action="<?= e(u($accionForm)) ?>" class="row row--end"
+          data-confirmar="<?= $deExpositores
+              ? 'Los campos y las listas de este formulario vuelven a ser los de fábrica. Se conservan el banner y el enlace. ¿Continuar?'
+              : 'Los campos y las listas vuelven a ser los de fábrica. Se conservan el banner y los perfiles propios que alguien ya tenga. ¿Continuar?' ?>">
       <?= testigo() ?>
       <input type="hidden" name="accion" value="restablecer">
       <button class="btn btn--sm" type="submit">Volver al formulario de fábrica</button>

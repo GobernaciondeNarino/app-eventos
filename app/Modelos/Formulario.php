@@ -7,6 +7,7 @@ defined('EVENTOS_TIC') || exit;
 
 use App\Datos;
 use App\Nucleo\Bd;
+use App\Nucleo\Cripto;
 
 /**
  * Cómo es el formulario de registro de cada evento.
@@ -39,6 +40,27 @@ final class Formulario
     public const OCULTO = 'oculto';
     public const OPCIONAL = 'opcional';
     public const OBLIGATORIO = 'obligatorio';
+
+    /**
+     * Los dos formularios de registro de un evento, desde la 3.9.
+     *
+     *   publico      el de /registro, en el menú, abierto a todo el mundo.
+     *   expositores  el mismo formulario, con su propia configuración, al que
+     *                se llega solo por un enlace privado que la organización
+     *                envía aparte a quienes van a exponer. No está en ningún
+     *                menú. Quien entra por él queda como Expositor.
+     *
+     * Los perfiles de asistencia son del evento y no de un formulario: se
+     * configuran en el público y el de expositores usa los mismos. Si cada uno
+     * tuviera los suyos, un perfil agregado en uno no tendría nombre en el
+     * carnet de quien se registró por el otro.
+     */
+    public const PUBLICO = 'publico';
+    public const EXPOSITORES = 'expositores';
+    private const TABLAS = [self::PUBLICO => 'evento_formulario', self::EXPOSITORES => 'evento_formulario_expositores'];
+
+    /** Lo que el de expositores trae distinto de fábrica: el perfil no se pregunta, es Expositor. */
+    private const DEFECTOS_EXPOSITORES = ['rol' => self::OCULTO];
 
     private const TRES = [self::OBLIGATORIO, self::OPCIONAL, self::OCULTO];
     private const DOS = [self::OPCIONAL, self::OCULTO];
@@ -143,7 +165,7 @@ final class Formulario
         'duracion'       => ['etiqueta' => 'Duraciones de las exposiciones', 'clase' => 'minutos', 'campo' => 'duracion'],
     ];
 
-    /** @var array<int, self> */
+    /** @var array<string, self> por «tipo:evento» */
     private static array $cache = [];
 
     /**
@@ -156,24 +178,32 @@ final class Formulario
         private array $campos,
         private array $listas,
         private array $banner,
-        private bool $personalizado
+        private bool $personalizado,
+        private string $tipo = self::PUBLICO
     ) {
+    }
+
+    public function tipo(): string
+    {
+        return $this->tipo;
     }
 
     /* =====================================================================
        Lectura
        ===================================================================== */
 
-    public static function delEvento(int $eventoId): self
+    public static function delEvento(int $eventoId, string $tipo = self::PUBLICO): self
     {
-        if (isset(self::$cache[$eventoId])) {
-            return self::$cache[$eventoId];
+        $tipo = isset(self::TABLAS[$tipo]) ? $tipo : self::PUBLICO;
+        $llave = $tipo . ':' . $eventoId;
+        if (isset(self::$cache[$llave])) {
+            return self::$cache[$llave];
         }
 
         $fila = null;
         if ($eventoId > 0) {
             try {
-                $fila = Bd::fila('SELECT * FROM {evento_formulario} WHERE evento_id = ?', [$eventoId]);
+                $fila = Bd::fila('SELECT * FROM {' . self::TABLAS[$tipo] . '} WHERE evento_id = ?', [$eventoId]);
             } catch (\Throwable) {
                 // Una base que todavía no tiene la tabla —la actualización
                 // automática corre en la primera visita, pero puede estar
@@ -186,12 +216,17 @@ final class Formulario
         $guardados = json_decode((string) ($fila['campos'] ?? ''), true);
         foreach (self::CAMPOS as $clave => $definicion) {
             $estado = is_array($guardados) ? (string) ($guardados[$clave] ?? '') : '';
-            $campos[$clave] = in_array($estado, $definicion['estados'], true) ? $estado : $definicion['defecto'];
+            $campos[$clave] = in_array($estado, $definicion['estados'], true) ? $estado : self::defectoDe($clave, $tipo);
         }
 
         $listas = [];
         $guardadas = json_decode((string) ($fila['listas'] ?? ''), true);
         foreach (array_keys(self::LISTAS) as $clave) {
+            if ($clave === 'perfil' && $tipo !== self::PUBLICO) {
+                // Los perfiles son del evento: los del formulario público.
+                $listas[$clave] = self::delEvento($eventoId)->listas['perfil'];
+                continue;
+            }
             $valor = is_array($guardadas) ? ($guardadas[$clave] ?? null) : null;
             $listas[$clave] = self::listaValida($clave, $valor) ?? self::listaPorDefecto($clave);
         }
@@ -207,12 +242,76 @@ final class Formulario
 
         // «Propio» es que algo difiera del de fábrica, no que exista la fila: la
         // fila queda también cuando solo hay banner, o después de restablecer.
-        $personalizado = $campos !== self::camposPorDefecto();
+        $personalizado = $campos !== self::camposPorDefecto($tipo);
         foreach ($listas as $clave => $lista) {
+            if ($clave === 'perfil' && $tipo !== self::PUBLICO) {
+                continue;   // no es suya
+            }
             $personalizado = $personalizado || $lista != self::listaPorDefecto($clave);
         }
 
-        return self::$cache[$eventoId] = new self($eventoId, $campos, $listas, $banner, $personalizado);
+        return self::$cache[$llave] = new self($eventoId, $campos, $listas, $banner, $personalizado, $tipo);
+    }
+
+    /**
+     * ¿El evento exige la identificación para dar por completo un registro?
+     *
+     * Solo si la exigen los dos formularios. Si el de expositores la deja
+     * opcional, un expositor que se registró sin ella tiene su registro
+     * completo y su carnet: mandarlo a «completar» el formulario público,
+     * que sí la pide, sería pedirle lo que su enlace no le pidió.
+     */
+    public static function exigeDocumento(int $eventoId): bool
+    {
+        return self::delEvento($eventoId)->obligatorio('documento')
+            && self::delEvento($eventoId, self::EXPOSITORES)->obligatorio('documento');
+    }
+
+    /* =====================================================================
+       El enlace privado del formulario de expositores
+       ===================================================================== */
+
+    /** El token del enlace. La primera vez que se pide, lo crea. */
+    public static function tokenExpositores(int $eventoId): string
+    {
+        $token = (string) (Bd::valor(
+            'SELECT token FROM {evento_formulario_expositores} WHERE evento_id = ?', [$eventoId]
+        ) ?? '');
+        if ($token === '') {
+            Bd::ejecutar(
+                'INSERT INTO {evento_formulario_expositores} (evento_id, token) VALUES (?, ?)
+                 ON DUPLICATE KEY UPDATE evento_id = evento_id',
+                [$eventoId, Cripto::token(16)]
+            );
+            $token = (string) Bd::valor('SELECT token FROM {evento_formulario_expositores} WHERE evento_id = ?', [$eventoId]);
+        }
+        return $token;
+    }
+
+    /** Uno nuevo: el anterior deja de servir. Para cuando el enlace se filtró. */
+    public static function nuevoTokenExpositores(int $eventoId): string
+    {
+        self::tokenExpositores($eventoId);
+        $token = Cripto::token(16);
+        Bd::ejecutar(
+            'UPDATE {evento_formulario_expositores} SET token = ?, token_rotado_en = NOW() WHERE evento_id = ?',
+            [$token, $eventoId]
+        );
+        return $token;
+    }
+
+    /** El evento al que pertenece un token, o null si no es de nadie. */
+    public static function eventoDelToken(string $token): ?int
+    {
+        if (!preg_match('/^[a-f0-9]{32}$/', $token)) {
+            return null;
+        }
+        try {
+            $evento = Bd::valor('SELECT evento_id FROM {evento_formulario_expositores} WHERE token = ?', [$token]);
+        } catch (\Throwable) {
+            return null;   // la tabla todavía no existe: no hay enlaces
+        }
+        return $evento === null || $evento === false ? null : (int) $evento;
     }
 
     /** Para las pruebas y para después de guardar: que la próxima lectura vaya a la base. */
@@ -309,6 +408,11 @@ final class Formulario
             if (!empty($opcion['activo'])) {
                 $salida[] = (string) $opcion['valor'];
             }
+        }
+        // El de expositores existe para dar ese perfil, aunque el público lo
+        // tenga apagado.
+        if ($this->tipo === self::EXPOSITORES && !in_array('expositor', $salida, true)) {
+            $salida[] = 'expositor';
         }
         if ($actual !== '' && !isset(Persona::PERFILES_DE_ADMIN[$actual]) && !in_array($actual, $salida, true)) {
             $salida[] = $actual;
@@ -407,7 +511,9 @@ final class Formulario
             return null;
         }
         return [
-            'imagen'  => $b['imagen'] !== '' ? '/medios/banner/' . $this->eventoId : '',
+            'imagen'  => $b['imagen'] !== ''
+                ? '/medios/banner/' . $this->eventoId . ($this->tipo === self::EXPOSITORES ? '/expositores' : '')
+                : '',
             'version' => substr(md5($b['imagen']), 0, 10),
             'titulo'  => $b['titulo'],
             'texto'   => $b['texto'],
@@ -456,12 +562,12 @@ final class Formulario
      * @param array<string, string> $campos
      * @param array<string, mixed>  $listas
      */
-    public static function guardar(int $eventoId, array $campos, array $listas, ?int $usuarioId): void
+    public static function guardar(int $eventoId, array $campos, array $listas, ?int $usuarioId, string $tipo = self::PUBLICO): void
     {
         $limpios = [];
         foreach (self::CAMPOS as $clave => $definicion) {
-            $estado = (string) ($campos[$clave] ?? $definicion['defecto']);
-            $limpios[$clave] = in_array($estado, $definicion['estados'], true) ? $estado : $definicion['defecto'];
+            $estado = (string) ($campos[$clave] ?? self::defectoDe($clave, $tipo));
+            $limpios[$clave] = in_array($estado, $definicion['estados'], true) ? $estado : self::defectoDe($clave, $tipo);
         }
 
         // Solo se guarda lo que difiere de fábrica. La pantalla manda todas las
@@ -470,6 +576,9 @@ final class Formulario
         // que agregue una versión nueva no le llegaría nunca a este evento.
         $propias = [];
         foreach (array_keys(self::LISTAS) as $clave) {
+            if ($clave === 'perfil' && $tipo !== self::PUBLICO) {
+                continue;   // los perfiles se guardan en el público
+            }
             $lista = self::listaValida($clave, $listas[$clave] ?? null) ?? self::listaPorDefecto($clave);
             if ($lista != self::listaPorDefecto($clave)) {
                 $propias[$clave] = $lista;
@@ -477,13 +586,13 @@ final class Formulario
         }
 
         self::escribir($eventoId, [
-            'campos' => $limpios === self::camposPorDefecto() ? null : json_encode($limpios, JSON_UNESCAPED_UNICODE),
+            'campos' => $limpios === self::camposPorDefecto($tipo) ? null : json_encode($limpios, JSON_UNESCAPED_UNICODE),
             'listas' => $propias === [] ? null : json_encode($propias, JSON_UNESCAPED_UNICODE),
-        ], $usuarioId);
+        ], $usuarioId, $tipo);
     }
 
     /** @param array{activo?: bool, imagen?: string, tipo?: string, titulo?: string, texto?: string, alt?: string} $banner */
-    public static function guardarBanner(int $eventoId, array $banner, ?int $usuarioId): void
+    public static function guardarBanner(int $eventoId, array $banner, ?int $usuarioId, string $tipo = self::PUBLICO): void
     {
         $columnas = [];
         if (array_key_exists('activo', $banner)) {
@@ -495,7 +604,7 @@ final class Formulario
             }
         }
         if ($columnas !== []) {
-            self::escribir($eventoId, $columnas, $usuarioId);
+            self::escribir($eventoId, $columnas, $usuarioId, $tipo);
         }
     }
 
@@ -509,8 +618,13 @@ final class Formulario
      *
      * @return array<int, string> los nombres de los perfiles que se conservaron
      */
-    public static function restablecer(int $eventoId, ?int $usuarioId): array
+    public static function restablecer(int $eventoId, ?int $usuarioId, string $tipo = self::PUBLICO): array
     {
+        if ($tipo !== self::PUBLICO) {
+            // Sus perfiles son los del público: no hay nada que conservar.
+            self::escribir($eventoId, ['campos' => null, 'listas' => null], $usuarioId, $tipo);
+            return [];
+        }
         $enUso = array_column(
             Bd::filas('SELECT DISTINCT rol FROM {persona} WHERE evento_id = ?', [$eventoId]),
             'rol'
@@ -529,17 +643,24 @@ final class Formulario
         return array_map(static fn(array $o): string => (string) $o['etiqueta'], $propios);
     }
 
-    private static function escribir(int $eventoId, array $columnas, ?int $usuarioId): void
+    private static function escribir(int $eventoId, array $columnas, ?int $usuarioId, string $tipo = self::PUBLICO): void
     {
         $columnas += ['actualizado_en' => date('Y-m-d H:i:s'), 'actualizado_por' => $usuarioId];
         $nombres = array_keys($columnas);
+        $insertar = $nombres;
+        $valores = array_values($columnas);
+        if ($tipo === self::EXPOSITORES) {
+            // La fila nace con su enlace. Si ya existía, el token no se toca.
+            $insertar[] = 'token';
+            $valores[] = Cripto::token(16);
+        }
         Bd::ejecutar(
-            'INSERT INTO {evento_formulario} (evento_id, ' . implode(', ', $nombres) . ')
-                  VALUES (?' . str_repeat(', ?', count($nombres)) . ')
+            'INSERT INTO {' . self::TABLAS[$tipo] . '} (evento_id, ' . implode(', ', $insertar) . ')
+                  VALUES (?' . str_repeat(', ?', count($insertar)) . ')
              ON DUPLICATE KEY UPDATE ' . implode(', ', array_map(
                 static fn(string $c): string => "$c = VALUES($c)", $nombres
             )),
-            array_merge([$eventoId], array_values($columnas))
+            array_merge([$eventoId], $valores)
         );
         self::olvidar();
     }
@@ -882,9 +1003,20 @@ final class Formulario
        ===================================================================== */
 
     /** @return array<string, string> el estado de fábrica de cada campo */
-    private static function camposPorDefecto(): array
+    public static function camposPorDefecto(string $tipo = self::PUBLICO): array
     {
-        return array_map(static fn(array $definicion): string => $definicion['defecto'], self::CAMPOS);
+        $salida = [];
+        foreach (array_keys(self::CAMPOS) as $clave) {
+            $salida[$clave] = self::defectoDe($clave, $tipo);
+        }
+        return $salida;
+    }
+
+    private static function defectoDe(string $clave, string $tipo): string
+    {
+        return $tipo === self::EXPOSITORES && isset(self::DEFECTOS_EXPOSITORES[$clave])
+            ? self::DEFECTOS_EXPOSITORES[$clave]
+            : (string) self::CAMPOS[$clave]['defecto'];
     }
 
     /** Lo que la plataforma ofrecía antes de que existiera esta configuración. */

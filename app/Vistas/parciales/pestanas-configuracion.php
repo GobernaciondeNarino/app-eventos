@@ -10,7 +10,7 @@
  * Quien no es administrador ve solo «Mi cuenta»: el resto cambia lo que ve todo
  * el evento.
  *
- * @var string $pestana la activa: registro, identidad, acceso o cuenta
+ * @var string $pestana la activa: registro, expositores, identidad, acceso o cuenta
  */
 defined('EVENTOS_TIC') || exit;
 
@@ -18,6 +18,9 @@ use App\Nucleo\Guardia;
 
 $pestanasConfiguracion = [
     'registro'  => ['Registro', '/admin/configuracion/registro', 'administrador'],
+    // El formulario privado de expositores: no está en ningún menú público,
+    // así que esta pestaña es donde se consigue su enlace.
+    'expositores' => ['Registro de expositores', '/admin/configuracion/expositores', 'administrador'],
     'identidad' => ['Identidad', '/admin/identidad', 'administrador'],
     'acceso'    => ['Acceso y correo', '/admin/autenticacion', 'administrador'],
     'cuenta'    => ['Mi cuenta', '/admin/cuenta', 'consulta'],

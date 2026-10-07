@@ -659,6 +659,28 @@ que llega del público (`App\Modelos\Formulario`):
 - **Ocultar un campo no borra datos.** Lo que alguien ya había dado se conserva al editar su
   registro; simplemente no se le vuelve a preguntar.
 
+### El enlace privado del formulario de expositores
+
+Desde la 3.9 hay un segundo formulario de registro, para quienes van a exponer, al que se llega
+solo por un enlace que la organización envía aparte (`/registro/expositores/{token}`):
+
+- **El token es lo que lo hace privado:** 128 bits al azar (`Cripto::token(16)`), en una columna
+  única. No está en ningún menú ni en ninguna página pública, y todas las páginas llevan
+  `noindex, nofollow`.
+- **Si se filtra, se cambia.** «Generar un enlace nuevo», solo para administradores, con
+  testigo CSRF y en la bitácora, invalida el anterior en el acto.
+- **Un enlace que no es el vigente responde 404**, igual que una dirección que no existe —uno
+  regenerado, uno de otro evento, uno inventado—, para no confirmar que alguna vez lo fue. Uno
+  sin forma de token ni llega a la base.
+- **Solo vale para el evento activo**: el de un evento anterior no abre el formulario del actual.
+- **No abre más puertas que el formulario público.** El registro pasa por las mismas
+  validaciones, el mismo límite por dirección y la misma regla de no reescribir el registro de
+  un correo ajeno: un correo ya registrado tiene que entrar con su código. Lo único que cambia es
+  el perfil por omisión, *Expositor*, que no da ningún permiso; a quien tiene Staff u Organizador
+  no se le toca.
+- La política `Referrer-Policy: strict-origin-when-cross-origin` evita que la dirección, con el
+  token, salga hacia otro sitio en la cabecera `Referer`.
+
 ### El correo al expositor
 
 Desde la 3.7, decidir sobre una propuesta le avisa por correo a quien la envió, con la

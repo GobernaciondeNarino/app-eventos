@@ -634,6 +634,42 @@ function titulo(t) {
   await p3.waitForTimeout(200);
   comprobar('se cierra con Escape', await revision.isHidden());
 
+  // El formulario privado: su enlace se toma de su pestaña de Configuración.
+  await p3.goto(BASE + '/admin/configuracion/expositores', { waitUntil: 'networkidle' });
+  const enlaceExp = await p3.locator('#enlace-expositores').inputValue().catch(() => '');
+  comprobar('Registro de expositores da el enlace privado, con su botón de copiar',
+    enlaceExp.includes('/registro/expositores/')
+    && (await p3.locator('[data-copiar="' + enlaceExp + '"]').count()) === 1, enlaceExp);
+
+  // Los perfiles se configuran en la pestaña Registro: la nota lleva allí, a
+  // la lista abierta, aunque de entrada venga plegada.
+  await p3.locator('#lista-perfil a').click();
+  await p3.waitForLoadState('networkidle');
+  const listaPerfiles = await p3.evaluate(() => {
+    const d = document.getElementById('lista-perfil');
+    return d ? { abierta: d.open, arriba: d.querySelector('summary').getBoundingClientRect().top } : null;
+  });
+  comprobar('la nota de perfiles lleva a la lista de Registro, abierta y a la vista',
+    listaPerfiles !== null && listaPerfiles.abierta && listaPerfiles.arriba >= 0 && listaPerfiles.arriba < 200,
+    JSON.stringify(listaPerfiles));
+
+  // En el celular, sin quedar debajo de la barra de arriba, que es fija.
+  const celularAdmin = await navegador.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const pCel = await celularAdmin.newPage();
+  await pCel.goto(BASE + '/admin/entrar', { waitUntil: 'networkidle' });
+  await pCel.fill('#correo', ADMIN.correo);
+  await pCel.fill('#clave', ADMIN.clave);
+  await pCel.click('button[type=submit]');
+  await pCel.waitForLoadState('networkidle');
+  await pCel.goto(BASE + '/admin/configuracion/registro#lista-perfil', { waitUntil: 'networkidle' });
+  const enCelular = await pCel.evaluate(() => ({
+    titulo: document.querySelector('#lista-perfil summary').getBoundingClientRect().top,
+    barra: document.querySelector('.topbar').getBoundingClientRect().bottom,
+  }));
+  comprobar('y en el celular el título de la lista no queda tapado por la barra de arriba',
+    enCelular.titulo >= enCelular.barra, JSON.stringify(enCelular));
+  await celularAdmin.close();
+
   /* =====================================================================
      Eventos: editar, desactivar y eliminar
      ===================================================================== */

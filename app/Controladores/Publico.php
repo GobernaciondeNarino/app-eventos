@@ -67,8 +67,40 @@ final class Publico
 
     public function registro(Peticion $peticion): void
     {
+        $this->formularioDeRegistro($peticion, Formulario::PUBLICO, '/registro');
+    }
+
+    /**
+     * El formulario privado de los expositores.
+     *
+     * Es el mismo formulario, con su propia configuración —Configuración →
+     * Registro de expositores—, y se llega a él solo por el enlace que la
+     * organización envía aparte. No está en ningún menú. Un enlace que no es el
+     * vigente —regenerado, de otro evento, inventado— responde lo mismo que
+     * una dirección que no existe: no dice si alguna vez lo fue.
+     */
+    public function registroExpositores(Peticion $peticion, array $parametros): void
+    {
         $evento = App::eventoExigido();
-        $formulario = Formulario::delEvento((int) $evento['id']);
+        $token = (string) $parametros['token'];
+        if (Formulario::eventoDelToken($token) !== (int) $evento['id']) {
+            Respuesta::error(404, 'Enlace no válido',
+                'Este enlace no es válido o ya no está vigente. Pídele uno nuevo a la organización del evento.');
+        }
+        $this->formularioDeRegistro($peticion, Formulario::EXPOSITORES, '/registro/expositores/' . $token);
+    }
+
+    /**
+     * Los dos formularios de registro, el público y el de expositores: lo
+     * mismo, con la configuración de cada uno.
+     *
+     * @param string $ruta a dónde se envía, y a dónde se vuelve tras entrar con el código
+     */
+    private function formularioDeRegistro(Peticion $peticion, string $tipo, string $ruta): void
+    {
+        $evento = App::eventoExigido();
+        $formulario = Formulario::delEvento((int) $evento['id'], $tipo);
+        $deExpositores = $tipo === Formulario::EXPOSITORES;
 
         $yo = Guardia::personaActual();
         $errores = [];
@@ -140,7 +172,7 @@ final class Publico
                 // en registrar muchas veces con éxito, no en fallar.
                 Limite::registrar('preregistro_ip', $peticion->ip());
                 try {
-                    $resultado = Persona::registrar((int) $evento['id'], $valores);
+                    $resultado = Persona::registrar((int) $evento['id'], $valores, $tipo);
                     $personaId = (int) $resultado['id'];
                     $propuestaId = $this->guardarPropuesta($personaId, $valores, $peticion);
 
@@ -214,9 +246,13 @@ final class Publico
 
         Respuesta::vista('publico/registro', [
             'titulo'        => $yo === null
-                ? 'Registro'
+                ? ($deExpositores ? 'Registro de expositores' : 'Registro')
                 : ($completo ? 'Mis datos' : 'Completa tu registro'),
-            'pantalla'      => 'registro',
+            // El de expositores no marca nada en el menú: no está en él.
+            'pantalla'      => $deExpositores ? 'registro-expositores' : 'registro',
+            'accion'        => $ruta,
+            'deExpositores' => $deExpositores,
+            'tienePropuesta' => $suPropuesta['propuesta'] !== [],
             'valores'       => $valores,
             'errores'       => $errores,
             'formulario'    => $formulario,
@@ -346,6 +382,12 @@ final class Publico
         }
         if (!$f->visible('rol')) {
             $v['rol'] = $deAntes('rol', 'participante');
+            // Por el enlace de expositores se llega a exponer: quien no tenía
+            // un perfil elegido —participante, o nuevo— queda como Expositor.
+            // Prensa, Staff y los demás conservan el suyo.
+            if ($f->tipo() === Formulario::EXPOSITORES && in_array($v['rol'], ['', 'participante'], true)) {
+                $v['rol'] = 'expositor';
+            }
         }
         if (!$f->visible('entidad')) {
             $v['entidad'] = $deAntes('entidad');
@@ -733,10 +775,20 @@ final class Publico
     /** Municipios de un departamento, para el selector dependiente. */
     public function municipios(Peticion $peticion, array $parametros): void
     {
-        $departamento = (string) $parametros['departamento'];
+        $this->responderMunicipios((string) $parametros['departamento'], Formulario::PUBLICO);
+    }
+
+    /** Los del formulario de expositores, que tiene su propia lista. No es secreta. */
+    public function municipiosExpositores(Peticion $peticion, array $parametros): void
+    {
+        $this->responderMunicipios((string) $parametros['departamento'], Formulario::EXPOSITORES);
+    }
+
+    private function responderMunicipios(string $departamento, string $tipo): void
+    {
         Respuesta::json([
             'departamento' => $departamento,
-            'municipios'   => Formulario::delEvento((int) (App::eventoActivo()['id'] ?? 0))->municipiosDe($departamento),
+            'municipios'   => Formulario::delEvento((int) (App::eventoActivo()['id'] ?? 0), $tipo)->municipiosDe($departamento),
         ]);
     }
 

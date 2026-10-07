@@ -625,10 +625,15 @@ final class Evento
         // al revés, quedarían huérfanas sin nadie que supiera de quién eran.
         $fotos = Bd::filas('SELECT foto FROM {persona} WHERE evento_id = ? AND foto <> \'\'', [$id]);
         $tema = Bd::fila('SELECT logo_archivo FROM {evento_tema} WHERE evento_id = ?', [$id]);
-        try {
-            $banner = (string) (Bd::valor('SELECT banner_imagen FROM {evento_formulario} WHERE evento_id = ?', [$id]) ?? '');
-        } catch (\Throwable) {
-            $banner = '';   // una base sin la tabla todavía: no hay banner que borrar
+        // Los banners de los dos formularios de registro, el público y el de
+        // expositores.
+        $banners = [];
+        foreach (['evento_formulario', 'evento_formulario_expositores'] as $tabla) {
+            try {
+                $banners[] = (string) (Bd::valor('SELECT banner_imagen FROM {' . $tabla . '} WHERE evento_id = ?', [$id]) ?? '');
+            } catch (\Throwable) {
+                // una base sin la tabla todavía: no hay banner que borrar
+            }
         }
 
         // Y lo mismo con los adjuntos de los expositores, que además son datos
@@ -654,7 +659,9 @@ final class Evento
         if ($logo !== '') {
             @unlink(RAIZ . '/almacen/logos/' . basename($logo));
         }
-        Imagen::borrarBanner($banner);
+        foreach ($banners as $banner) {
+            Imagen::borrarBanner($banner);
+        }
 
         Bitacora::registrar('evento_eliminado', 'evento', $id, [
             'nombre' => (string) $evento['nombre'],

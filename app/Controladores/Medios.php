@@ -52,8 +52,17 @@ final class Medios
      */
     public function banner(Peticion $peticion, array $parametros): void
     {
-        $eventoId = (int) $parametros['evento'];
+        $this->servirBanner((int) $parametros['evento'], 'evento_formulario');
+    }
 
+    /** El del formulario privado de expositores, con las mismas reglas. */
+    public function bannerExpositores(Peticion $peticion, array $parametros): void
+    {
+        $this->servirBanner((int) $parametros['evento'], 'evento_formulario_expositores');
+    }
+
+    private function servirBanner(int $eventoId, string $tabla): void
+    {
         // El del evento activo lo ve cualquiera: va arriba del formulario
         // público. El de otro —uno en borrador puede no estar anunciado—, solo
         // el equipo. Con la misma respuesta que «no hay», para que contar ids
@@ -65,7 +74,11 @@ final class Medios
             }
         }
 
-        $fila = Bd::fila('SELECT banner_imagen, banner_tipo FROM {evento_formulario} WHERE evento_id = ?', [$eventoId]);
+        try {
+            $fila = Bd::fila('SELECT banner_imagen, banner_tipo FROM {' . $tabla . '} WHERE evento_id = ?', [$eventoId]);
+        } catch (\Throwable) {
+            $fila = null;   // la tabla todavía no existe
+        }
         $archivo = (string) ($fila['banner_imagen'] ?? '');
         if ($archivo === '') {
             Respuesta::error(404, 'Sin banner', 'Este evento no tiene banner cargado.');

@@ -15,7 +15,7 @@ use App\Nucleo\Bd;
  */
 final class Esquema
 {
-    public const VERSION = '1.9.0';
+    public const VERSION = '1.10.0';
 
     /**
      * Columnas que ya existen pero cambiaron de tipo.
@@ -166,6 +166,32 @@ final class Esquema
                 'llaves' => [
                     'PRIMARY KEY (evento_id)',
                     'CONSTRAINT fk_formulario_evento FOREIGN KEY (evento_id) REFERENCES {evento} (id) ON DELETE CASCADE',
+                ],
+            ],
+
+            'evento_formulario_expositores' => [
+                'nota' => 'El formulario de registro privado de los expositores: el mismo formulario, con su propia configuración, al que se llega solo por un enlace con token que se envía aparte. Los perfiles de asistencia son los del formulario público.',
+                'columnas' => [
+                    'evento_id'       => 'INT UNSIGNED NOT NULL',
+                    // 128 bits al azar: lo que hace privado el enlace. Se
+                    // regenera desde la configuración si se filtra.
+                    'token'           => 'CHAR(32) NOT NULL',
+                    'token_rotado_en' => 'DATETIME NULL',
+                    'campos'          => 'TEXT NULL',
+                    'listas'          => 'MEDIUMTEXT NULL',
+                    'banner_activo'   => 'TINYINT(1) NOT NULL DEFAULT 0',
+                    'banner_imagen'   => "VARCHAR(120) NOT NULL DEFAULT ''",
+                    'banner_tipo'     => "VARCHAR(40) NOT NULL DEFAULT ''",
+                    'banner_titulo'   => "VARCHAR(160) NOT NULL DEFAULT ''",
+                    'banner_texto'    => "VARCHAR(600) NOT NULL DEFAULT ''",
+                    'banner_alt'      => "VARCHAR(200) NOT NULL DEFAULT ''",
+                    'actualizado_en'  => 'DATETIME NULL',
+                    'actualizado_por' => 'INT UNSIGNED NULL',
+                ],
+                'llaves' => [
+                    'PRIMARY KEY (evento_id)',
+                    'UNIQUE KEY uq_formulario_exp_token (token)',
+                    'CONSTRAINT fk_formulario_exp_evento FOREIGN KEY (evento_id) REFERENCES {evento} (id) ON DELETE CASCADE',
                 ],
             ],
 

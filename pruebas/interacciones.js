@@ -57,6 +57,29 @@ function titulo(t) {
 (async () => {
   const navegador = await chromium.launch(LANZAR);
 
+  /* La barra de íconos de abajo, en el celular. Como la de Instagram: de
+     borde a borde, pegada abajo, un ícono distinto por entrada y uno solo
+     marcado. */
+  const barraMovil = pagina => pagina.evaluate(() => {
+    const barra = document.querySelector('.tabbar');
+    if (!barra || getComputedStyle(barra).display === 'none') return null;
+    const r = barra.getBoundingClientRect();
+    const botones = Array.from(barra.querySelectorAll('.tabbar__btn'));
+    const actual = barra.querySelector('[aria-current="page"]');
+    const main = document.querySelector('main');
+    const topbar = document.querySelector('.topbar');
+    return {
+      pegada: Math.abs(r.bottom - window.innerHeight) <= 1 && r.left === 0 && Math.abs(r.width - window.innerWidth) <= 1,
+      etiquetas: botones.map(b => b.getAttribute('aria-label')),
+      iconosDistintos: new Set(botones.map(b => b.querySelector('path').getAttribute('d'))).size === botones.length,
+      activos: botones.filter(b => b.classList.contains('is-active')).length,
+      actual: actual ? actual.getAttribute('aria-label') : null,
+      tocables: botones.every(b => b.getBoundingClientRect().height >= 44 && b.getBoundingClientRect().width >= 44),
+      aire: main !== null && parseFloat(getComputedStyle(main).paddingBottom) >= r.height,
+      encabezado: topbar ? Math.round(topbar.getBoundingClientRect().height) : 0,
+    };
+  });
+
   /* =====================================================================
      Portada en un teléfono
      ===================================================================== */
@@ -97,8 +120,38 @@ function titulo(t) {
   comprobar('«Entrar y ver mi carnet» es un botón',
     (await p1.locator('a.btn', { hasText: 'Entrar y ver mi carnet' }).count()) === 1);
 
+  const barraPublica = await barraMovil(p1);
+  comprobar('el menú es una barra de íconos de borde a borde, pegada abajo',
+    barraPublica !== null && barraPublica.pegada, JSON.stringify(barraPublica));
+  comprobar('sin sesión trae cuatro íconos distintos, y el último lleva a entrar',
+    barraPublica && barraPublica.etiquetas.length === 4 && barraPublica.iconosDistintos
+    && barraPublica.etiquetas[3] === 'Entrar', barraPublica && barraPublica.etiquetas.join(', '));
+  comprobar('marca dónde se está, y solo eso',
+    barraPublica && barraPublica.activos === 1 && barraPublica.actual === 'Ingreso');
+  comprobar('cada ícono se puede tocar con el pulgar', barraPublica && barraPublica.tocables);
+  comprobar('lo último de la pantalla queda por encima de la barra, no debajo', barraPublica && barraPublica.aire);
+  comprobar('el encabezado va en una sola línea', barraPublica && barraPublica.encabezado <= 64,
+    barraPublica && String(barraPublica.encabezado));
+
   comprobar('sin errores de consola en la portada', erroresPortada.length === 0,
     erroresPortada.slice(0, 2).join(' | '));
+
+  // La del asistente: lo suyo de cada día y, al final, su cuenta.
+  if (TOKEN) {
+    const celularAsistente = await navegador.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const pa = await celularAsistente.newPage();
+    await pa.goto(BASE + '/entrar/qr/' + TOKEN, { waitUntil: 'networkidle' });
+    await pa.goto(BASE + '/carnet', { waitUntil: 'networkidle' });
+    const barraAsistente = await barraMovil(pa);
+    comprobar('el asistente ve su carnet, su ingreso, sus contactos, la agenda y su cuenta, con íconos distintos',
+      barraAsistente && barraAsistente.iconosDistintos && barraAsistente.etiquetas.join('|')
+        === 'Mi carnet|Mi ingreso|Contactos|Agenda|Mi cuenta y más opciones',
+      barraAsistente && barraAsistente.etiquetas.join(', '));
+    await pa.goto(BASE + '/registro', { waitUntil: 'networkidle' });
+    comprobar('y en «Mis datos», que está en la hoja, se marca su cuenta',
+      (await pa.locator('[data-abrir-hoja="menu-movil"].is-active').count()) === 1);
+    await celularAsistente.close();
+  }
 
   /* =====================================================================
      El editor de la fotografía
@@ -572,6 +625,12 @@ function titulo(t) {
     await ps.goto(BASE + '/entrar/qr/' + TOKEN_STAFF, { waitUntil: 'networkidle' });
     await ps.goto(BASE + '/acreditar', { waitUntil: 'networkidle' });
 
+    const barraStaff = await barraMovil(ps);
+    comprobar('en el celular, su barra empieza por acreditar y los carnets, sin íconos repetidos',
+      barraStaff && barraStaff.iconosDistintos
+      && barraStaff.etiquetas.join('|') === 'Acreditar|Carnets|Mi carnet|Mi ingreso|Mi cuenta y más opciones',
+      barraStaff && barraStaff.etiquetas.join(', '));
+
     comprobar('el staff abre la pantalla de acreditar',
       (await ps.locator('[data-escaner]').count()) === 1);
     comprobar('con el lector de la cámara listo',
@@ -668,6 +727,31 @@ function titulo(t) {
   }));
   comprobar('y en el celular el título de la lista no queda tapado por la barra de arriba',
     enCelular.titulo >= enCelular.barra, JSON.stringify(enCelular));
+
+  // La barra del equipo: cuatro módulos y «Más», que abre la hoja con el resto.
+  await pCel.goto(BASE + '/admin/registros', { waitUntil: 'networkidle' });
+  const barraEquipo = await barraMovil(pCel);
+  comprobar('el equipo ve en el celular cinco íconos distintos, el último «Más opciones»',
+    barraEquipo && barraEquipo.pegada && barraEquipo.iconosDistintos
+    && barraEquipo.etiquetas.join('|') === 'Panel|Escanear carnet|Registros|Carnets|Más opciones',
+    barraEquipo && barraEquipo.etiquetas.join(', '));
+  comprobar('con Registros marcado', barraEquipo && barraEquipo.activos === 1 && barraEquipo.actual === 'Registros');
+  const botonMas = pCel.locator('[data-abrir-hoja="menu-movil"]');
+  await botonMas.click();
+  await pCel.waitForTimeout(250);
+  comprobar('«Más» abre la hoja con quién tiene la sesión y el resto de módulos',
+    await pCel.locator('#menu-movil').isVisible()
+    && /Andrea/.test(await pCel.locator('#menu-movil-quien').innerText())
+    && (await pCel.locator('#menu-movil a[href$="/admin/expositores"]').count()) === 1
+    && (await botonMas.getAttribute('aria-expanded')) === 'true');
+  await pCel.keyboard.press('Escape');
+  await pCel.waitForTimeout(150);
+  comprobar('y se cierra con Escape, y el botón vuelve a decir que está cerrada',
+    await pCel.locator('#menu-movil').isHidden() && (await botonMas.getAttribute('aria-expanded')) === 'false');
+  await pCel.goto(BASE + '/admin/expositores', { waitUntil: 'networkidle' });
+  comprobar('en una pantalla que está en la hoja, se marca «Más»',
+    (await pCel.locator('.tabbar .is-active').count()) === 1
+    && (await pCel.locator('[data-abrir-hoja="menu-movil"].is-active').count()) === 1);
   await celularAdmin.close();
 
   /* =====================================================================

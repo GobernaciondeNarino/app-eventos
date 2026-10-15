@@ -14,7 +14,10 @@ foreach (($navegacion ?? []) as $grupo) {
 }
 ?>
 <header class="topbar">
-  <a class="row" style="min-width:0;gap:10px;text-decoration:none" href="<?= e(u('/')) ?>">
+  <?php /* En una sola línea, como el encabezado de una aplicación: con .row el
+           nombre del evento bajaba a un segundo renglón en vez de recortarse,
+           y la barra ocupaba el doble de alto. */ ?>
+  <a class="topbar__marca" href="<?= e(u('/')) ?>">
     <?= $marca('sm') ?>
     <span class="brandtext__name"><?= e($evento['nombre'] ?? 'Eventos TIC') ?></span>
   </a>

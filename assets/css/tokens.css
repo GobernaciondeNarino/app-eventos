@@ -93,6 +93,7 @@
 
   --sidebar-w: 246px;
   --topbar-h: 54px;
+  --tabbar-alto: 56px;   /* la barra de íconos de abajo, en el móvil, sin la zona segura */
   --ease: cubic-bezier(.4, .05, .2, 1);
 }
 

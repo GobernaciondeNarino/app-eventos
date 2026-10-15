@@ -399,6 +399,9 @@ restauró no es una copia.
    categorías y duraciones de los dos formularios. Y si el público ya no recibe propuestas, el
    correo de una propuesta devuelta lleva al formulario de expositores.
 
+   La 3.10 tampoco toca la base de datos ni `config/`: cambia solo cómo se ve el menú en el
+   celular y la tableta. Ver 7.2.
+
    Si el usuario de la base de datos no tiene permiso de `ALTER` —pasa en algunos
    alojamientos—, la actualización automática no puede hacerse: lo anota en el registro,
    vuelve a intentarlo cada cinco minutos y la plataforma sigue funcionando. Para hacerlo a
@@ -459,6 +462,49 @@ Si no hay copia, se puede seguir marcando la casilla que lo reconoce. Los docume
 no se podrán leer, y cada cuenta configura otra vez su verificación en dos pasos: la que se
 escribe en el paso 4 al entrar, las demás con un código que les llega al correo (o desde
 **Organizadores**, ver 8). Por consola es lo mismo con `--llave=…` o `--llave-nueva`.
+
+### 7.2 La 3.10: el menú del celular, sin tocar registros ni configuración
+
+La 3.10 cambia solo la presentación: el menú del celular pasa de una cápsula flotante a una
+barra de íconos de borde a borde, pegada abajo, como la de Instagram, y el encabezado queda en
+una línea. En el computador no cambia nada.
+
+**Qué no cambia.** La base de datos —el esquema sigue en la 1.10.0, así que la actualización
+automática no tiene nada que hacer—, `config/config.php`, `almacen/`, los registros, los
+carnets, las asistencias, la configuración de los formularios y la identidad del evento. Las
+sesiones abiertas siguen abiertas: nadie tiene que volver a entrar. La barra toma los colores
+de *Configuración → Identidad* como todo lo demás.
+
+**Qué archivos cambian:**
+
+| Archivo | Para qué |
+|---|---|
+| `app/Vistas/parciales/nav-movil.php` | La barra de íconos y la hoja de «Más» |
+| `app/Vistas/parciales/navegacion.php` | Íconos distintos para Carnets, Mi carnet y Mi ingreso |
+| `app/Vistas/parciales/barra-superior.php` | El encabezado en una línea |
+| `assets/css/tokens.css`, `base.css`, `components.css` | El estilo de la barra, la hoja y el aviso flotante |
+| `assets/js/app.js` | Que el botón «Más» diga bien si la hoja está abierta |
+| `index.php` | El número de versión |
+
+**Cómo subirla:**
+
+1. Haz la copia de seguridad de siempre (punto 1 de arriba). Además, **descarga los archivos de
+   la tabla tal como están en el servidor**: si algo no te convence, volver atrás es subirlos
+   de nuevo.
+2. Sube esos archivos —o la versión completa, **sin tocar `config/` ni `almacen/`**, que es lo
+   de siempre—. Si producción está en una versión anterior a la 3.9, sube la versión completa:
+   la primera visita creará además la tabla del formulario de expositores, que solo agrega.
+3. No hace falta borrar cachés. Los CSS y el JavaScript llevan en su dirección la fecha del
+   archivo (`?v=…`), así que cada navegador baja los nuevos en su siguiente visita. Si el
+   servidor tiene OPcache sin revisar la fecha de los archivos —no es lo normal en Plesk—, y
+   el menú no cambia, reinicia PHP desde **Plesk → el dominio → Configuración de PHP**.
+4. Compruébalo en un celular, o en el modo de dispositivo del navegador del computador (F12):
+   la portada sin sesión trae cuatro íconos, el último para entrar; con sesión, cinco, y el
+   quinto abre una hoja con tu nombre, el resto de opciones y «Cerrar sesión». En el
+   computador, la barra lateral sigue igual.
+
+**Volver atrás:** sube otra vez los archivos que descargaste en el paso 1. No hay nada que
+deshacer en la base de datos.
 
 ---
 

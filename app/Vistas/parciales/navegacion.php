@@ -19,7 +19,10 @@ $iconos = [
     'home'     => 'M3 10.6 12 3.5l9 7.1V20a1 1 0 0 1-1 1h-4.5v-6.5h-7V21H5a1 1 0 0 1-1-1z',
     'form'     => 'M4 20.5h4l10.5-10.5-4-4L4 16.5zM14.5 6l4 4M4 3.5h6',
     'card'     => 'M3 6h18v12H3zM7 10.5h3.5M7 14h6.5M16 9.5h3v3.5h-3z',
-    'qr'       => 'M4 8.5V4.5h4M20 8.5V4.5h-4M4 15.5v4h4M20 15.5v4h-4M4.5 12h15',
+    // Varias tarjetas: los carnets de todo el evento, y no el propio.
+    'carnets'  => 'M4 15V5.5h13M7 8.5h13.5v10H7zM10 12.5h3.5M10 15.5h7',
+    // Una flecha que entra por una puerta: el ingreso del día.
+    'ingreso'  => 'M14 4.5h4.5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H14M9.5 8l4 4-4 4M13.5 12H4',
     'users'    => 'M15.5 19.5v-1a3.5 3.5 0 0 0-7 0v1M12 11.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6M19.5 19.5v-1a3 3 0 0 0-2.2-2.9',
     'cal'      => 'M4 6.5h16v14H4zM4 10.5h16M8.5 3.5v4M15.5 3.5v4M8 14h3M8 17.5h8',
     'scan'     => 'M4 8V5a1 1 0 0 1 1-1h3M20 8V5a1 1 0 0 0-1-1h-3M4 16v3a1 1 0 0 0 1 1h3M20 16v3a1 1 0 0 1-1 1h-3M7 12h10',
@@ -34,6 +37,7 @@ $iconos = [
     'mail'     => 'M3.5 6h17v12h-17zM3.5 7l8.5 6 8.5-6',
     'llave'    => 'M14.5 9.5a3.5 3.5 0 1 1-3.4 4.4L4 20.5H2.5V18l6.6-6.6a3.5 3.5 0 0 1 5.4-1.9M16 8h.01',
     'ajustes'  => 'M4 6.5h9M17 6.5h3M4 12h3M11 12h9M4 17.5h11M19 17.5h1M15 4.5v4M9 10v4M17 15.5v4',
+    'menu'     => 'M4 7h16M4 12h16M4 17h16',
 ];
 
 /** Dibuja un icono del juego de arriba. */
@@ -55,7 +59,7 @@ if ($persona !== null) {
     // Con sesión, el registro pasa a ser «mis datos» y aparecen las suyas.
     $grupoParticipante = [
         ['clave' => 'carnet', 'etiqueta' => 'Mi carnet', 'icono' => 'card', 'ruta' => '/carnet'],
-        ['clave' => 'checkin', 'etiqueta' => 'Mi ingreso', 'icono' => 'qr', 'ruta' => '/checkin'],
+        ['clave' => 'checkin', 'etiqueta' => 'Mi ingreso', 'icono' => 'ingreso', 'ruta' => '/checkin'],
         ['clave' => 'contactos', 'etiqueta' => 'Contactos', 'icono' => 'users', 'ruta' => '/contactos'],
         ['clave' => 'agenda', 'etiqueta' => 'Agenda', 'icono' => 'cal', 'ruta' => '/agenda'],
         ['clave' => 'registro', 'etiqueta' => 'Mis datos', 'icono' => 'form', 'ruta' => '/registro'],
@@ -71,7 +75,7 @@ $grupoStaff = [];
 if (Guardia::staffActual() !== null) {
     $grupoStaff = [
         ['clave' => 'acreditar', 'etiqueta' => 'Acreditar', 'icono' => 'scan', 'ruta' => '/acreditar'],
-        ['clave' => 'carnets', 'etiqueta' => 'Carnets', 'icono' => 'card', 'ruta' => '/carnets'],
+        ['clave' => 'carnets', 'etiqueta' => 'Carnets', 'icono' => 'carnets', 'ruta' => '/carnets'],
     ];
 }
 
@@ -85,7 +89,7 @@ if ($usuario !== null) {
         // Mismo rol que el guardia 'acreditar' pide al equipo. Faltaba: la
         // pantalla existía y solo se llegaba escribiendo la dirección, porque
         // en la navegación estaba únicamente para el staff.
-        ['clave' => 'carnets', 'etiqueta' => 'Carnets', 'icono' => 'card', 'ruta' => '/carnets', 'rol' => 'operador'],
+        ['clave' => 'carnets', 'etiqueta' => 'Carnets', 'icono' => 'carnets', 'ruta' => '/carnets', 'rol' => 'operador'],
         ['clave' => 'admin-qr', 'etiqueta' => 'QR por día', 'icono' => 'grid', 'ruta' => '/admin/qr-dias', 'rol' => 'operador'],
         ['clave' => 'admin-expositores', 'etiqueta' => 'Expositores', 'icono' => 'mic', 'ruta' => '/admin/expositores', 'rol' => 'administrador'],
         ['clave' => 'admin-organizadores', 'etiqueta' => 'Organizadores', 'icono' => 'users', 'ruta' => '/admin/organizadores', 'rol' => 'administrador'],
@@ -114,7 +118,9 @@ if ($grupoAdmin) {
 }
 
 /**
- * Las cuatro entradas de la barra inferior del móvil.
+ * Las cuatro entradas de la barra inferior del móvil. La quinta la pone
+ * nav-movil.php: la cuenta —con la hoja del resto de opciones— o, sin
+ * sesión, «Entrar».
  *
  * El staff trabaja en la puerta y con el teléfono en la mano, así que lo suyo va
  * primero: acreditar y los carnets, y luego sus propias pantallas.

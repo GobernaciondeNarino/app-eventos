@@ -19,12 +19,12 @@ registra gente, se sella asistencia, se aprueban exposiciones y se exportan repo
 
 | | Qué hay |
 |---|---|
-| **Interfaz** | 21 pantallas, diseño y formulario de registro configurables por evento, responsive |
+| **Interfaz** | 21 pantallas, diseño y formulario de registro configurables por evento, responsive. En el celular, el menú es una barra de íconos abajo, como la de Instagram |
 | **Backend** | PHP 8.1+ con PDO y MySQL/MariaDB, sin framework ni Composer |
 | **Instalación** | Asistente de seis pasos que crea, actualiza o anexa las tablas. Al subir una versión nueva, la base se pone al día sola en la primera visita |
 | **Autenticación** | Cinco formas de entrar: correo, QR personal, contraseña, WhatsApp y SMS. Se puede crear el acceso con solo correo y contraseña. El equipo, con contraseña y segundo factor |
 | **Códigos QR** | Generador **y lector** propios, verificados uno contra otro y contra una librería de referencia |
-| **Pruebas** | 661 comprobaciones de extremo a extremo, 160 de actualización desde la 1.0.0, 111 en navegador, y 641 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy y formulario de registro |
+| **Pruebas** | 661 comprobaciones de extremo a extremo, 160 de actualización desde la 1.0.0, 125 en navegador, y 641 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy y formulario de registro |
 
 ---
 
@@ -363,7 +363,7 @@ configuración de los formularios de registro, **22** del hash de contraseñas,
 **19** del correo saliente, **19** de la dirección del visitante detrás del proxy, **21** de la
 fotografía del carnet, **61** de los adjuntos del expositor, **17** del saneado de logos SVG,
 **198** casos de QR idénticos entre PHP y JavaScript, **161** entre JavaScript y la referencia,
-**13** del lector de QR, **111** de interacción en navegador, y las 19 pantallas limpias en
+**13** del lector de QR, **125** de interacción en navegador, y las 19 pantallas limpias en
 escritorio, tableta y móvil.
 
 Las pruebas nacieron de errores reales, y por eso cubren lo que cubren: una instalación que se

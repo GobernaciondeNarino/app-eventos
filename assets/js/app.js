@@ -29,6 +29,7 @@
      detrás del velo y la pantalla queda inutilizable con lector.          */
   var abierto = null;
   var focoPrevio = null;
+  var abridor = null;   // el botón que lo abrió: su aria-expanded vuelve a false al cerrar
 
   function abrir(el) {
     if (!el) return;
@@ -48,17 +49,20 @@
     abierto.hidden = true;
     abierto.classList.add('hidden');
     document.body.style.overflow = '';
+    if (abridor) abridor.setAttribute('aria-expanded', 'false');
+    abridor = null;
     if (focoPrevio && focoPrevio.focus) focoPrevio.focus();
     abierto = null;
   }
 
   document.addEventListener('click', function (e) {
-    var abridor = e.target.closest('[data-abrir-modal], [data-abrir-hoja]');
-    if (abridor) {
+    var boton = e.target.closest('[data-abrir-modal], [data-abrir-hoja]');
+    if (boton) {
       e.preventDefault();
-      var id = abridor.getAttribute('data-abrir-modal') || abridor.getAttribute('data-abrir-hoja');
-      abridor.setAttribute('aria-expanded', 'true');
+      var id = boton.getAttribute('data-abrir-modal') || boton.getAttribute('data-abrir-hoja');
       abrir(document.getElementById(id));
+      abridor = boton;
+      boton.setAttribute('aria-expanded', 'true');
       return;
     }
     if (e.target.closest('[data-cerrar-modal], [data-cerrar-hoja]')) {

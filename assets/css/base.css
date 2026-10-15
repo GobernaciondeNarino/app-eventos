@@ -165,48 +165,96 @@ option { background: var(--c-surface); color: var(--c-title); }
   text-transform: uppercase; color: var(--c-muted);
 }
 
-/* ---- Barra superior (móvil) ---------------------------------------------- */
+/* ---- Barra superior (móvil) ----------------------------------------------
+   Una sola línea, como el encabezado de una aplicación: la marca a la
+   izquierda y el nombre de la pantalla a la derecha. Con la página a pantalla
+   completa (viewport-fit=cover), baja lo que haga falta por la muesca. */
 .topbar {
   display: none; align-items: center; justify-content: space-between;
-  gap: var(--sp-3); padding: var(--sp-3) 18px;
+  gap: var(--sp-3); min-height: 56px;
+  padding: max(var(--sp-2), env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+           var(--sp-2) max(16px, env(safe-area-inset-left));
   background: var(--c-surface); border-bottom: 1px solid var(--a-22);
   position: sticky; top: 0; z-index: 40;
 }
+.topbar__marca {
+  display: flex; align-items: center; gap: 10px; min-width: 0;
+  text-decoration: none;
+}
+.topbar__marca:hover { text-decoration: none; }
 .topbar__screen {
   font-family: var(--f-mono); font-size: var(--fs-micro);
   letter-spacing: .16em; text-transform: uppercase;
   color: var(--c-muted); white-space: nowrap;
+  max-width: 42%; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0;
 }
 
-/* ---- Navegación inferior (móvil) ----------------------------------------- */
+/* ---- Navegación inferior (móvil) -----------------------------------------
+   Como la de Instagram: una fila de íconos de borde a borde, pegada abajo, y
+   por encima de la barra de inicio del iPhone (safe-area-inset-bottom). El
+   activo va en el color del evento, con el trazo más grueso y un punto
+   debajo: el punto lo distingue también sin ver colores. */
 .tabbar {
   display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
-  justify-content: center; padding: 0 var(--sp-4) 18px; pointer-events: none;
+  background: rgba(var(--c-surface-rgb), .96);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  border-top: 1px solid var(--a-22);
+  padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 .tabbar__inner {
-  pointer-events: auto; display: flex; align-items: center; gap: 6px;
-  background: rgba(var(--c-surface-rgb), .94);
-  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
-  border: 1px solid var(--a-22); border-radius: 999px;
-  padding: var(--sp-2) 10px; box-shadow: var(--shadow);
+  display: flex; align-items: stretch; justify-content: space-around;
+  height: var(--tabbar-alto); max-width: 560px; margin: 0 auto;
 }
 .tabbar__btn {
-  cursor: pointer; border: 0; width: 52px; height: 44px; border-radius: 999px;
-  display: grid; place-items: center; background: transparent; color: var(--c-text);
+  position: relative; flex: 1 1 0; min-width: 0; height: 100%;
+  display: grid; place-items: center; cursor: pointer;
+  border: 0; background: transparent; color: var(--c-muted);
+  -webkit-tap-highlight-color: transparent;
 }
-.tabbar__btn.is-active { background: var(--a-16); color: var(--c-accent); }
+.tabbar__btn:hover { color: var(--c-title); text-decoration: none; }
+.tabbar__btn:focus-visible { outline: 2px solid var(--c-accent); outline-offset: -6px; border-radius: 10px; }
+.tabbar__btn.is-active { color: var(--c-accent); }
+.tabbar__btn.is-active::after {
+  content: ''; position: absolute; bottom: 7px; left: 50%;
+  width: 4px; height: 4px; margin-left: -2px; border-radius: 50%;
+  background: var(--c-accent);
+}
 
-/* ---- Hoja inferior (menú móvil) ------------------------------------------ */
+/* ---- Hoja inferior (menú móvil) ------------------------------------------
+   Sube desde el borde de abajo y tapa la barra, como las de las
+   aplicaciones; arriba, quién tiene la sesión abierta. */
 .sheet {
-  position: fixed; inset: 0; background: rgba(var(--c-bg-rgb), .8); z-index: 55;
-  display: flex; align-items: flex-end; padding: 0 var(--sp-3) 96px;
-  animation: riseIn .2s ease both;
+  position: fixed; inset: 0; z-index: 55;
+  background: rgba(var(--c-bg-rgb), .76);
+  display: flex; align-items: flex-end; justify-content: center;
 }
 .sheet__panel {
-  width: 100%; background: var(--c-surface); border: 1px solid var(--a-28);
-  border-radius: var(--radius-lg); overflow: hidden; max-height: 70vh;
+  width: 100%; max-width: 560px; max-height: 85vh;
+  display: flex; flex-direction: column;
+  background: var(--c-surface); border: 1px solid var(--a-28); border-bottom: 0;
+  border-radius: 18px 18px 0 0; overflow: hidden;
+  padding-bottom: env(safe-area-inset-bottom);
+  animation: riseIn .2s ease both;
 }
-.sheet__list { padding: var(--sp-2); overflow-y: auto; max-height: 56vh; }
+/* El asa: dice que es una hoja que se cierra hacia abajo. */
+.sheet__panel::before {
+  content: ''; display: block; flex-shrink: 0;
+  width: 36px; height: 4px; margin: 8px auto 0; border-radius: 2px;
+  background: var(--a-28);
+}
+.sheet__head {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
+  padding: 8px 16px 12px; border-bottom: 1px solid var(--hair);
+}
+.sheet__quien {
+  font-family: var(--f-display); font-weight: 700; font-size: 16px; color: var(--c-title);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sheet__rol {
+  font-family: var(--f-mono); font-size: var(--fs-micro);
+  letter-spacing: .16em; text-transform: uppercase; color: var(--c-muted);
+}
+.sheet__list { padding: var(--sp-2); overflow-y: auto; overscroll-behavior: contain; }
 .sheet__list .navlink { border-left: 0; border-radius: 8px; font-size: 12px; padding: 13px 12px; }
 
 /* Lo que se abre con un enlace a #algo queda con aire arriba, no pegado al
@@ -219,8 +267,10 @@ option { background: var(--c-surface); color: var(--c-title); }
 @media (max-width: 900px) {
   .sidebar { display: none; }
   .topbar { display: flex; }
-  .tabbar { display: flex; }
-  .main { padding: var(--sp-5) var(--sp-3) 118px; }
+  .tabbar { display: block; }
+  /* Lo último de cada pantalla queda por encima de la barra de abajo, no
+     debajo de ella. */
+  .main { padding: var(--sp-5) var(--sp-3) calc(var(--tabbar-alto) + env(safe-area-inset-bottom) + var(--sp-6)); }
 
   /* La barra de arriba es fija: sin esto, lo que se abre con un enlace a
      #algo —«Perfiles de asistencia» desde Registro de expositores— queda

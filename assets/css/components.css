@@ -479,6 +479,10 @@
   letter-spacing: .06em; z-index: 70; box-shadow: 0 0 30px var(--a-22);
   animation: riseIn .2s ease both; max-width: calc(100vw - 32px); text-align: center;
 }
+/* En el móvil, por encima de la barra de íconos y no encima de ella. */
+@media (max-width: 900px) {
+  .toast { bottom: calc(var(--tabbar-alto) + env(safe-area-inset-bottom) + 12px); }
+}
 
 /* Aviso en pantalla (banner) */
 .notice {

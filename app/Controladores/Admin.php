@@ -698,7 +698,9 @@ final class Admin
             'conteos'    => $conteos,
             'estado'     => $estado,
             'jornadas'   => Evento::jornadas((int) $evento['id']),
-            'formulario' => \App\Modelos\Formulario::delEvento((int) $evento['id']),
+            // Las categorías y duraciones salen de los dos formularios de
+            // registro: una propuesta pudo llegar por cualquiera.
+            'eventoId'   => (int) $evento['id'],
             'correoListo' => Correo::disponible(),
             // La ruta ya exige administrador, pero la comprobación se deja
             // escrita para que mover el guardia no destape el documento sin
@@ -714,7 +716,8 @@ final class Admin
     public function decidirPropuesta(Peticion $peticion): void
     {
         $evento = App::eventoExigido();
-        $formulario = \App\Modelos\Formulario::delEvento((int) $evento['id']);
+        // Por cuál de los dos formularios se mandan hoy las propuestas.
+        $formulario = \App\Modelos\Formulario::dePropuestas((int) $evento['id']);
         $id = $peticion->entero('propuesta');
         $decision = $peticion->campo('decision');
         $observacion = mb_substr($peticion->campo('observacion'), 0, 1000);
@@ -741,7 +744,7 @@ final class Admin
         // Los ajustes que hace el comité al revisarla: el título, la
         // categoría, la duración. Cada uno se aplica solo si cambió y es
         // válido, y queda anotado para contárselo al expositor.
-        [$ajustes, $cambios] = $this->ajustesDePropuesta($peticion, $propuesta, $formulario);
+        [$ajustes, $cambios] = $this->ajustesDePropuesta($peticion, $propuesta, (int) $evento['id']);
 
         // El día asignado, antes de tocar nada. Llega por su id: al eliminar un
         // día los siguientes se renumeran, y el «día 2» de una pantalla abierta
@@ -834,7 +837,11 @@ final class Admin
                 $observacion,
                 $cambios,
                 $agenda,
-                \App\Nucleo\Url::absoluta($decision === 'aprobada' ? '/agenda' : '/registro')
+                \App\Nucleo\Url::absoluta(match ($decision) {
+                    'aprobada'  => '/agenda',
+                    'observada' => $this->dondeCorregir((int) $evento['id'], $formulario),
+                    default     => '/registro',
+                })
             );
             if (!$avisado) {
                 \App\Nucleo\Registro::error('No se pudo avisar al expositor de la decisión', [
@@ -866,9 +873,12 @@ final class Admin
     /**
      * Lo que el comité cambió de la propuesta al revisarla.
      *
+     * La categoría y la duración se aceptan de las listas de los dos
+     * formularios de registro: la propuesta pudo llegar por cualquiera de ellos.
+     *
      * @return array{0: array<string, mixed>, 1: array<int, string>} [columnas a guardar, cambios en palabras]
      */
-    private function ajustesDePropuesta(Peticion $peticion, array $propuesta, \App\Modelos\Formulario $formulario): array
+    private function ajustesDePropuesta(Peticion $peticion, array $propuesta, int $eventoId): array
     {
         $columnas = [];
         $cambios = [];
@@ -881,19 +891,37 @@ final class Admin
 
         $categoria = $peticion->campo('categoria');
         if ($categoria !== '' && $categoria !== (string) $propuesta['categoria']
-            && in_array($categoria, $formulario->texto('categoria', (string) $propuesta['categoria']), true)) {
+            && in_array($categoria, \App\Modelos\Formulario::categoriasDePropuestas($eventoId, (string) $propuesta['categoria']), true)) {
             $columnas['categoria'] = mb_substr($categoria, 0, 80);
             $cambios[] = 'Categoría: «' . $propuesta['categoria'] . '» pasa a ser «' . $categoria . '».';
         }
 
         $duracion = $peticion->entero('duracion', (int) $propuesta['duracion_min']);
         if ($duracion !== (int) $propuesta['duracion_min']
-            && in_array($duracion, $formulario->duraciones((int) $propuesta['duracion_min']), true)) {
+            && in_array($duracion, \App\Modelos\Formulario::duracionesDePropuestas($eventoId, (int) $propuesta['duracion_min']), true)) {
             $columnas['duracion_min'] = $duracion;
             $cambios[] = 'Duración: de ' . (int) $propuesta['duracion_min'] . ' a ' . $duracion . ' minutos.';
         }
 
         return [$columnas, $cambios];
+    }
+
+    /**
+     * A dónde se vuelve a enviar una propuesta devuelta: al formulario que hoy
+     * recibe propuestas. Si el público ya no tiene la sección «Voy a exponer»,
+     * es el de expositores, por su enlace; mandarlo al público sería mandarlo
+     * a un formulario donde ya no puede hacerlo.
+     */
+    private function dondeCorregir(int $eventoId, \App\Modelos\Formulario $formulario): string
+    {
+        if ($formulario->tipo() === \App\Modelos\Formulario::EXPOSITORES) {
+            try {
+                return '/registro/expositores/' . \App\Modelos\Formulario::tokenExpositores($eventoId);
+            } catch (\Throwable) {
+                // La base todavía sin la tabla del enlace: el público.
+            }
+        }
+        return '/registro';
     }
 
     /* =====================================================================

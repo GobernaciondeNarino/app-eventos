@@ -395,6 +395,10 @@ restauró no es una copia.
    en ningún menú: el público no ve ningún cambio. Su enlace se consigue en **Configuración →
    Registro de expositores**.
 
+   La 3.9.1 no toca la base de datos. Al revisar una propuesta, el comité elige entre las
+   categorías y duraciones de los dos formularios. Y si el público ya no recibe propuestas, el
+   correo de una propuesta devuelta lleva al formulario de expositores.
+
    Si el usuario de la base de datos no tiene permiso de `ALTER` —pasa en algunos
    alojamientos—, la actualización automática no puede hacerse: lo anota en el registro,
    vuelve a intentarlo cada cinco minutos y la plataforma sigue funcionando. Para hacerlo a

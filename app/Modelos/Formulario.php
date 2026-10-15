@@ -267,6 +267,61 @@ final class Formulario
             && self::delEvento($eventoId, self::EXPOSITORES)->obligatorio('documento');
     }
 
+    /**
+     * El formulario por el que hoy se mandan propuestas: el público, si tiene
+     * la sección «Voy a exponer»; si no, el de expositores; si ninguno, el
+     * público.
+     *
+     * De cada propuesta no se guarda por cuál formulario llegó. Esto responde
+     * lo que depende de eso para el comité: a dónde volver a enviarla cuando
+     * se devuelve, y si el día preferido se le preguntó.
+     */
+    public static function dePropuestas(int $eventoId): self
+    {
+        $publico = self::delEvento($eventoId);
+        if ($publico->visible('expositor')) {
+            return $publico;
+        }
+        $expositores = self::delEvento($eventoId, self::EXPOSITORES);
+        return $expositores->visible('expositor') ? $expositores : $publico;
+    }
+
+    /**
+     * Las categorías que el comité le puede dar a una propuesta: las de los
+     * dos formularios, porque pudo llegar por cualquiera, y la que ya tiene.
+     *
+     * @return array<int, string>
+     */
+    public static function categoriasDePropuestas(int $eventoId, string $actual = ''): array
+    {
+        $salida = array_values(array_unique(array_merge(
+            self::delEvento($eventoId)->texto('categoria'),
+            self::delEvento($eventoId, self::EXPOSITORES)->texto('categoria')
+        )));
+        if ($actual !== '' && !in_array($actual, $salida, true)) {
+            $salida[] = $actual;
+        }
+        return $salida;
+    }
+
+    /**
+     * Lo mismo con las duraciones.
+     *
+     * @return array<int, int>
+     */
+    public static function duracionesDePropuestas(int $eventoId, int $actual = 0): array
+    {
+        $salida = array_values(array_unique(array_merge(
+            self::delEvento($eventoId)->duraciones(),
+            self::delEvento($eventoId, self::EXPOSITORES)->duraciones()
+        )));
+        if ($actual > 0 && !in_array($actual, $salida, true)) {
+            $salida[] = $actual;
+        }
+        sort($salida);
+        return $salida;
+    }
+
     /* =====================================================================
        El enlace privado del formulario de expositores
        ===================================================================== */

@@ -110,8 +110,10 @@ final class Bitacora
             'acceso_cerrado'     => "$quien cerró sesión",
             'asistencia_sellada' => "$quien registró un ingreso" . (isset($detalle['dia']) ? ' del día ' . $detalle['dia'] : ''),
             'checkin_propio'     => 'Un asistente registró su ingreso' . (isset($detalle['dia']) ? ' del día ' . $detalle['dia'] : ''),
-            'registro'           => 'Nuevo registro',
-            'registro_actualizado' => 'Registro actualizado',
+            'registro'           => 'Nuevo registro'
+                . (($detalle['formulario'] ?? '') === 'expositores' ? ' por el enlace de expositores' : ''),
+            'registro_actualizado' => 'Registro actualizado'
+                . (($detalle['formulario'] ?? '') === 'expositores' ? ' por el enlace de expositores' : ''),
             'acceso_creado'      => 'Acceso creado con correo y contraseña',
             // Acciones de antes de la 3.2, para que la bitácora vieja se siga
             // leyendo con palabras y no con identificadores.

@@ -651,8 +651,24 @@ quien no la dio: recibe su carnet sin que la plataforma lo mande a completar el 
 público, que sí la pide. El documento cuenta para dar por completo un registro solo cuando los
 dos formularios lo exigen.
 
-Las propuestas que llegan por aquí van a la misma lista de **Expositores**, con el mismo correo
-de decisión (sección 4).
+**Dónde se ven.** Quien se registra por el enlace queda en las mismas tablas que cualquier otro
+asistente —persona, propuesta, carnet—, con los mismos datos. No hay una lista aparte: se ve y
+se filtra en todos los módulos.
+
+| Módulo | Cómo encontrarlo |
+|---|---|
+| Registros | Filtro de perfil **Expositor**, o buscándolo por nombre, correo, entidad o documento. Su ficha, como la de cualquiera |
+| Exportación | La de *Registros*, con el mismo filtro de perfil |
+| Carnets | Filtro de perfil **Expositor** |
+| Acreditar | Por su carnet, o buscándolo por nombre o documento |
+| Panel | Cuenta en *Expositores*, y su propuesta en *por aprobar*. En la actividad reciente sale «Nuevo registro por el enlace de expositores» |
+| Expositores | Su propuesta, con las demás, filtrable por estado y con el mismo correo de decisión (sección 4) |
+| Agenda | Al aprobarla, su charla, filtrable por día y por categoría |
+
+Al revisar una propuesta, el comité puede elegir entre **las categorías y duraciones de los dos
+formularios**: la propuesta pudo llegar por cualquiera. Y si el formulario público ya no tiene la
+sección «Voy a exponer», el correo de una propuesta **devuelta** lleva al formulario de
+expositores, que es donde se puede volver a enviar.
 
 ---
 

@@ -2,10 +2,11 @@
 /**
  * Propuestas de exposición.
  * @var array $propuestas @var array $conteos @var string $estado @var array $jornadas
- * @var bool $puedeVerDocumento @var \App\Modelos\Formulario $formulario @var bool $correoListo
+ * @var bool $puedeVerDocumento @var int $eventoId @var bool $correoListo
  */
 defined('EVENTOS_TIC') || exit;
 
+use App\Modelos\Formulario;
 use App\Modelos\Persona;
 use App\Nucleo\Documento;
 
@@ -287,7 +288,7 @@ $columnas = 'grid-template-columns:1.7fr 1.1fr 1fr .8fr .9fr';
             <div class="field">
               <label class="label" for="categoria-<?= (int) $p['id'] ?>">Categoría</label>
               <select class="select" id="categoria-<?= (int) $p['id'] ?>" name="categoria">
-                <?php foreach ($formulario->texto('categoria', (string) $p['categoria']) as $categoria): ?>
+                <?php foreach (Formulario::categoriasDePropuestas($eventoId, (string) $p['categoria']) as $categoria): ?>
                   <option value="<?= e($categoria) ?>" <?= $categoria === (string) $p['categoria'] ? 'selected' : '' ?>><?= e($categoria) ?></option>
                 <?php endforeach; ?>
               </select>
@@ -328,7 +329,7 @@ $columnas = 'grid-template-columns:1.7fr 1.1fr 1fr .8fr .9fr';
           <div class="field" style="max-width:220px">
             <label class="label" for="duracion-<?= (int) $p['id'] ?>">Duración</label>
             <select class="select" id="duracion-<?= (int) $p['id'] ?>" name="duracion">
-              <?php foreach ($formulario->duraciones((int) $p['duracion_min']) as $min): ?>
+              <?php foreach (Formulario::duracionesDePropuestas($eventoId, (int) $p['duracion_min']) as $min): ?>
                 <option value="<?= $min ?>" <?= $min === (int) $p['duracion_min'] ? 'selected' : '' ?>><?= $min ?> minutos</option>
               <?php endforeach; ?>
             </select>

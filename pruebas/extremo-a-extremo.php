@@ -3674,6 +3674,13 @@ comprobar('la pestaña da el enlace privado, listo para copiar',
     substr(strip_tags($html), 0, 200));
 comprobar('y la de Expositores dice dónde está', str_contains($jefa->get('/admin/expositores'), '/admin/configuracion/expositores'));
 
+// Lo único propio del de expositores es su configuración, y tiene la misma
+// forma que la del público más el enlace. Las personas no tienen tabla aparte.
+$columnasDe = static fn(string $tabla): array => $pdo->query("SHOW COLUMNS FROM {$P}$tabla")->fetchAll(PDO::FETCH_COLUMN);
+comprobar('su configuración tiene las mismas columnas que la del público, más las del enlace',
+    array_values(array_diff($columnasDe('evento_formulario_expositores'), $columnasDe('evento_formulario'))) === ['token', 'token_rotado_en']
+    && array_diff($columnasDe('evento_formulario'), $columnasDe('evento_formulario_expositores')) === []);
+
 $fuera = new Cliente($BASE);
 $enAlgunMenu = false;
 foreach (['/', '/registro', '/agenda', '/entrar'] as $ruta) {
@@ -3718,6 +3725,8 @@ $municipios = json_decode((new Cliente($BASE))->get('/municipios/expositores/' .
 comprobar('que responde', !empty($municipios['municipios']));
 
 // Una expositora invitada se registra por el enlace.
+$tablasAntesExp = $pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN);
+$expositoresAntes = (int) $pdo->query("SELECT COUNT(*) FROM {$P}persona WHERE evento_id = $eventoId AND rol = 'expositor'")->fetchColumn();
 $invitada = new Cliente($BASE);
 $invitada->get($rutaExp);
 $datosInvitada = [
@@ -3749,6 +3758,91 @@ comprobar('y entra a su carnet sin que la manden a completar el formulario públ
 $detalleRegistro = (string) $pdo->query("SELECT detalle FROM {$P}bitacora WHERE accion = 'registro' AND entidad_id = "
     . (int) ($inv['id'] ?? 0))->fetchColumn();
 comprobar('la bitácora anota por qué formulario llegó', str_contains($detalleRegistro, 'expositores'), $detalleRegistro);
+comprobar('y la actividad reciente del panel lo dice con palabras',
+    str_contains($jefa->get('/admin'), 'Nuevo registro por el enlace de expositores'));
+
+// Lo que llega por el enlace va a las tablas de siempre —persona, propuesta,
+// credencial—, con la misma forma que lo del formulario público, y se ve en
+// los demás módulos como cualquier otro registro.
+$idInvitada = (int) ($inv['id'] ?? 0);
+$idPropInvitada = (int) ($propInvitada['id'] ?? 0);
+comprobar('registrarse por el enlace no crea ninguna tabla',
+    $pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN) === $tablasAntesExp);
+$html = $jefa->get('/admin/registros');
+comprobar('en Registros aparece con los demás', str_contains($html, 'Expositora Invitada'));
+$html = $jefa->get('/admin/registros?rol=expositor');
+comprobar('y al filtrar por el perfil Expositor, sin los que no lo son',
+    str_contains($html, 'Expositora Invitada') && !str_contains($html, 'Paula Montenegro'));
+$html = $jefa->get('/admin/registros?q=' . rawurlencode('Universidad Mariana'));
+comprobar('y al buscar por su entidad', str_contains($html, 'Expositora Invitada'));
+$html = $jefa->get('/admin/registros/' . $idInvitada);
+comprobar('su ficha muestra sus datos, el perfil Expositor y el registro completo',
+    str_contains($html, 'Universidad Mariana') && str_contains($html, '>Expositor<')
+    && !str_contains($html, 'falta el formulario'));
+$html = $jefa->get('/carnets?rol=expositor');
+comprobar('en Carnets aparece entre los de su perfil', str_contains($html, 'Expositora Invitada'));
+$csv = $jefa->get('/admin/registros/exportar?rol=expositor');
+comprobar('la exportación filtrada por perfil la trae como Expositor',
+    str_contains($csv, '"Expositora Invitada"') && str_contains($csv, '"Expositor"') && !str_contains($csv, 'Paula Montenegro'));
+$jefa->get('/admin/escaner');
+$html = $jefa->post('/admin/escaner/buscar', ['q' => 'Expositora Invitada']);
+comprobar('la búsqueda de la puerta la encuentra', str_contains($html, 'Expositora Invitada'));
+$expositoresAhora = (int) $pdo->query("SELECT COUNT(*) FROM {$P}persona WHERE evento_id = $eventoId AND rol = 'expositor'")->fetchColumn();
+comprobar('el panel la cuenta entre los expositores',
+    $expositoresAhora === $expositoresAntes + 1
+    && preg_match('#Expositores</span>\s*<strong class="kpi__value">' . $expositoresAhora . '</strong>#', $jefa->get('/admin')) === 1);
+$html = $jefa->get('/admin/expositores?estado=pendiente');
+comprobar('su propuesta está en Expositores, entre las pendientes',
+    str_contains($html, 'Inteligencia artificial para la gestión pública'));
+$html = $jefa->get('/admin/expositores');
+$selectorDe = static function (string $html, int $id): string {
+    return preg_match('#<select[^>]+id="categoria-' . $id . '".*?</select>#s', $html, $m) === 1 ? $m[0] : '';
+};
+comprobar('al revisarla, el comité ve su categoría, que es del de expositores, entre las de los dos formularios',
+    str_contains($selectorDe($html, $idPropInvitada), 'value="Investigación aplicada" selected')
+    && str_contains($selectorDe($html, $idPropInvitada), 'value="Ciberseguridad"'));
+comprobar('y a una propuesta del formulario público también la puede pasar a esa categoría',
+    str_contains($selectorDe($html, $idLucia), 'value="Investigación aplicada"'));
+
+// El comité la decide como cualquier otra.
+$jefa->post('/admin/expositores/decidir', [
+    'propuesta' => (string) $idPropInvitada, 'decision' => 'aprobada', 'avisar' => '1',
+    'titulo' => (string) $propInvitada['titulo'], 'categoria' => 'Investigación aplicada',
+    'duracion' => (string) $propInvitada['duracion_min'], 'dia' => '1', 'hora' => '11:00', 'salon' => 'Sala 2',
+]);
+$decidida = $pdo->query("SELECT estado, categoria FROM {$P}propuesta WHERE id = $idPropInvitada")->fetch(PDO::FETCH_ASSOC) ?: [];
+comprobar('aprobarla sin tocar la categoría se la conserva',
+    ($decidida['estado'] ?? '') === 'aprobada' && ($decidida['categoria'] ?? '') === 'Investigación aplicada');
+$agenda = (new Cliente($BASE))->get('/agenda?dia=1&categoria=' . rawurlencode('Investigación aplicada'));
+comprobar('y queda publicada en la agenda, que la filtra por esa categoría',
+    str_contains($agenda, 'Inteligencia artificial para la gestión pública')
+    && str_contains($agenda, 'value="Investigación aplicada" selected'));
+
+// Si el formulario público ya no recibe propuestas, la que se devuelve solo se
+// puede corregir por el de expositores: el correo lleva a su enlace.
+$jefa->get('/admin/configuracion/registro');
+$jefa->subir('/admin/configuracion/registro', $aplanar([
+    'accion' => 'guardar', 'campos' => ['expositor' => 'oculto'] + App\Modelos\Formulario::camposPorDefecto(),
+    'listas' => $listasDeFabrica(),
+]), []);
+$jefa->get('/admin/expositores');
+$jefa->post('/admin/expositores/decidir', [
+    'propuesta' => (string) $idPropInvitada, 'decision' => 'observada', 'avisar' => '1',
+    'observacion' => 'Ajusta el detalle a una charla de veinte minutos.',
+]);
+comprobar('si el público ya no recibe propuestas, el correo de «devuelta» lleva al formulario de expositores',
+    str_contains($ultimoCorreo(), 'Tu propuesta tiene observaciones') && str_contains($ultimoCorreo(), '/registro/expositores/' . $tokenExp),
+    mb_substr($ultimoCorreo(), -300));
+$jefa->get('/admin/configuracion/registro');
+$jefa->post('/admin/configuracion/registro', ['accion' => 'restablecer']);
+$jefa->get('/admin/expositores');
+$jefa->post('/admin/expositores/decidir', [
+    'propuesta' => (string) $idPropInvitada, 'decision' => 'observada', 'avisar' => '1',
+    'observacion' => 'Ajusta el detalle a una charla de veinte minutos.',
+]);
+comprobar('con la sección otra vez en el público, el correo lleva a /registro como siempre',
+    str_contains($ultimoCorreo(), '/registro"') && !str_contains($ultimoCorreo(), $tokenExp),
+    mb_substr($ultimoCorreo(), -300));
 
 // Quien ya estaba registrada como participante y entra por el enlace queda
 // como Expositor.

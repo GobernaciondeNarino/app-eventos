@@ -103,6 +103,16 @@ final class Admin
                         'ruta' => '/admin/expositores', 'tipo' => 'warn'];
         }
 
+        $sinPropuesta = count(Persona::expositoresSinPropuesta(
+            $eventoId, \App\Modelos\Formulario::llegadosPorEnlace($eventoId)
+        ));
+        if ($sinPropuesta > 0) {
+            $lista[] = ['texto' => $sinPropuesta . ($sinPropuesta === 1
+                            ? ' expositor registrado todavía sin propuesta'
+                            : ' expositores registrados todavía sin propuesta'),
+                        'ruta' => '/admin/expositores?estado=sin-propuesta', 'tipo' => ''];
+        }
+
         $sinSegundoFactor = (int) Bd::valor(
             "SELECT COUNT(*) FROM {usuario}
               WHERE rol = 'administrador' AND estado = 'activo' AND totp_confirmado = 0"
@@ -652,6 +662,7 @@ final class Admin
     {
         $evento = App::eventoExigido();
         $estado = $peticion->query('estado');
+        $soloSinPropuesta = $estado === 'sin-propuesta';
 
         $donde = ['p.evento_id = :evento'];
         $parametros = ['evento' => (int) $evento['id']];
@@ -664,7 +675,7 @@ final class Admin
         // sobre una propuesta es decidir sobre quién la presenta, y tener que
         // abrir la ficha en otra pantalla para ver de qué entidad viene o si
         // dejó teléfono convertía la revisión en un ir y venir.
-        $propuestas = Bd::filas(
+        $propuestas = $soloSinPropuesta ? [] : Bd::filas(
             'SELECT pr.*,
                     p.id AS persona_id, p.nombre AS expositor, p.correo, p.telefono,
                     p.comparte_telefono, p.tipo_documento, p.documento_cifrado,
@@ -691,10 +702,19 @@ final class Admin
             $conteos[$fila['estado']] = (int) $fila['n'];
         }
 
+        // Quienes se registraron como expositores —por el enlace privado o con
+        // ese perfil— y todavía no tienen propuesta. Arriba no salen: la lista
+        // es de propuestas.
+        $porEnlace = \App\Modelos\Formulario::llegadosPorEnlace((int) $evento['id']);
+        $sinPropuesta = Persona::expositoresSinPropuesta((int) $evento['id'], $porEnlace);
+        $conteos['sin-propuesta'] = count($sinPropuesta);
+
         Respuesta::vista('admin/expositores', [
             'titulo'     => 'Expositores',
             'pantalla'   => 'admin-expositores',
             'propuestas' => $propuestas,
+            'sinPropuesta' => $sinPropuesta,
+            'porEnlace'  => $porEnlace,
             'conteos'    => $conteos,
             'estado'     => $estado,
             'jornadas'   => Evento::jornadas((int) $evento['id']),

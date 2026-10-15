@@ -402,6 +402,13 @@ restauró no es una copia.
    La 3.10 tampoco toca la base de datos ni `config/`: cambia solo cómo se ve el menú en el
    celular y la tableta. Ver 7.2.
 
+   La 3.10.1 tampoco. **Expositores** muestra además, aparte de las propuestas, a quienes se
+   registraron como expositores y todavía no han enviado la suya —quien llega por el enlace
+   privado sin la hoja de vida a mano se registra sin propuesta—, y el panel avisa cuántos son.
+   Cambian `app/Controladores/Admin.php`, `app/Modelos/Formulario.php`,
+   `app/Modelos/Persona.php`, `app/Vistas/admin/expositores.php` e `index.php`. Solo lee lo que
+   ya está en la base: no cambia ningún registro.
+
    Si el usuario de la base de datos no tiene permiso de `ALTER` —pasa en algunos
    alojamientos—, la actualización automática no puede hacerse: lo anota en el registro,
    vuelve a intentarlo cada cinco minutos y la plataforma sigue funcionando. Para hacerlo a

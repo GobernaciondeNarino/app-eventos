@@ -369,6 +369,29 @@ final class Formulario
         return $evento === null || $evento === false ? null : (int) $evento;
     }
 
+    /**
+     * Quiénes llegaron por el enlace privado de expositores.
+     *
+     * La persona es la misma con cualquiera de los dos formularios, así que no
+     * hay columna que lo diga. Lo dice la bitácora: desde la 3.9, cada
+     * registro hecho por ese formulario queda anotado con «formulario:
+     * expositores», y la bitácora no se edita ni se borra.
+     *
+     * @return array<int, true> id de persona => true
+     */
+    public static function llegadosPorEnlace(int $eventoId): array
+    {
+        $filas = Bd::filas(
+            "SELECT DISTINCT b.entidad_id AS id
+               FROM {bitacora} b
+               JOIN {persona} p ON p.id = b.entidad_id
+              WHERE b.accion IN ('registro', 'registro_actualizado') AND b.entidad = 'persona'
+                AND b.detalle LIKE ? AND p.evento_id = ?",
+            ['%"formulario":"' . self::EXPOSITORES . '"%', $eventoId]
+        );
+        return array_fill_keys(array_map('intval', array_column($filas, 'id')), true);
+    }
+
     /** Para las pruebas y para después de guardar: que la próxima lectura vaya a la base. */
     public static function olvidar(): void
     {

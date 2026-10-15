@@ -187,6 +187,19 @@ y queda en la bitácora.
 En **Administración → Expositores**. Exige rol **administrador**, y eso es lo que permite que
 en esta pantalla aparezcan el teléfono y la cédula de quien propone.
 
+La pantalla tiene dos listas:
+
+- **Las propuestas**, filtrables por estado: pendiente, con observaciones, aprobada o rechazada.
+- **Los registrados como expositores sin propuesta todavía**, aparte y con su propio filtro,
+  *Sin propuesta*. Son quienes tienen el perfil Expositor o llegaron por el enlace privado, pero
+  no han enviado la suya. Pasa a menudo: con «Voy a exponer» marcado, el formulario pide la hoja
+  de vida y la presentación, y quien no las tiene a mano se registra sin la casilla para volver
+  después. De cada uno se ve el correo, el teléfono, la entidad, cuándo se registró y un botón a
+  su ficha: son a quienes hay que escribirles. El panel avisa cuántos hay.
+
+Quien llegó por el enlace privado de expositores lleva la marca **Por el enlace**, en las dos
+listas.
+
 ### 4.1 La hoja de revisión
 
 Pulsar una propuesta abre todo lo que hace falta para decidir, sin salir de la pantalla:
@@ -662,7 +675,7 @@ se filtra en todos los módulos.
 | Carnets | Filtro de perfil **Expositor** |
 | Acreditar | Por su carnet, o buscándolo por nombre o documento |
 | Panel | Cuenta en *Expositores*, y su propuesta en *por aprobar*. En la actividad reciente sale «Nuevo registro por el enlace de expositores» |
-| Expositores | Su propuesta, con las demás, filtrable por estado y con el mismo correo de decisión (sección 4) |
+| Expositores | Su propuesta, con las demás, filtrable por estado y con el mismo correo de decisión (sección 4). Si se registró sin propuesta, aparece aparte, en *Sin propuesta*. Las dos con la marca **Por el enlace** |
 | Agenda | Al aprobarla, su charla, filtrable por día y por categoría |
 
 Al revisar una propuesta, el comité puede elegir entre **las categorías y duraciones de los dos

@@ -1,8 +1,10 @@
 <?php
 /**
- * Propuestas de exposición.
+ * Expositores: las propuestas de exposición y, aparte, quienes se registraron
+ * como expositores sin enviar la suya todavía.
  * @var array $propuestas @var array $conteos @var string $estado @var array $jornadas
  * @var bool $puedeVerDocumento @var int $eventoId @var bool $correoListo
+ * @var array $sinPropuesta @var array<int, true> $porEnlace  quiénes llegaron por el enlace privado
  */
 defined('EVENTOS_TIC') || exit;
 
@@ -38,29 +40,34 @@ $estados = [
     'rechazada' => ['Rechazada', 'tag--danger'],
 ];
 $columnas = 'grid-template-columns:1.7fr 1.1fr 1fr .8fr .9fr';
+$columnasSin = 'grid-template-columns:1.6fr 1.1fr .9fr .8fr auto';
+$soloSinPropuesta = $estado === 'sin-propuesta';
 ?>
 <div class="view view--wide stack stack--4">
 
   <div class="row row--between" style="align-items:flex-end">
     <div class="stack stack--2">
       <span class="kicker">Administrador</span>
-      <h1>Propuestas de exposición</h1>
+      <h1>Expositores</h1>
       <p class="help">
-        Al aprobar una propuesta se publica en la agenda y el expositor recibe su carnet con el rótulo correspondiente.
-        El enlace privado para invitar expositores está en
+        Las propuestas de exposición y, aparte, quienes se registraron como expositores sin enviar
+        la suya todavía. Al aprobar una propuesta se publica en la agenda y el expositor recibe su
+        carnet con el rótulo correspondiente. El enlace privado para invitar expositores está en
         <a href="<?= e(u('/admin/configuracion/expositores')) ?>">Configuración → Registro de expositores</a>.
       </p>
     </div>
-    <div class="row" role="group" aria-label="Filtrar por estado">
+    <div class="row" role="group" aria-label="Filtrar">
       <a class="chip<?= $estado === '' ? ' is-active' : '' ?>" href="<?= e(u('/admin/expositores')) ?>">Todas</a>
       <?php foreach ($estados as $clave => [$etiqueta, $_]): ?>
         <a class="chip<?= $estado === $clave ? ' is-active' : '' ?>"
            href="<?= e(u('/admin/expositores', ['estado' => $clave])) ?>"><?= e($etiqueta) ?></a>
       <?php endforeach; ?>
+      <a class="chip<?= $soloSinPropuesta ? ' is-active' : '' ?>"
+         href="<?= e(u('/admin/expositores', ['estado' => 'sin-propuesta'])) ?>">Sin propuesta</a>
     </div>
   </div>
 
-  <div class="grid-4">
+  <div class="grid-4" style="grid-template-columns:repeat(5, 1fr)">
     <?php foreach ($estados as $clave => [$etiqueta, $_]): ?>
       <div class="kpi">
         <span class="kpi__label"><?= e($etiqueta) ?></span>
@@ -68,8 +75,14 @@ $columnas = 'grid-template-columns:1.7fr 1.1fr 1fr .8fr .9fr';
         <span class="kpi__sub">propuestas</span>
       </div>
     <?php endforeach; ?>
+    <a class="kpi" href="<?= e(u('/admin/expositores', ['estado' => 'sin-propuesta'])) ?>" style="text-decoration:none;color:inherit">
+      <span class="kpi__label">Sin propuesta</span>
+      <strong class="kpi__value"><?= e((string) ($conteos['sin-propuesta'] ?? 0)) ?></strong>
+      <span class="kpi__sub">registrados, sin enviarla</span>
+    </a>
   </div>
 
+  <?php if (!$soloSinPropuesta): ?>
   <div class="table">
     <div class="table__scroll">
       <div class="table__grid" style="min-width:820px">
@@ -104,6 +117,9 @@ $columnas = 'grid-template-columns:1.7fr 1.1fr 1fr .8fr .9fr';
               <span style="color:var(--c-title)"><?= e($p['expositor']) ?></span>
               <span class="mono muted" style="font-size:11px;word-break:break-all"><?= e($p['correo']) ?></span>
               <span class="mono muted" style="font-size:11px"><?= e($p['entidad'] ?: 'Independiente') ?></span>
+              <?php if (isset($porEnlace[(int) $p['persona_id']])): ?>
+                <span><span class="tag" style="font-size:10px">Por el enlace</span></span>
+              <?php endif; ?>
             </div>
             <span style="color:var(--c-text);font-size:13px"><?= e($p['categoria']) ?></span>
             <span class="mono" style="font-size:12.5px;color:var(--c-text)">
@@ -125,6 +141,53 @@ $columnas = 'grid-template-columns:1.7fr 1.1fr 1fr .8fr .9fr';
       <span>La agenda pública está en <?= e(u('/agenda')) ?></span>
     </div>
   </div>
+  <?php endif; ?>
+
+  <?php if ($soloSinPropuesta || ($estado === '' && $sinPropuesta)): ?>
+    <!-- Quienes se registraron como expositores y todavía no mandaron su
+         propuesta. En la lista de arriba no salen —es de propuestas—, y son
+         justo a quienes hay que escribirles. -->
+    <section class="table" id="sin-propuesta" aria-labelledby="titulo-sin-propuesta">
+      <div class="table__tools" style="justify-content:space-between">
+        <strong id="titulo-sin-propuesta" style="color:var(--c-title);font-weight:600">
+          Registrados como expositores, sin propuesta todavía
+        </strong>
+        <span class="tag"><?= e((string) count($sinPropuesta)) ?></span>
+      </div>
+      <p class="help" style="margin:0;padding:12px var(--sp-4) 0">
+        Tienen el perfil Expositor o llegaron por el enlace privado, pero no han enviado su
+        propuesta: casi siempre porque no tenían a mano la hoja de vida o la presentación. La pueden
+        enviar cuando quieran por el mismo enlace, entrando con su correo.
+      </p>
+      <div class="table__scroll">
+        <div class="table__grid" style="min-width:760px">
+          <div class="table__head" style="<?= $columnasSin ?>">
+            <span>Expositor</span><span>Entidad</span><span>Teléfono</span><span>Se registró</span><span></span>
+          </div>
+          <?php if (!$sinPropuesta): ?>
+            <div class="empty" style="margin:16px">Nadie: quienes se registraron como expositores ya enviaron su propuesta</div>
+          <?php else: foreach ($sinPropuesta as $s): ?>
+            <div class="table__row" style="<?= $columnasSin ?>;align-items:center">
+              <div class="stack" style="gap:3px;min-width:0">
+                <span style="color:var(--c-title)"><?= e($s['nombre'] !== '' ? $s['nombre'] : 'Registro sin completar') ?></span>
+                <span class="mono muted" style="font-size:11px;word-break:break-all"><?= e($s['correo']) ?></span>
+                <span class="row" style="gap:5px">
+                  <span class="tag <?= e(claseRol((string) $s['rol'])) ?>" style="font-size:10px"><?= e(etiquetaRol((string) $s['rol'])) ?></span>
+                  <?php if (isset($porEnlace[(int) $s['id']])): ?>
+                    <span class="tag" style="font-size:10px">Por el enlace</span>
+                  <?php endif; ?>
+                </span>
+              </div>
+              <span class="mono muted" style="font-size:12px"><?= e($s['entidad'] !== '' ? $s['entidad'] : 'Independiente') ?></span>
+              <span class="mono" style="font-size:12px"><?= e($s['telefono'] !== '' ? $s['telefono'] : '—') ?></span>
+              <span class="mono muted" style="font-size:12px"><?= e(fecha((string) $s['creado_en'])) ?></span>
+              <a class="btn btn--sm" href="<?= e(u('/admin/registros/' . (int) $s['id'])) ?>">Ver ficha ›</a>
+            </div>
+          <?php endforeach; endif; ?>
+        </div>
+      </div>
+    </section>
+  <?php endif; ?>
 
 </div>
 

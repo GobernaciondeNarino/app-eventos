@@ -409,6 +409,32 @@ final class Persona
         return array_values(array_filter($personas, static fn(array $p): bool => self::registroCompleto($p)));
     }
 
+    /**
+     * Quienes se registraron como expositores y todavía no han enviado su
+     * propuesta: los de perfil Expositor y los que llegaron por el enlace
+     * privado, sin ninguna propuesta.
+     *
+     * Pasa todo el tiempo: con «Voy a exponer» marcado, el formulario pide la
+     * hoja de vida y la presentación, y quien no las tiene a mano se registra
+     * sin la casilla para volver después. La lista de propuestas no los
+     * muestra —no tienen ninguna—, y son justo a quienes hay que escribirles.
+     *
+     * @param array<int, true> $porEnlace los de Formulario::llegadosPorEnlace()
+     */
+    public static function expositoresSinPropuesta(int $eventoId, array $porEnlace = []): array
+    {
+        $ids = array_map('intval', array_keys($porEnlace));
+        return Bd::filas(
+            "SELECT p.id, p.nombre, p.correo, p.telefono, p.entidad, p.municipio, p.rol, p.creado_en
+               FROM {persona} p
+              WHERE p.evento_id = ?
+                AND NOT EXISTS (SELECT 1 FROM {propuesta} pr WHERE pr.persona_id = p.id)
+                AND (p.rol = 'expositor'" . ($ids ? ' OR p.id IN (' . implode(',', $ids) . ')' : '') . ')
+           ORDER BY p.creado_en DESC',
+            [$eventoId]
+        );
+    }
+
     /** Días en que ingresó, como arreglo de enteros. */
     public static function diasDe(?string $concatenado): array
     {

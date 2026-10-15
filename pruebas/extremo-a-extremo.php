@@ -3854,6 +3854,22 @@ $paula->post($rutaExp, [
 comprobar('quien era participante y entra por el enlace queda como Expositor',
     (string) $pdo->query("SELECT rol FROM {$P}persona WHERE correo = 'pmontenegro@narino.gov.co'")->fetchColumn() === 'expositor');
 
+// Se registró por el enlace sin propuesta —es lo que pasa cuando no se tiene a
+// mano la hoja de vida—: la lista de propuestas no la muestra, así que
+// Expositores la muestra aparte.
+$html = $jefa->get('/admin/expositores');
+$seccionSin = preg_match('#<section[^>]+id="sin-propuesta".*?</section>#s', $html, $m) === 1 ? $m[0] : '';
+comprobar('Expositores muestra aparte a quien se registró como expositor sin propuesta, con la marca del enlace',
+    str_contains($seccionSin, 'Paula Montenegro') && str_contains($seccionSin, 'Por el enlace')
+    && !str_contains($seccionSin, 'Expositora Invitada'), mb_substr(trim(strip_tags($seccionSin)), 0, 200));
+comprobar('y en la lista de propuestas, la que llegó por el enlace también lo dice',
+    preg_match('#Expositora Invitada.{0,600}Por el enlace#s', $html) === 1);
+$html = $jefa->get('/admin/expositores?estado=sin-propuesta');
+comprobar('el filtro «Sin propuesta» la lista sola, sin las propuestas',
+    str_contains($html, 'Paula Montenegro') && !str_contains($html, 'Inteligencia artificial para la gestión pública'));
+comprobar('y el panel avisa que hay expositores registrados sin propuesta',
+    str_contains($jefa->get('/admin'), 'todavía sin propuesta'));
+
 // Un correo ya registrado: se ofrece entrar con el código y volver a este enlace.
 $otro = new Cliente($BASE);
 $otro->get($rutaExp);

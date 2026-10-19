@@ -242,8 +242,10 @@ algo sin escribirle —por ejemplo, cambiar el salón de una charla ya aprobada 
 | Decisión | Asunto | Qué dice |
 |---|---|---|
 | Aprobar | «Tu propuesta fue aprobada: …» | El título con el que queda, el día, la hora y el salón, y el enlace a la agenda |
-| Devolver | «Tu propuesta tiene observaciones: …» | Lo que tiene que corregir y el enlace a su registro, para mandarla otra vez |
-| Rechazar | «Sobre tu propuesta: …» | Que no fue seleccionada, con el motivo si se escribió |
+| Devolver | «Tu propuesta tiene observaciones: …» | Lo que tiene que corregir y el enlace a **«Mi exposición»** (4.9), donde la corrige y la vuelve a enviar |
+| Rechazar | «Sobre tu propuesta: …» | Que no fue seleccionada, con el motivo si se escribió, y el enlace a «Mi exposición» |
+
+El de aprobar le recuerda además que puede subir la presentación final en «Mi exposición».
 
 En los tres casos van **las observaciones** del cuadro de texto y **los cambios** que se le
 hicieron a la propuesta (abajo), cada uno en su línea: «Título: «A» pasa a ser «B»»,
@@ -271,16 +273,16 @@ Sin los dos, el formulario no se envía: el archivo se comprueba con los demás 
 guardar nada. No hay propuesta a medias que alguien tenga que perseguir después por correo.
 
 Quien no los tenga a mano en ese momento tiene una salida, y el propio formulario se la dice:
-**registrarse sin marcar «voy a exponer»** y volver cuando los tenga. Queda registrado, con su
-carnet, y la propuesta la manda otro día.
+**registrarse sin marcar «voy a exponer»** y enviarla después desde **«Mi exposición»** (4.9).
+Queda registrado, con su carnet, y la propuesta la manda otro día.
 
 Tampoco se pueden **quitar** una vez subidos, solo reemplazar. Un botón que deja la propuesta
 sin lo que la hace evaluable no tendría sentido.
 
 Aun así, la lista marca **qué falta**: cada propuesta lleva dos etiquetas debajo del título, en
 verde lo que llegó y en gris lo que no. Si ves alguna en gris es de antes de que fueran
-obligatorios. Devuélvela con observaciones pidiendo el documento: el expositor entra a su
-registro y lo sube.
+obligatorios. Devuélvela con observaciones pidiendo el documento: el expositor entra a «Mi
+exposición» y lo sube.
 
 ### 4.6 Bajarlos
 
@@ -300,9 +302,10 @@ El expositor **sigue pudiendo cambiar sus archivos** cuando su propuesta ya est�
 agendada. Es justo cuando la mayoría tiene la presentación definitiva lista, y cambiar el
 archivo no mueve nada de la agenda.
 
-Lo que ya **no** puede cambiar desde el formulario es el tema, la categoría ni el día: están
-publicados. El formulario se lo dice con un aviso, para que nadie edite el detalle, guarde, y
-no entienda por qué no pasó nada.
+Lo que ya **no** puede cambiar él es el tema, la categoría, el detalle, el día ni la duración:
+están publicados, y los mueve el comité volviendo a decidir. «Mi exposición» se los muestra
+bloqueados y se lo dice con un aviso, para que nadie edite el detalle, guarde, y no entienda por
+qué no pasó nada. Los requerimientos sí los puede cambiar.
 
 ### 4.8 Si un expositor dice que no puede subir su presentación
 
@@ -315,6 +318,32 @@ El otro caso es un archivo que no es lo que dice ser: un `.pptx` guardado en rea
 `.odp`, o un PDF exportado por una herramienta que no escribe la cabecera al principio. El
 formulario lo dice con esas palabras —«el archivo no es PDF o PPTX»— y no guarda nada a medias:
 el archivo anterior se queda intacto y el resto del registro sí se graba.
+
+### 4.9 Lo que el expositor cambia después: «Mi exposición»
+
+Ya registrado, cada expositor tiene **«Mi exposición»** (`/exposicion`): en su menú, en un aviso
+de su carnet y en «Mis datos», donde su propuesta sale resumida con el camino. Ahí ve su
+propuesta como la envió, con su estado y lo que le dijo el comité, y cambia por separado los datos
+de la exposición y sus dos documentos: para reemplazar la presentación no tiene que volver a
+escribir nada.
+
+| Estado | Qué puede hacer |
+|---|---|
+| Sin propuesta | Enviarla, con sus dos documentos. Es la salida de quien se registró sin ellos |
+| En revisión | Cambiarla y cambiar sus documentos. Sigue en revisión |
+| Con observaciones | Ver lo que pidió el comité, corregirla y guardar: **vuelve a revisión** |
+| Aprobada | Ver el día, la hora y el salón; cambiar sus documentos y los requerimientos. Lo publicado lo mueve el comité |
+| No seleccionada | Ver lo que dijo el comité. Si la cambia y la guarda, vuelve a revisión, como siempre |
+
+Para el comité:
+
+- Una propuesta que el expositor cambió después de la última revisión lleva en la lista la marca
+  **«Actualizada por el expositor»**, con la fecha: hay algo nuevo que mirar. Sale también con
+  una aprobada a la que se le cambió la presentación.
+- Cada envío y cada cambio quedan en la bitácora, y se ven en la actividad reciente del panel:
+  «Un expositor envió su propuesta», «Un expositor actualizó su propuesta y sus documentos».
+- Cada expositor ve y cambia solo lo suyo: la pantalla no recibe ningún número de propuesta,
+  trabaja con su sesión.
 
 ---
 
@@ -679,9 +708,9 @@ se filtra en todos los módulos.
 | Agenda | Al aprobarla, su charla, filtrable por día y por categoría |
 
 Al revisar una propuesta, el comité puede elegir entre **las categorías y duraciones de los dos
-formularios**: la propuesta pudo llegar por cualquiera. Y si el formulario público ya no tiene la
-sección «Voy a exponer», el correo de una propuesta **devuelta** lleva al formulario de
-expositores, que es donde se puede volver a enviar.
+formularios**: la propuesta pudo llegar por cualquiera. Y el correo de una propuesta **devuelta**
+lleva a «Mi exposición» (4.9), que funciona igual llegue por donde llegue: ahí se corrige y se
+vuelve a enviar, tenga o no el formulario público la sección «Voy a exponer».
 
 ---
 

@@ -2363,8 +2363,10 @@ comprobar('la exposición se reemplaza por la nueva',
 comprobar('y la anterior desaparece del disco', !is_file($carpetaDocs . '/' . $antesExpo));
 comprobar('la nueva sí está', is_file($carpetaDocs . '/' . $ahoraExpo));
 
-$html = $lucia->get('/registro');
-comprobar('el formulario dice que ya tiene los archivos subidos',
+// Los documentos se ven y se cambian en «Mi exposición»; en «Mis datos», la
+// propuesta ya enviada sale resumida, con el camino.
+$html = $lucia->get('/exposicion');
+comprobar('«Mi exposición» dice que ya tiene los archivos subidos',
     substr_count($html, 'Ya la subiste') === 2);
 
 // Siendo obligatorios, un botón que deja la propuesta sin lo que la hace
@@ -2442,9 +2444,9 @@ $estadoCarlos = (string) $pdo->query("SELECT estado FROM {$BD['prefijo']}propues
                                        WHERE id = $prCarlos")->fetchColumn();
 comprobar('la propuesta de Carlos sigue aprobada', $estadoCarlos === 'aprobada', $estadoCarlos);
 
-$html = $carlos->get('/registro');
-comprobar('se le avisa de que el tema ya no se cambia desde aquí',
-    str_contains($html, 'ya está aprobada y publicada'));
+$html = $carlos->get('/exposicion');
+comprobar('«Mi exposición» le avisa de que el tema ya no lo cambia él',
+    str_contains($html, 'Como ya está en la agenda'));
 
 $carlos->subir('/registro', [
     'nombre' => 'Carlos Andrés Bolaños', 'tipo_documento' => 'CC', 'documento' => '12994510',
@@ -3818,8 +3820,8 @@ comprobar('y queda publicada en la agenda, que la filtra por esa categoría',
     str_contains($agenda, 'Inteligencia artificial para la gestión pública')
     && str_contains($agenda, 'value="Investigación aplicada" selected'));
 
-// Si el formulario público ya no recibe propuestas, la que se devuelve solo se
-// puede corregir por el de expositores: el correo lleva a su enlace.
+// La que se devuelve se corrige en «Mi exposición», reciba o no propuestas el
+// formulario público: el correo lleva allí en los dos casos.
 $jefa->get('/admin/configuracion/registro');
 $jefa->subir('/admin/configuracion/registro', $aplanar([
     'accion' => 'guardar', 'campos' => ['expositor' => 'oculto'] + App\Modelos\Formulario::camposPorDefecto(),
@@ -3830,8 +3832,9 @@ $jefa->post('/admin/expositores/decidir', [
     'propuesta' => (string) $idPropInvitada, 'decision' => 'observada', 'avisar' => '1',
     'observacion' => 'Ajusta el detalle a una charla de veinte minutos.',
 ]);
-comprobar('si el público ya no recibe propuestas, el correo de «devuelta» lleva al formulario de expositores',
-    str_contains($ultimoCorreo(), 'Tu propuesta tiene observaciones') && str_contains($ultimoCorreo(), '/registro/expositores/' . $tokenExp),
+comprobar('si el público ya no recibe propuestas, el correo de «devuelta» lleva a «Mi exposición»',
+    str_contains($ultimoCorreo(), 'Tu propuesta tiene observaciones') && str_contains($ultimoCorreo(), 'Ir a mi exposición: ')
+    && str_contains($ultimoCorreo(), '/exposicion"'),
     mb_substr($ultimoCorreo(), -300));
 $jefa->get('/admin/configuracion/registro');
 $jefa->post('/admin/configuracion/registro', ['accion' => 'restablecer']);
@@ -3840,8 +3843,8 @@ $jefa->post('/admin/expositores/decidir', [
     'propuesta' => (string) $idPropInvitada, 'decision' => 'observada', 'avisar' => '1',
     'observacion' => 'Ajusta el detalle a una charla de veinte minutos.',
 ]);
-comprobar('con la sección otra vez en el público, el correo lleva a /registro como siempre',
-    str_contains($ultimoCorreo(), '/registro"') && !str_contains($ultimoCorreo(), $tokenExp),
+comprobar('y con la sección otra vez en el público, también, sin el enlace privado',
+    str_contains($ultimoCorreo(), '/exposicion"') && !str_contains($ultimoCorreo(), $tokenExp),
     mb_substr($ultimoCorreo(), -300));
 
 // Quien ya estaba registrada como participante y entra por el enlace queda
@@ -3900,6 +3903,125 @@ comprobar('volver al de fábrica limpia campos y listas, y conserva el enlace',
 $pdo->exec("DELETE FROM {$P}persona WHERE correo = 'invitada@narino.gov.co'");
 $pdo->exec("UPDATE {$P}persona SET rol = 'participante' WHERE correo = 'pmontenegro@narino.gov.co'");
 $pdo->exec("UPDATE {$P}evento_formulario_expositores SET banner_activo = 0, banner_titulo = '' WHERE evento_id = $eventoId");
+
+/* =========================================================================
+   16 · Mi exposición
+   -------------------------------------------------------------------------
+   Ya registrado, el expositor envía su propuesta si llegó sin ella, la
+   corrige y cambia sus documentos sin volver a escribirla. Aprobada, lo
+   publicado en la agenda lo mueve el comité; los documentos, él.
+   ========================================================================= */
+titulo('Mi exposición');
+
+$sinSesion = new Cliente($BASE);
+$sinSesion->get('/exposicion', false);
+comprobar('sin sesión, «Mi exposición» pide identificarse y vuelve después',
+    $sinSesion->codigo === 303 && str_contains($sinSesion->cabecera('Location'), 'destino=%2Fexposicion'),
+    $sinSesion->codigo . ' → ' . $sinSesion->cabecera('Location'));
+
+// Se registra por el enlace sin la propuesta: no tenía a mano los documentos.
+$ponente = new Cliente($BASE);
+$ponente->get('/registro/expositores/' . $tokenNuevo);
+$ponente->post('/registro/expositores/' . $tokenNuevo, [
+    'correo' => 'ponente.tardio@narino.gov.co', 'nombre' => 'Ponente Que Llega Tarde', 'tipo_documento' => 'CC',
+    'documento' => '1085777333', 'telefono' => '+57 300 777 3333', 'entidad' => 'Universidad Cesmag', 'habeas' => '1',
+]);
+$idPonente = (int) $pdo->query("SELECT id FROM {$P}persona WHERE correo = 'ponente.tardio@narino.gov.co'")->fetchColumn();
+$propuestaDe = static fn(): array => $pdo->query("SELECT * FROM {$P}propuesta WHERE persona_id = $idPonente")->fetch(PDO::FETCH_ASSOC) ?: [];
+comprobar('quien se registra por el enlace sin propuesta queda registrado, sin ella', $idPonente > 0 && $propuestaDe() === []);
+
+$html = $ponente->get('/carnet');
+comprobar('su carnet le dice que todavía no la ha enviado, y por dónde',
+    str_contains($html, 'Todavía no has enviado tu propuesta') && str_contains($html, '/exposicion'));
+comprobar('y «Mi exposición» está en su menú', str_contains($html, '>Mi exposición<'));
+
+$html = $ponente->get('/exposicion');
+comprobar('«Mi exposición» le pide la propuesta con sus dos documentos',
+    str_contains($html, 'Enviar mi propuesta') && str_contains($html, 'name="hoja_vida"') && str_contains($html, 'name="exposicion"'));
+$datosPonente = [
+    'tema' => 'Ciudades inteligentes en municipios pequeños', 'categoria' => 'Gobierno digital y servicios ciudadanos',
+    'detalle' => 'Experiencias de tres municipios de Nariño que digitalizaron sus trámites con presupuestos mínimos.',
+    'dia_preferido' => '2', 'duracion' => '40', 'requerimientos' => 'Proyector',
+];
+$html = $ponente->subir('/exposicion', $datosPonente, []);
+comprobar('sin los documentos no se envía', str_contains($html, 'Adjunta tu hoja de vida') && $propuestaDe() === []);
+$html = $ponente->subir('/exposicion', $datosPonente, $adjuntosDe('tardio'));
+$prop = $propuestaDe();
+$idPropPonente = (int) ($prop['id'] ?? 0);
+comprobar('con ellos, la propuesta llega en revisión, con sus documentos',
+    ($prop['estado'] ?? '') === 'pendiente' && ($prop['hoja_vida'] ?? '') !== '' && ($prop['exposicion'] ?? '') !== ''
+    && str_contains($html, 'Recibimos tu propuesta'), substr(strip_tags($html), 0, 200));
+
+$html = $ponente->get('/exposicion');
+comprobar('al volver, ve su propuesta como la envió y sus dos documentos',
+    str_contains($html, 'value="Ciudades inteligentes en municipios pequeños"') && substr_count($html, 'Ya la subiste') === 2);
+$temaNuevo = 'Ciudades inteligentes en municipios de sexta categoría';
+$html = $ponente->subir('/exposicion', ['tema' => $temaNuevo] + $datosPonente, []);
+$prop = $propuestaDe();
+comprobar('cambia el tema sin volver a subir los documentos, y sigue en revisión',
+    ($prop['titulo'] ?? '') === $temaNuevo && ($prop['estado'] ?? '') === 'pendiente' && str_contains($html, 'sigue en revisión'));
+$expoAntes = (string) ($prop['exposicion'] ?? '');
+$html = $ponente->subir('/exposicion', ['tema' => $temaNuevo] + $datosPonente, ['exposicion' => $adjuntosDe('tardio-v2')['exposicion']]);
+$prop = $propuestaDe();
+comprobar('cambia solo la presentación, sin escribir nada más',
+    ($prop['exposicion'] ?? '') !== '' && $prop['exposicion'] !== $expoAntes && ($prop['titulo'] ?? '') === $temaNuevo);
+$html = $ponente->subir('/exposicion', ['tema' => $temaNuevo] + $datosPonente, []);
+comprobar('guardar sin cambiar nada no toca nada', str_contains($html, 'No había nada que cambiar'));
+
+// Devuelta con observaciones: las ve, la corrige, y vuelve a revisión.
+$jefa->get('/admin/expositores');
+$jefa->post('/admin/expositores/decidir', [
+    'propuesta' => (string) $idPropPonente, 'decision' => 'observada', 'avisar' => '1',
+    'observacion' => 'Incluye un caso con cifras de ahorro.',
+]);
+comprobar('el correo de «devuelta» lleva a «Mi exposición»',
+    str_contains($ultimoCorreo(), 'Ir a mi exposición: ') && str_contains($ultimoCorreo(), '/exposicion"'), mb_substr($ultimoCorreo(), -200));
+$html = $ponente->get('/exposicion');
+comprobar('el expositor ve lo que le pidió el comité',
+    str_contains($html, 'Incluye un caso con cifras de ahorro.') && str_contains($html, 'Con observaciones'));
+$html = $ponente->subir('/exposicion', ['tema' => $temaNuevo,
+    'detalle' => $datosPonente['detalle'] . ' Con las cifras de ahorro de cada caso.'] + $datosPonente, []);
+comprobar('al corregirla, vuelve a revisión',
+    ($propuestaDe()['estado'] ?? '') === 'pendiente' && str_contains($html, 'volvió a revisión'));
+
+// Aprobada: ve su horario; el tema ya no lo cambia él, la presentación sí.
+$jefa->get('/admin/expositores');
+$jefa->post('/admin/expositores/decidir', [
+    'propuesta' => (string) $idPropPonente, 'decision' => 'aprobada', 'avisar' => '1',
+    'titulo' => $temaNuevo, 'categoria' => $datosPonente['categoria'], 'duracion' => '40',
+    'dia' => '2', 'hora' => '15:00', 'salon' => 'Sala Galeras',
+]);
+comprobar('el correo de aprobada le dice que puede subir la presentación final en «Mi exposición»',
+    str_contains($ultimoCorreo(), 'Tu propuesta fue aprobada') && str_contains($ultimoCorreo(), 'Mi exposición'));
+$html = $ponente->get('/exposicion');
+comprobar('aprobada, ve el día, la hora y el salón', str_contains($html, '15:00') && str_contains($html, 'Sala Galeras'));
+comprobar('y el tema ya no se cambia desde aquí', preg_match('#<input[^>]+id="tema"[^>]+disabled#', $html) === 1);
+$html = $ponente->subir('/exposicion', ['tema' => 'Un tema que no debe entrar', 'requerimientos' => 'Proyector y micrófono inalámbrico']
+    + $datosPonente, ['exposicion' => $adjuntosDe('tardio-final')['exposicion']]);
+$prop = $propuestaDe();
+comprobar('cambia la presentación y los requerimientos, y sigue aprobada con su tema',
+    ($prop['estado'] ?? '') === 'aprobada' && ($prop['titulo'] ?? '') === $temaNuevo
+    && ($prop['requerimientos'] ?? '') === 'Proyector y micrófono inalámbrico', json_encode([$prop['estado'] ?? '', $prop['titulo'] ?? '']));
+comprobar('y su charla sigue en la agenda',
+    (int) $pdo->query("SELECT COUNT(*) FROM {$P}charla WHERE propuesta_id = $idPropPonente")->fetchColumn() === 1);
+$html = $jefa->get('/admin/expositores');
+comprobar('el comité ve que el expositor la actualizó después de aprobarla',
+    preg_match('#' . preg_quote($temaNuevo, '#') . '.{0,1500}Actualizada por el expositor#s', $html) === 1);
+comprobar('y la actividad reciente del panel lo cuenta', str_contains($jefa->get('/admin'), 'Un expositor actualizó su propuesta'));
+
+// En «Mis datos», su propuesta sale resumida, y corregir un teléfono no la toca.
+$html = $ponente->get('/registro');
+comprobar('en «Mis datos», su propuesta sale resumida con el camino a «Mi exposición», sin la casilla para escribirla otra vez',
+    str_contains($html, 'Ir a «Mi exposición»') && !str_contains($html, 'name="expositor"'));
+$ponente->post('/registro', [
+    'nombre' => 'Ponente Que Llega Tarde', 'tipo_documento' => 'CC', 'documento' => '1085777333',
+    'telefono' => '+57 300 777 4444', 'entidad' => 'Universidad Cesmag',
+]);
+comprobar('y corregir su teléfono no toca su propuesta',
+    ($propuestaDe()['estado'] ?? '') === 'aprobada'
+    && (string) $pdo->query("SELECT telefono FROM {$P}persona WHERE id = $idPonente")->fetchColumn() === '+57 300 777 4444');
+
+$pdo->exec("DELETE FROM {$P}persona WHERE id = $idPonente");
 
 ajustarConfig($RAIZ, ['modo_correo' => $configAntesForm['modo_correo'] ?? null]);
 

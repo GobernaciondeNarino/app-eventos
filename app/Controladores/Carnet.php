@@ -69,6 +69,10 @@ final class Carnet
             'urlAcceso'    => $urlAcceso,
             'historial'    => Asistencia::historial((int) $persona['id'], (int) $persona['evento_id']),
             'dispositivos' => Dispositivo::de((int) $persona['id']),
+            // Para quien expone: cómo va su propuesta, con el camino a «Mi
+            // exposición». [] es que todavía no la ha enviado.
+            'exposicion'   => Persona::esExpositor($persona)
+                ? (Persona::suPropuesta((int) $persona['id']) ?? []) : null,
         ]);
     }
 

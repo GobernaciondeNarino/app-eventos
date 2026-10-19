@@ -121,6 +121,9 @@ $enrutador->get('/checkin', [Escaneo::class, 'pantallaCheckin'], 'asistente');
 $enrutador->get('/contactos', [Contactos::class, 'listar'], 'asistente');
 $enrutador->post('/contactos/privacidad', [Contactos::class, 'privacidad'], 'asistente');
 $enrutador->get('/contactos/exportar', [Contactos::class, 'exportar'], 'asistente');
+// La propuesta de quien expone: enviarla si se registró sin ella, corregirla y
+// cambiar sus documentos, aparte de sus datos personales.
+$enrutador->ambos('/exposicion', [Publico::class, 'exposicion'], 'asistente');
 
 /* =========================================================================
    Equipo organizador

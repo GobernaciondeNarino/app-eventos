@@ -4,6 +4,7 @@
  * @var array $credencial @var string $documento @var string $qr
  * @var string $contenidoQr @var string $qrAcceso @var string $urlAcceso
  * @var array $historial @var array $persona @var array $tema @var array $dispositivos
+ * @var array|null $exposicion  la propuesta de quien expone ([] si no la ha enviado); null si no expone
  */
 defined('EVENTOS_TIC') || exit;
 
@@ -119,6 +120,25 @@ guiones('carnet.js');
       ingreso si no alcanzas a escanear el de la puerta, y para intercambiar contacto con
       otros asistentes.
     </p>
+
+    <?php if ($exposicion !== null):
+      // Quien expone llega aquí al entrar: aquí ve cómo va su propuesta y el
+      // camino para enviarla, corregirla o cambiar sus documentos.
+      [$tituloExpo, $textoExpo] = match ((string) ($exposicion['estado'] ?? '')) {
+          'pendiente' => ['Tu propuesta está en revisión', 'Puedes cambiarla o reemplazar tus documentos mientras tanto.'],
+          'observada' => ['El comité te pide ajustes a tu propuesta', 'Mira sus observaciones y corrígela.'],
+          'aprobada'  => ['Tu exposición está en la agenda', 'Puedes subir la presentación final cuando la tengas.'],
+          'rechazada' => ['Tu propuesta no fue seleccionada', 'Puedes ver lo que dijo el comité.'],
+          default     => ['Todavía no has enviado tu propuesta', 'Envíala con tu hoja de vida y tu presentación.'],
+      }; ?>
+      <a class="notice no-print" href="<?= e(u('/exposicion')) ?>" style="text-decoration:none;color:inherit" data-exposicion>
+        <span class="notice__icon" aria-hidden="true">◆</span>
+        <span class="stack" style="gap:4px">
+          <strong><?= e($tituloExpo) ?></strong>
+          <span class="help" style="margin:0"><?= e($textoExpo) ?> Ir a «Mi exposición» ›</span>
+        </span>
+      </a>
+    <?php endif; ?>
 
     <?php if ($qrAcceso !== ''): ?>
       <!-- ===== El otro QR: el que abre la sesión =====================

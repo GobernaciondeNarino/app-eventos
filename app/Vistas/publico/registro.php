@@ -10,7 +10,7 @@
  * envía cada uno, y $deExpositores cambia el encabezado, el perfil por
  * omisión y deja marcada la propuesta para quien llega nuevo.
  *
- * @var string $accion @var bool $deExpositores @var bool $tienePropuesta
+ * @var string $accion @var bool $deExpositores @var bool $tienePropuesta @var string $estadoPropuesta
  * @var array $valores @var array $errores @var array $departamentos
  * @var array $municipios @var array $categorias @var array $jornadas @var bool $yaRegistrado
  * @var bool $completo @var bool $pideClave @var int $claveMinima
@@ -477,7 +477,28 @@ guiones('foto.js', 'preregistro.js', 'claves.js', 'registro-incompleto.js');
   <?php endif; ?>
 
   <!-- ================= Perfil expositor ================= -->
-  <?php if ($f->visible('expositor')): ?>
+  <?php if ($yaRegistrado && $tienePropuesta): ?>
+    <!-- La propuesta ya enviada se cambia en «Mi exposición»: ahí se ve como
+         se mandó, con sus documentos, y se corrige sin escribirla otra vez.
+         Aquí volver a mandarla obligaba a llenarla entera y la devolvía a
+         revisión aunque solo se corrigiera un teléfono. -->
+    <section class="card">
+      <div class="card__head">
+        <span>Fase 03 · Perfil expositor</span>
+        <span class="tag <?= e(['pendiente' => 'tag--warn', 'aprobada' => 'tag--ok', 'rechazada' => 'tag--danger'][$estadoPropuesta] ?? '') ?>">
+          <?= e(['pendiente' => 'En revisión', 'observada' => 'Con observaciones', 'aprobada' => 'Aprobada', 'rechazada' => 'No seleccionada'][$estadoPropuesta] ?? 'Enviada') ?>
+        </span>
+      </div>
+      <div class="card__body stack stack--3">
+        <p style="margin:0;color:var(--c-title)">«<?= e((string) ($actual['tema'] ?? '')) ?>»</p>
+        <p class="help" style="margin:0">
+          Tu propuesta y tus documentos se cambian en «Mi exposición»: ahí los ves como los
+          enviaste y no tienes que volver a escribirlos.
+        </p>
+        <div><a class="btn btn--sm" href="<?= e(u('/exposicion')) ?>">Ir a «Mi exposición» ›</a></div>
+      </div>
+    </section>
+  <?php elseif ($f->visible('expositor')): ?>
   <section class="card">
     <div class="card__head">
       <span>Fase 03 · Perfil expositor</span>
@@ -595,7 +616,7 @@ guiones('foto.js', 'preregistro.js', 'claves.js', 'registro-incompleto.js');
           <p class="help" style="margin:0">
             <strong>Documentos de respaldo.</strong> Los dos son obligatorios para exponer: son
             con lo que la Secretaría evalúa la propuesta. Si no los tienes a mano ahora,
-            regístrate sin marcar «voy a exponer» y vuelve a este formulario cuando los tengas.
+            regístrate sin marcar «voy a exponer» y súbelos después en «Mi exposición».
           </p>
 
           <?php if ($reelegir): ?>

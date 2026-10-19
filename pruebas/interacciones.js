@@ -643,6 +643,18 @@ function titulo(t) {
     comprobar('que apunta a la dirección del staff, no a la del admin',
       (await buscador.getAttribute('action')).includes('/acreditar/buscar'));
 
+    // Carlos tiene además su propuesta aprobada: «Mi exposición» está en la
+    // hoja de su cuenta, y abre con el tema bloqueado y los documentos libres.
+    await ps.goto(BASE + '/exposicion', { waitUntil: 'networkidle' });
+    comprobar('su exposición abre en el celular, aprobada, con la presentación para cambiar',
+      (await ps.locator('h1', { hasText: 'Mi exposición' }).count()) === 1
+      && (await ps.locator('input[type=file][name="exposicion"]').count()) === 1
+      && await ps.locator('#tema').isDisabled());
+    comprobar('está en la hoja de su cuenta, que se marca al estar ahí',
+      (await ps.locator('#menu-movil a[href$="/exposicion"]').count()) === 1
+      && (await ps.locator('[data-abrir-hoja="menu-movil"].is-active').count()) === 1);
+    await ps.goto(BASE + '/acreditar', { waitUntil: 'networkidle' });
+
     const nav = await ps.locator('.tabbar, .sidebar').first().innerText();
     comprobar('su navegación trae lo suyo del evento',
       /acreditar/i.test(nav) && /carnets/i.test(nav), nav.replace(/\s+/g, ' ').slice(0, 90));

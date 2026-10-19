@@ -476,6 +476,12 @@ ejecutarse:
    columna con una lista fija de dos, no con el texto de la URL. Esa columna se interpola en
    el `SELECT`, y es lo único que hace que eso sea seguro: `pruebas/documentos.php` comprueba
    que ninguna otra palabra —`estado`, `detalle`, `titulo`— resuelva a nada.
+10. **«Mi exposición» (`/exposicion`) trabaja con la sesión, no con un número.** Exige sesión de
+    asistente con el registro completo, y no recibe ningún identificador de propuesta: lee y
+    cambia la de quien tiene la sesión abierta. No hay dirección que probar para tocar la de
+    otro. Pasa por las mismas comprobaciones de archivo que el formulario de registro
+    (`Publico::validarPropuesta()`, compartida), y con la propuesta aprobada ignora lo que llegue
+    para el tema, la categoría, el detalle, el día o la duración aunque se envíe a mano.
 
 Al eliminar un evento estos archivos se borran del disco igual que las fotos. Una hoja de
 vida trae teléfono, dirección y trayectoria laboral: no puede quedarse ahí cuando ya no hay

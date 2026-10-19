@@ -1161,22 +1161,23 @@ final class Correo
                 'Tu propuesta fue aprobada: ' . $titulo,
                 'Tu propuesta fue aprobada',
                 'El comité aprobó tu exposición y ya está publicada en la agenda del evento. Tu carnet '
-                    . 'sale con el rótulo de expositor.',
+                    . 'sale con el rótulo de expositor. Si quieres cambiar tu presentación por la versión '
+                    . 'final, súbela cuando la tengas en «Mi exposición».',
                 'Ver la agenda',
             ],
             'observada' => [
                 'Tu propuesta tiene observaciones: ' . $titulo,
                 'Tu propuesta necesita ajustes',
-                'El comité revisó tu exposición y te pide algunos ajustes antes de decidir. Entra a tu '
-                    . 'registro, corrige lo que te piden y vuelve a enviarla marcando «Voy a exponer».',
-                'Ir a mi registro',
+                'El comité revisó tu exposición y te pide algunos ajustes antes de decidir. Entra a «Mi '
+                    . 'exposición», corrige lo que te piden y guarda: tu propuesta vuelve a revisión.',
+                'Ir a mi exposición',
             ],
             default => [
                 'Sobre tu propuesta: ' . $titulo,
                 'Tu propuesta no fue seleccionada',
                 'Gracias por proponer una exposición. Esta vez el comité no la incluyó en la agenda. Tu '
                     . 'registro como participante sigue activo, y tu carnet también.',
-                'Ir a mi registro',
+                'Ver mi propuesta',
             ],
         };
 

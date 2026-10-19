@@ -24,7 +24,7 @@ registra gente, se sella asistencia, se aprueban exposiciones y se exportan repo
 | **Instalación** | Asistente de seis pasos que crea, actualiza o anexa las tablas. Al subir una versión nueva, la base se pone al día sola en la primera visita |
 | **Autenticación** | Cinco formas de entrar: correo, QR personal, contraseña, WhatsApp y SMS. Se puede crear el acceso con solo correo y contraseña. El equipo, con contraseña y segundo factor |
 | **Códigos QR** | Generador **y lector** propios, verificados uno contra otro y contra una librería de referencia |
-| **Pruebas** | 665 comprobaciones de extremo a extremo, 160 de actualización desde la 1.0.0, 125 en navegador, y 641 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy y formulario de registro |
+| **Pruebas** | 688 comprobaciones de extremo a extremo, 160 de actualización desde la 1.0.0, 127 en navegador, y 641 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy y formulario de registro |
 
 ---
 
@@ -114,7 +114,9 @@ Hay tres puertas, y las tres llevan al mismo sitio:
 1. **Registro** — nombre y documento; el resto es opcional. Si va a exponer, adjunta su
    propuesta en el mismo formulario, con su hoja de vida en PDF y su exposición en PDF o PPTX,
    que son obligatorias para exponer. Cuando el comité decide, le llega un correo con la
-   decisión, los cambios que se le hicieron a la propuesta y las observaciones.
+   decisión, los cambios que se le hicieron a la propuesta y las observaciones. Después, en
+   **Mi exposición** (`/exposicion`), la envía si se registró sin ella, la corrige y cambia sus
+   documentos sin volver a escribirla.
 2. **Carnet** — se emite al instante y llega por correo. No hace falta imprimirlo.
 3. **Cada mañana** — apunta la cámara al pliego de la entrada. El código abre la plataforma,
    sella la hora y muestra su historial.
@@ -356,14 +358,14 @@ el enrutado, las cookies, los testigos y los guardias, que es donde suelen estar
 Incluye 19 comprobaciones en el bloque específico de seguridad y otras tantas repartidas por
 los guardias de cada pantalla.
 
-Estado actual: **665 de 665** de extremo a extremo, **77** del asistente de instalación,
+Estado actual: **688 de 688** de extremo a extremo, **77** del asistente de instalación,
 **160** de actualización de una instalación en producción por siete caminos, **46** del
 segundo factor —los vectores del RFC 6238 y el reloj del servidor corrido—, **64** de la
 configuración de los formularios de registro, **22** del hash de contraseñas,
 **19** del correo saliente, **19** de la dirección del visitante detrás del proxy, **21** de la
 fotografía del carnet, **61** de los adjuntos del expositor, **17** del saneado de logos SVG,
 **198** casos de QR idénticos entre PHP y JavaScript, **161** entre JavaScript y la referencia,
-**13** del lector de QR, **125** de interacción en navegador, y las 19 pantallas limpias en
+**13** del lector de QR, **127** de interacción en navegador, y las 19 pantallas limpias en
 escritorio, tableta y móvil.
 
 Las pruebas nacieron de errores reales, y por eso cubren lo que cubren: una instalación que se

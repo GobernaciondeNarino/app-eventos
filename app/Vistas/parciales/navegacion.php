@@ -64,6 +64,12 @@ if ($persona !== null) {
         ['clave' => 'agenda', 'etiqueta' => 'Agenda', 'icono' => 'cal', 'ruta' => '/agenda'],
         ['clave' => 'registro', 'etiqueta' => 'Mis datos', 'icono' => 'form', 'ruta' => '/registro'],
     ];
+    // Quien expone tiene además su propuesta: enviarla si se registró sin
+    // ella, corregirla y cambiar sus documentos. Va al final para no mover la
+    // barra de abajo del celular, que muestra las cuatro primeras.
+    if (\App\Modelos\Persona::esExpositor($persona)) {
+        $grupoParticipante[] = ['clave' => 'exposicion', 'etiqueta' => 'Mi exposición', 'icono' => 'mic', 'ruta' => '/exposicion'];
+    }
 }
 
 // --- Staff ----------------------------------------------------------------

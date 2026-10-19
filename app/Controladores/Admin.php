@@ -709,12 +709,24 @@ final class Admin
         $sinPropuesta = Persona::expositoresSinPropuesta((int) $evento['id'], $porEnlace);
         $conteos['sin-propuesta'] = count($sinPropuesta);
 
+        // Cuándo cambió cada propuesta su expositor por última vez, desde «Mi
+        // exposición»: si fue después de revisarla, hay algo nuevo que mirar.
+        $actualizadas = [];
+        foreach (Bd::filas(
+            "SELECT entidad_id, MAX(creado_en) AS en FROM {bitacora}
+              WHERE accion = 'propuesta_actualizada' AND entidad = 'propuesta'
+           GROUP BY entidad_id"
+        ) as $fila) {
+            $actualizadas[(int) $fila['entidad_id']] = (string) $fila['en'];
+        }
+
         Respuesta::vista('admin/expositores', [
             'titulo'     => 'Expositores',
             'pantalla'   => 'admin-expositores',
             'propuestas' => $propuestas,
             'sinPropuesta' => $sinPropuesta,
             'porEnlace'  => $porEnlace,
+            'actualizadas' => $actualizadas,
             'conteos'    => $conteos,
             'estado'     => $estado,
             'jornadas'   => Evento::jornadas((int) $evento['id']),
@@ -857,11 +869,10 @@ final class Admin
                 $observacion,
                 $cambios,
                 $agenda,
-                \App\Nucleo\Url::absoluta(match ($decision) {
-                    'aprobada'  => '/agenda',
-                    'observada' => $this->dondeCorregir((int) $evento['id'], $formulario),
-                    default     => '/registro',
-                })
+                // Aprobada, a la agenda. Devuelta o no seleccionada, a «Mi
+                // exposición»: ahí ve lo que dijo el comité y, si la corrige, la
+                // vuelve a enviar con sus documentos, sin escribirla de nuevo.
+                \App\Nucleo\Url::absoluta($decision === 'aprobada' ? '/agenda' : '/exposicion')
             );
             if (!$avisado) {
                 \App\Nucleo\Registro::error('No se pudo avisar al expositor de la decisión', [
@@ -924,24 +935,6 @@ final class Admin
         }
 
         return [$columnas, $cambios];
-    }
-
-    /**
-     * A dónde se vuelve a enviar una propuesta devuelta: al formulario que hoy
-     * recibe propuestas. Si el público ya no tiene la sección «Voy a exponer»,
-     * es el de expositores, por su enlace; mandarlo al público sería mandarlo
-     * a un formulario donde ya no puede hacerlo.
-     */
-    private function dondeCorregir(int $eventoId, \App\Modelos\Formulario $formulario): string
-    {
-        if ($formulario->tipo() === \App\Modelos\Formulario::EXPOSITORES) {
-            try {
-                return '/registro/expositores/' . \App\Modelos\Formulario::tokenExpositores($eventoId);
-            } catch (\Throwable) {
-                // La base todavía sin la tabla del enlace: el público.
-            }
-        }
-        return '/registro';
     }
 
     /* =====================================================================

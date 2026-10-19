@@ -12,6 +12,7 @@ use App\Modelos\Persona;
 use App\Nucleo\App;
 use App\Nucleo\Autenticacion;
 use App\Nucleo\Bd;
+use App\Nucleo\Bitacora;
 use App\Nucleo\Correo;
 use App\Nucleo\Documento;
 use App\Nucleo\Guardia;
@@ -88,6 +89,147 @@ final class Publico
                 'Este enlace no es válido o ya no está vigente. Pídele uno nuevo a la organización del evento.');
         }
         $this->formularioDeRegistro($peticion, Formulario::EXPOSITORES, '/registro/expositores/' . $token);
+    }
+
+    /**
+     * «Mi exposición»: la propuesta de quien expone, aparte de sus datos
+     * personales.
+     *
+     * Aquí la completa quien se registró sin ella —no tenía a mano la hoja de
+     * vida—, la corrige quien recibió observaciones, cambia sus documentos
+     * cuando quiera y ve qué decidió el comité. En «Mis datos» no se podía: la
+     * propuesta no se precarga —volver a mandarla la devuelve a revisión—, y
+     * cambiar un solo archivo obligaba a escribirla entera otra vez.
+     *
+     * Según su estado:
+     *   sin propuesta          la envía, con sus dos documentos;
+     *   pendiente              la cambia, y sigue en revisión;
+     *   observada o rechazada  al guardarla vuelve a revisión, como siempre;
+     *   aprobada               ya está en la agenda: el tema, la categoría, el
+     *                          detalle, el día y la duración los mueve el comité.
+     *                          Los documentos y los requerimientos, el expositor.
+     */
+    public function exposicion(Peticion $peticion): void
+    {
+        $evento = App::eventoExigido();
+        $eventoId = (int) $evento['id'];
+        $yo = Guardia::personaActual();   // el guardia ya exigió sesión y registro completo
+        $personaId = (int) $yo['id'];
+
+        $propuesta = Persona::suPropuesta($personaId);
+        $suya = $this->documentosDe($yo);
+        $aprobada = ($propuesta['estado'] ?? '') === 'aprobada';
+
+        // Con la configuración del formulario por el que llegó: el de
+        // expositores, para quien entró por el enlace privado.
+        $porEnlace = isset(Formulario::llegadosPorEnlace($eventoId)[$personaId]);
+        $f = Formulario::delEvento($eventoId, $porEnlace ? Formulario::EXPOSITORES : Formulario::PUBLICO);
+
+        // Una propuesta nueva, solo si ese formulario las recibe. La que ya
+        // existe se puede corregir siempre.
+        $puedeProponer = $propuesta !== null || $f->visible('expositor');
+
+        $jornadas = Evento::jornadas($eventoId);
+        $actual = $suya['propuesta'];
+        $valores = $actual + [
+            'tema' => '', 'categoria' => '', 'detalle' => '', 'requerimientos' => '',
+            'dia_preferido' => (int) ($jornadas[0]['numero'] ?? 1),
+            'duracion' => in_array(40, $f->duraciones(), true) ? 40 : (int) ($f->duraciones()[0] ?? 40),
+        ];
+        $errores = [];
+        $archivos = [];
+
+        if ($peticion->esPost() && $puedeProponer) {
+            $enviado = [
+                'expositor'      => true,
+                'tema'           => $peticion->campo('tema'),
+                'categoria'      => $peticion->campo('categoria'),
+                'detalle'        => $peticion->campo('detalle'),
+                'dia_preferido'  => $f->visible('dia_preferido')
+                    ? $peticion->entero('dia_preferido', (int) $valores['dia_preferido']) : (int) $valores['dia_preferido'],
+                'duracion'       => $f->visible('duracion')
+                    ? $peticion->entero('duracion', (int) $valores['duracion']) : (int) $valores['duracion'],
+                'requerimientos' => $f->visible('requerimientos')
+                    ? $peticion->campo('requerimientos') : (string) $valores['requerimientos'],
+            ];
+            // Aprobada, lo que está publicado en la agenda no se toca desde aquí
+            // aunque llegue en el envío.
+            if ($aprobada) {
+                foreach (['tema', 'categoria', 'detalle', 'dia_preferido', 'duracion'] as $clave) {
+                    $enviado[$clave] = $actual[$clave];
+                }
+            }
+            $valores = $enviado;
+            $errores = $this->validarPropuesta($enviado, $peticion, $suya['documentos'], $f, $actual, false);
+
+            $archivos = array_values(array_filter(
+                array_keys(Documento::CLASES),
+                static fn(string $clase): bool => $peticion->archivo($clase) !== null
+            ));
+            $datosCambiaron = $propuesta === null;
+            foreach (['tema', 'categoria', 'detalle', 'dia_preferido', 'duracion', 'requerimientos'] as $clave) {
+                $datosCambiaron = $datosCambiaron
+                    || trim((string) $enviado[$clave]) !== trim((string) ($actual[$clave] ?? ''));
+            }
+
+            if (!$errores && !$datosCambiaron && $archivos === []) {
+                Respuesta::redirigir('/exposicion', 'No había nada que cambiar.');
+            }
+
+            if (!$errores) {
+                try {
+                    if ($aprobada) {
+                        $propuestaId = (int) $propuesta['id'];
+                        if ($datosCambiaron) {
+                            // De lo de texto, lo único que puede cambiar ya aprobada.
+                            Bd::actualizar('propuesta', ['requerimientos' => mb_substr($enviado['requerimientos'], 0, 255)],
+                                'id = :id', ['id' => $propuestaId]);
+                        }
+                    } else {
+                        // Nueva, o de vuelta a revisión con lo que cambió.
+                        $propuestaId = (int) $this->guardarPropuesta($personaId, $enviado, $peticion);
+                    }
+                    $avisos = $this->guardarDocumentos($propuestaId, $peticion);
+                } catch (\Throwable $e) {
+                    Registro::excepcion($e);
+                    $errores['general'] = 'No se pudo guardar. Inténtalo de nuevo en un momento.';
+                }
+
+                if (!$errores) {
+                    Bitacora::registrar($propuesta === null ? 'propuesta_enviada' : 'propuesta_actualizada', 'propuesta', $propuestaId, [
+                        'datos'    => $datosCambiaron,
+                        'archivos' => count($archivos),   // «documentos» lo taparía Bitacora::limpiar()
+                        'antes'    => (string) ($propuesta['estado'] ?? ''),
+                    ]);
+                    $mensaje = match (true) {
+                        $propuesta === null => 'Recibimos tu propuesta. El comité la revisa y te avisa por correo.',
+                        $aprobada           => 'Guardado. Tu exposición sigue en la agenda como está.',
+                        in_array($propuesta['estado'], ['observada', 'rechazada'], true)
+                            => 'Guardado. Tu propuesta volvió a revisión: el comité te avisa por correo.',
+                        default             => 'Guardado. Tu propuesta sigue en revisión.',
+                    };
+                    Respuesta::redirigir('/exposicion', $avisos ? $mensaje . ' ' . implode(' ', $avisos) : $mensaje,
+                        $avisos ? 'warn' : 'ok');
+                }
+            }
+        }
+
+        Respuesta::vista('publico/exposicion', [
+            'titulo'        => 'Mi exposición',
+            'pantalla'      => 'exposicion',
+            'propuesta'     => $propuesta,
+            'puedeProponer' => $puedeProponer,
+            'aprobada'      => $aprobada,
+            'valores'       => $valores,
+            'errores'       => $errores,
+            'formulario'    => $f,
+            'categorias'    => $f->texto('categoria', (string) ($actual['categoria'] ?? '')),
+            'duraciones'    => $f->duraciones((int) ($actual['duracion'] ?? 0)),
+            'jornadas'      => $jornadas,
+            'documentos'    => $suya['documentos'],
+            // El navegador vacía los campos de archivo al repintar con un error.
+            'reelegir'      => $errores !== [] && $archivos !== [],
+        ]);
     }
 
     /**
@@ -253,6 +395,7 @@ final class Publico
             'accion'        => $ruta,
             'deExpositores' => $deExpositores,
             'tienePropuesta' => $suPropuesta['propuesta'] !== [],
+            'estadoPropuesta' => $suPropuesta['estado'],
             'valores'       => $valores,
             'errores'       => $errores,
             'formulario'    => $formulario,
@@ -542,53 +685,7 @@ final class Publico
         }
 
         if ($v['expositor']) {
-            if (mb_strlen(trim($v['tema'])) < 5) {
-                $errores['tema'] = 'Describe el tema de tu exposición.';
-            }
-            if (!in_array($v['categoria'], $f->texto('categoria', $deAntes('categoria')), true)) {
-                $errores['categoria'] = 'Elige una categoría de la lista.';
-            }
-            if (mb_strlen(trim($v['detalle'])) < 30) {
-                $errores['detalle'] = 'Amplía el detalle: al menos 30 caracteres.';
-            }
-            if (mb_strlen($v['detalle']) > 600) {
-                $errores['detalle'] = 'El detalle no puede pasar de 600 caracteres.';
-            }
-            if ($f->visible('duracion')
-                && !in_array((int) $v['duracion'], $f->duraciones((int) ($actual['duracion'] ?? 0)), true)) {
-                $errores['duracion'] = 'Elige una duración de la lista.';
-            }
-            if ($f->obligatorio('requerimientos') && trim($v['requerimientos']) === '') {
-                $errores['requerimientos'] = 'Cuéntanos qué necesitas para exponer.';
-            }
-
-            // Los dos adjuntos son obligatorios para quien va a exponer. El
-            // comité decide con ellos, y una propuesta sin hoja de vida se
-            // queda esperando a que alguien la persiga por correo.
-            //
-            // A quien ya los tiene no se le vuelven a pedir: un expositor que
-            // entra a corregir una coma del detalle no debería necesitar el PDF
-            // otra vez. Y el archivo se comprueba aquí, no al guardar, porque
-            // un campo obligatorio tiene que fallar con los demás campos del
-            // formulario y no después, con los datos ya grabados.
-            foreach (Documento::CLASES as $clase => $regla) {
-                $archivo = $peticion->archivo($clase);
-
-                if ($archivo === null) {
-                    if (!isset($yaSubidos[$clase])) {
-                        $errores[$clase] = 'Adjunta tu ' . mb_strtolower($regla['etiqueta'])
-                            . ' en ' . Documento::formatosLegibles($clase)
-                            . '. Si todavía no la tienes a mano, regístrate sin marcar «voy a '
-                            . 'exponer» y vuelve a este formulario cuando la tengas.';
-                    }
-                    continue;
-                }
-
-                $fallo = Documento::revisar($archivo, $clase);
-                if ($fallo !== null) {
-                    $errores[$clase] = $fallo;
-                }
-            }
+            $errores += $this->validarPropuesta($v, $peticion, $yaSubidos, $f, $actual, true);
         }
 
         // Contraseña simple. Solo se valida si el método está encendido y la
@@ -616,6 +713,81 @@ final class Publico
 
         if (!$identificado && !$peticion->marcado('habeas')) {
             $errores['habeas'] = 'Debes autorizar el tratamiento de datos para continuar.';
+        }
+
+        return $errores;
+    }
+
+    /**
+     * La propuesta: los datos de la exposición y los dos adjuntos.
+     *
+     * La usan el formulario de registro y «Mi exposición», para que una
+     * propuesta valga lo mismo llegue por donde llegue.
+     *
+     * @param array<string, mixed> $yaSubidos los adjuntos que ya tiene
+     * @param bool $enElRegistro en el registro, a quien le falta un archivo se le
+     *                           dice cómo salir del paso sin perder lo escrito
+     * @return array<string, string>
+     */
+    private function validarPropuesta(
+        array $v,
+        Peticion $peticion,
+        array $yaSubidos,
+        Formulario $f,
+        array $actual,
+        bool $enElRegistro
+    ): array {
+        $errores = [];
+        $deAntes = static fn(string $clave): string => (string) ($actual[$clave] ?? '');
+
+        if (mb_strlen(trim($v['tema'])) < 5) {
+            $errores['tema'] = 'Describe el tema de tu exposición.';
+        }
+        if (!in_array($v['categoria'], $f->texto('categoria', $deAntes('categoria')), true)) {
+            $errores['categoria'] = 'Elige una categoría de la lista.';
+        }
+        if (mb_strlen(trim($v['detalle'])) < 30) {
+            $errores['detalle'] = 'Amplía el detalle: al menos 30 caracteres.';
+        }
+        if (mb_strlen($v['detalle']) > 600) {
+            $errores['detalle'] = 'El detalle no puede pasar de 600 caracteres.';
+        }
+        if ($f->visible('duracion')
+            && !in_array((int) $v['duracion'], $f->duraciones((int) ($actual['duracion'] ?? 0)), true)) {
+            $errores['duracion'] = 'Elige una duración de la lista.';
+        }
+        if ($f->obligatorio('requerimientos') && trim($v['requerimientos']) === '') {
+            $errores['requerimientos'] = 'Cuéntanos qué necesitas para exponer.';
+        }
+
+        // Los dos adjuntos son obligatorios para quien va a exponer. El comité
+        // decide con ellos, y una propuesta sin hoja de vida se queda
+        // esperando a que alguien la persiga por correo.
+        //
+        // A quien ya los tiene no se le vuelven a pedir: un expositor que entra
+        // a corregir una coma del detalle no debería necesitar el PDF otra vez.
+        // Y el archivo se comprueba aquí, no al guardar, porque un campo
+        // obligatorio tiene que fallar con los demás campos del formulario y no
+        // después, con los datos ya grabados.
+        foreach (Documento::CLASES as $clase => $regla) {
+            $archivo = $peticion->archivo($clase);
+
+            if ($archivo === null) {
+                if (!isset($yaSubidos[$clase])) {
+                    $errores[$clase] = 'Adjunta tu ' . mb_strtolower($regla['etiqueta'])
+                        . ' en ' . Documento::formatosLegibles($clase) . '.'
+                        . ($enElRegistro
+                            ? ' Si todavía no la tienes a mano, regístrate sin marcar «voy a exponer» y '
+                              . 'súbela después en «Mi exposición».'
+                            : '');
+                }
+                continue;
+            }
+
+            $fallo = Documento::revisar($archivo, $clase);
+            if ($fallo !== null) {
+                $errores[$clase] = $fallo;
+            }
         }
 
         return $errores;
@@ -723,11 +895,11 @@ final class Publico
      * Sin esto, un expositor que entra a corregir una coma del detalle vería
      * los dos campos vacíos y creería que sus archivos se perdieron.
      *
-     * @return array{documentos: array<string, array{archivo:string, peso:string, url:string}>, aprobada: bool}
+     * @return array{documentos: array<string, array{archivo:string, peso:string, url:string}>, aprobada: bool, estado: string, propuesta: array}
      */
     private function documentosDe(?array $persona): array
     {
-        $vacio = ['documentos' => [], 'aprobada' => false, 'propuesta' => []];
+        $vacio = ['documentos' => [], 'aprobada' => false, 'estado' => '', 'propuesta' => []];
         if ($persona === null) {
             return $vacio;
         }
@@ -758,6 +930,7 @@ final class Publico
         return [
             'documentos' => $subidos,
             'aprobada'   => $fila['estado'] === 'aprobada',
+            'estado'     => (string) $fila['estado'],
             // La propuesta, en los nombres del formulario: así quien vuelve ve
             // lo que mandó, y lo que el evento ya no pide se conserva.
             'propuesta'  => [

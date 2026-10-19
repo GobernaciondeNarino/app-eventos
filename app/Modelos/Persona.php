@@ -72,6 +72,39 @@ final class Persona
     }
 
     /**
+     * ¿Expone? Por su perfil, o porque ya mandó una propuesta aunque después
+     * le cambiaran el perfil. Para la navegación y el carnet.
+     */
+    public static function esExpositor(?array $persona): bool
+    {
+        if ($persona === null) {
+            return false;
+        }
+        if ((string) ($persona['rol'] ?? '') === 'expositor') {
+            return true;
+        }
+        return (int) Bd::valor('SELECT COUNT(*) FROM {propuesta} WHERE persona_id = ?', [(int) $persona['id']]) > 0;
+    }
+
+    /**
+     * La propuesta de una persona —la última, si mandó más de una—, con el
+     * día, la hora y el salón que le asignó el comité si ya está aprobada.
+     */
+    public static function suPropuesta(int $personaId): ?array
+    {
+        return Bd::fila(
+            'SELECT pr.*, c.hora_inicio, c.salon, d.numero AS dia_asignado, d.fecha AS fecha_asignada
+               FROM {propuesta} pr
+          LEFT JOIN {charla} c ON c.propuesta_id = pr.id
+          LEFT JOIN {evento_dia} d ON d.id = c.evento_dia_id
+              WHERE pr.persona_id = ?
+           ORDER BY pr.id DESC
+              LIMIT 1',
+            [$personaId]
+        );
+    }
+
+    /**
      * El perfil que de verdad se guarda desde el formulario público.
      *
      * Dos reglas, y la segunda es la que no se ve venir:

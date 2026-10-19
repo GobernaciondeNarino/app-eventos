@@ -5,6 +5,7 @@
  * @var array $propuestas @var array $conteos @var string $estado @var array $jornadas
  * @var bool $puedeVerDocumento @var int $eventoId @var bool $correoListo
  * @var array $sinPropuesta @var array<int, true> $porEnlace  quiénes llegaron por el enlace privado
+ * @var array<int, string> $actualizadas  cuándo cambió cada propuesta su expositor, por id
  */
 defined('EVENTOS_TIC') || exit;
 
@@ -112,6 +113,15 @@ $soloSinPropuesta = $estado === 'sin-propuesta';
                   </span>
                 <?php endforeach; ?>
               </span>
+              <?php
+              // El expositor la cambió desde «Mi exposición» después de la
+              // última revisión del comité: hay algo nuevo que mirar. En el
+              // mismo segundo no se sabe qué fue primero, y se avisa: mejor
+              // de más que callar un cambio.
+              $cuando = $actualizadas[(int) $p['id']] ?? null;
+              if ($cuando !== null && ($p['revisada_en'] === null || $cuando >= (string) $p['revisada_en'])): ?>
+                <span><span class="tag tag--warn" style="font-size:10px">Actualizada por el expositor · <?= e(fecha($cuando)) ?></span></span>
+              <?php endif; ?>
             </div>
             <div class="stack" style="gap:2px;min-width:0">
               <span style="color:var(--c-title)"><?= e($p['expositor']) ?></span>
@@ -157,7 +167,7 @@ $soloSinPropuesta = $estado === 'sin-propuesta';
       <p class="help" style="margin:0;padding:12px var(--sp-4) 0">
         Tienen el perfil Expositor o llegaron por el enlace privado, pero no han enviado su
         propuesta: casi siempre porque no tenían a mano la hoja de vida o la presentación. La pueden
-        enviar cuando quieran por el mismo enlace, entrando con su correo.
+        enviar cuando quieran desde «Mi exposición», entrando con su correo.
       </p>
       <div class="table__scroll">
         <div class="table__grid" style="min-width:760px">

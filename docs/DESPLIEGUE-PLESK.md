@@ -409,6 +409,11 @@ restauró no es una copia.
    `app/Modelos/Persona.php`, `app/Vistas/admin/expositores.php` e `index.php`. Solo lee lo que
    ya está en la base: no cambia ningún registro.
 
+   La 3.11 tampoco toca la base de datos ni `config/`. Agrega **Mi exposición**
+   (`/exposicion`): ya registrado, el expositor envía su propuesta si llegó sin ella, la corrige
+   y cambia sus documentos sin volver a escribirla. Las propuestas y los archivos que ya están
+   no cambian; el correo de una propuesta devuelta lleva ahora a esa pantalla. Ver 7.3.
+
    Si el usuario de la base de datos no tiene permiso de `ALTER` —pasa en algunos
    alojamientos—, la actualización automática no puede hacerse: lo anota en el registro,
    vuelve a intentarlo cada cinco minutos y la plataforma sigue funcionando. Para hacerlo a
@@ -512,6 +517,34 @@ de *Configuración → Identidad* como todo lo demás.
 
 **Volver atrás:** sube otra vez los archivos que descargaste en el paso 1. No hay nada que
 deshacer en la base de datos.
+
+### 7.3 La 3.11: «Mi exposición», sin tocar registros ni configuración
+
+**Qué no cambia.** La base de datos —el esquema sigue en la 1.10.0—, `config/`, `almacen/`, las
+propuestas que ya llegaron, sus documentos y las decisiones del comité. Lo que se agrega es una
+pantalla y los caminos hacia ella.
+
+**Qué archivos cambian:**
+
+| Archivo | Para qué |
+|---|---|
+| `app/rutas.php` | La dirección `/exposicion`, con sesión de asistente |
+| `app/Controladores/Publico.php` | La pantalla, y la validación de la propuesta compartida con el registro |
+| `app/Vistas/publico/exposicion.php` | **Nuevo.** La pantalla |
+| `app/Vistas/publico/registro.php` | En «Mis datos», la propuesta ya enviada sale resumida, con el camino |
+| `app/Controladores/Carnet.php`, `app/Vistas/publico/carnet.php` | El aviso en el carnet de quien expone |
+| `app/Vistas/parciales/navegacion.php` | «Mi exposición» en el menú de quien expone |
+| `app/Modelos/Persona.php` | Si alguien expone, y su propuesta con el horario |
+| `app/Controladores/Admin.php`, `app/Vistas/admin/expositores.php` | La marca «Actualizada por el expositor» y el enlace del correo |
+| `app/Nucleo/Correo.php`, `app/Nucleo/Bitacora.php` | Los textos del correo y de la bitácora |
+| `assets/css/components.css` | El detalle bloqueado se ve atenuado, como los demás campos |
+| `index.php` | El número de versión |
+
+**Cómo subirla:** igual que la 3.10 (7.2): copia de seguridad y descarga de los archivos que vas a
+reemplazar, subida —o la versión completa **sin tocar `config/` ni `almacen/`**—, y comprobación.
+Para comprobarla, entra como un expositor —con su QR de acceso o su correo— y abre «Mi
+exposición» desde el aviso del carnet. Para volver atrás, sube los archivos que descargaste y
+borra `app/Vistas/publico/exposicion.php`.
 
 ---
 

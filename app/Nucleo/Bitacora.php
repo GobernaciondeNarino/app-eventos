@@ -119,6 +119,10 @@ final class Bitacora
             // leyendo con palabras y no con identificadores.
             'preregistro'        => 'Nuevo registro',
             'propuesta_decidida' => "$quien resolvió una propuesta de exposición" . (!empty($detalle['avisado']) ? ' y se le avisó por correo' : ''),
+            'propuesta_enviada'  => 'Un expositor envió su propuesta desde «Mi exposición»',
+            'propuesta_actualizada' => 'Un expositor actualizó su propuesta'
+                . (!empty($detalle['archivos']) ? (empty($detalle['datos']) ? ': cambió sus documentos' : ' y sus documentos') : '')
+                . (in_array($detalle['antes'] ?? '', ['observada', 'rechazada'], true) ? '; volvió a revisión' : ''),
             'formulario_guardado' => "$quien cambió el formulario de registro"
                 . (($detalle['formulario'] ?? '') === 'expositores' ? ' de expositores' : ''),
             'formulario_restablecido' => "$quien devolvió el formulario de registro"

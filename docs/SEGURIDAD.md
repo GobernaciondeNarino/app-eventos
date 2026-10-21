@@ -253,8 +253,16 @@ No existe un método que reciba SQL ya interpolado con datos. `PDO::ATTR_EMULATE
 está en `false`: las sentencias se preparan en el servidor, no del lado del cliente, que es
 donde aparecen las inyecciones por juegos de caracteres.
 
-Lo único que se interpola son nombres de columna para ordenar, y salen de listas fijas del
-código.
+Lo único que se interpola es el orden de los listados, y sale de listas fijas del código.
+Desde la 3.13 cada título de columna ordena la tabla, y de la dirección solo llega una clave
+—`?orden=entidad&dir=desc`— que `App\Nucleo\Orden` busca en la lista de columnas que declara
+cada pantalla; una clave que no está ahí se ignora y queda el orden de siempre. La expresión
+SQL sale siempre de esa lista, y el sentido solo puede ser `asc` o `desc`. La página y el
+tamaño (`?pagina=`, `?por=`) se convierten a entero y el tamaño solo puede ser 25, 50 o 100.
+
+El documento de identidad no está entre las columnas que ordenan: va cifrado, y ordenar por
+él obligaría a descifrar a todo el evento en cada página, que es justo lo que el cifrado
+evita.
 
 ### Salida (XSS)
 
@@ -534,6 +542,10 @@ equipo de un funcionario.
 
 La exportación con caracterización exige rol administrador —comprobado en el servidor, no
 solo escondiendo el botón— y queda en la bitácora.
+
+Exporta todo lo que deja el filtro, en el orden de la tabla, no solo la página que se ve.
+Hasta la 3.12 se cortaba en quinientas filas sin avisar, y quien exportaba un evento más
+grande se llevaba un reporte incompleto creyendo que estaba entero.
 
 ### El perfil Staff: el único que da permisos
 

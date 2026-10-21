@@ -23,6 +23,8 @@ use App\Nucleo\Guardia;
 use App\Nucleo\Peticion;
 use App\Nucleo\Qr;
 use App\Nucleo\Limite;
+use App\Nucleo\Orden;
+use App\Nucleo\Paginacion;
 use App\Nucleo\Respuesta;
 use App\Nucleo\Sesion;
 use App\Nucleo\Tema;
@@ -104,9 +106,9 @@ final class Admin
                         'ruta' => '/admin/expositores', 'tipo' => 'warn'];
         }
 
-        $sinPropuesta = count(Persona::expositoresSinPropuesta(
+        $sinPropuesta = Persona::contarExpositoresSinPropuesta(
             $eventoId, \App\Modelos\Formulario::llegadosPorEnlace($eventoId)
-        ));
+        );
         if ($sinPropuesta > 0) {
             $lista[] = ['texto' => $sinPropuesta . ($sinPropuesta === 1
                             ? ' expositor registrado todavía sin propuesta'
@@ -148,21 +150,41 @@ final class Admin
     public function registros(Peticion $peticion): void
     {
         $evento = App::eventoExigido();
+        $eventoId = (int) $evento['id'];
         $filtros = [
             'texto' => $peticion->query('q'),
             'rol'   => $peticion->query('rol'),
             'dia'   => $peticion->entero('dia'),
         ];
+        $jornadas = Evento::jornadas($eventoId);
 
-        $personas = Persona::buscar((int) $evento['id'], $filtros);
+        // Las cifras de arriba y las páginas salen de todo el filtro; de la
+        // base solo se trae la página que se ve.
+        $resumen = Persona::resumen($eventoId, $filtros, count($jornadas));
+        $paginacion = Paginacion::desde($peticion, $resumen['en_filtro']);
+        $orden = Persona::ordenElegido($peticion, $eventoId);
+        $personas = Persona::buscar($eventoId, $filtros + [
+            'limite' => $paginacion->porPagina,
+            'desde'  => $paginacion->desplazamiento(),
+        ], $orden);
 
         Respuesta::vista('admin/registros', [
             'titulo'   => 'Registros',
             'pantalla' => 'admin-registros',
             'personas' => $personas,
-            'jornadas' => Evento::jornadas((int) $evento['id']),
+            'jornadas' => $jornadas,
             'filtros'  => $filtros,
-            'total'    => (int) Bd::valor('SELECT COUNT(*) FROM {persona} WHERE evento_id = ?', [(int) $evento['id']]),
+            'resumen'  => $resumen,
+            'paginacion' => $paginacion,
+            'orden'    => $orden,
+            // Lo que conservan los enlaces de las páginas, de las columnas y
+            // de la exportación: con los nombres que usa el formulario.
+            'consulta' => array_filter([
+                'q'   => $filtros['texto'],
+                'rol' => $filtros['rol'],
+                'dia' => $filtros['dia'] ?: '',
+            ]),
+            'total'    => (int) Bd::valor('SELECT COUNT(*) FROM {persona} WHERE evento_id = ?', [$eventoId]),
             'puedeVerSensibles' => Guardia::puede('administrador'),
             // El rol consulta está pensado para ver indicadores, no para leer
             // la cédula de cada asistente. El operador sí la necesita: es lo
@@ -450,13 +472,16 @@ final class Admin
         // $filtros, así que llega «texto» y no «q». Leyendo solo «q», el CSV
         // salía con todos los registros aunque en pantalla se viera un filtro
         // aplicado: quien exportaba se llevaba mucho más de lo que creía.
+        //
+        // Sale todo lo que deja el filtro, en el orden que se ve en pantalla.
+        // Hasta la 3.12 se cortaba en quinientas filas sin avisar.
         $filtros = [
             'texto'  => $peticion->query('texto') ?: $peticion->query('q'),
             'rol'    => $peticion->query('rol'),
             'dia'    => $peticion->entero('dia'),
-            'limite' => 500,
         ];
-        $personas = Persona::buscar((int) $evento['id'], $filtros);
+        $personas = Persona::buscar((int) $evento['id'], $filtros,
+            Persona::ordenElegido($peticion, (int) $evento['id']));
         $jornadas = Evento::jornadas((int) $evento['id']);
         $puedeVerDocumento = Guardia::puede('operador');
 
@@ -733,6 +758,24 @@ final class Admin
             $parametros['estado'] = $estado;
         }
 
+        // Se ordena desde el título de cada columna y va por páginas: cada
+        // propuesta trae su diálogo de revisión, y con cien en una sola
+        // página la pantalla se volvía pesada de abrir.
+        $orden = Orden::desde($peticion, [
+            'propuesta' => ['pr.titulo'],
+            'expositor' => ['p.nombre', "TRIM(p.nombre) = ''"],
+            'categoria' => ['pr.categoria', "pr.categoria = ''"],
+            // Las que ya tienen día, por día y hora; las demás al final, por el
+            // día que pidieron.
+            'jornada'   => [['dc.numero', 'c.hora_inicio', 'pr.dia_preferido'], 'dc.numero IS NULL'],
+            'estado'    => ["FIELD(pr.estado, 'pendiente', 'observada', 'aprobada', 'rechazada')"],
+        ], 'estado', 'asc', 'pr.creado_en DESC, pr.id DESC');
+        $paginacion = Paginacion::desde($peticion, $soloSinPropuesta ? 0 : (int) Bd::valor(
+            'SELECT COUNT(*) FROM {propuesta} pr JOIN {persona} p ON p.id = pr.persona_id
+              WHERE ' . implode(' AND ', $donde),
+            $parametros
+        ), 25);
+
         // Se traen los datos completos de la persona, no solo su nombre: decidir
         // sobre una propuesta es decidir sobre quién la presenta, y tener que
         // abrir la ficha en otra pantalla para ver de qué entidad viene o si
@@ -750,7 +793,8 @@ final class Admin
           LEFT JOIN {charla} c ON c.propuesta_id = pr.id
           LEFT JOIN {evento_dia} dc ON dc.id = c.evento_dia_id
               WHERE ' . implode(' AND ', $donde) . '
-           ORDER BY FIELD(pr.estado, "pendiente", "observada", "aprobada", "rechazada"), pr.creado_en DESC',
+           ORDER BY ' . $orden->sql() . '
+              LIMIT ' . $paginacion->porPagina . ' OFFSET ' . $paginacion->desplazamiento(),
             $parametros
         );
 
@@ -768,8 +812,23 @@ final class Admin
         // ese perfil— y todavía no tienen propuesta. Arriba no salen: la lista
         // es de propuestas.
         $porEnlace = \App\Modelos\Formulario::llegadosPorEnlace((int) $evento['id']);
-        $sinPropuesta = Persona::expositoresSinPropuesta((int) $evento['id'], $porEnlace);
-        $conteos['sin-propuesta'] = count($sinPropuesta);
+        $conteos['sin-propuesta'] = Persona::contarExpositoresSinPropuesta((int) $evento['id'], $porEnlace);
+
+        // Vistos solos (?estado=sin-propuesta) se ordenan y van por páginas con
+        // los mismos enlaces que las propuestas. Debajo de «Todas» salen los
+        // primeros, con el camino a la lista entera.
+        $ordenSin = Orden::desde($peticion, [
+            'expositor' => ['p.nombre', "TRIM(p.nombre) = ''"],
+            'entidad'   => ['p.entidad', "p.entidad = ''"],
+            'registro'  => ['p.creado_en'],
+        ], 'registro', 'desc', 'p.id DESC');
+        $paginacionSin = Paginacion::desde($peticion, $soloSinPropuesta ? $conteos['sin-propuesta'] : 0, 25);
+        $sinPropuesta = Persona::expositoresSinPropuesta((int) $evento['id'], $porEnlace,
+            // Debajo de «Todas», siempre los más recientes: el orden elegido
+            // ahí es el de las propuestas.
+            $soloSinPropuesta ? $ordenSin : null,
+            $soloSinPropuesta ? $paginacionSin->porPagina : self::SIN_PROPUESTA_EN_TODAS,
+            $soloSinPropuesta ? $paginacionSin->desplazamiento() : 0);
 
         // Cuándo cambió cada propuesta su expositor por última vez, desde «Mi
         // exposición»: si fue después de revisarla, hay algo nuevo que mirar.
@@ -791,6 +850,11 @@ final class Admin
             'actualizadas' => $actualizadas,
             'conteos'    => $conteos,
             'estado'     => $estado,
+            'orden'      => $soloSinPropuesta ? $ordenSin : $orden,
+            'paginacion' => $soloSinPropuesta ? $paginacionSin : $paginacion,
+            // Lo que conservan los enlaces de las columnas y de las páginas, y
+            // a dónde se vuelve después de decidir una propuesta.
+            'consulta'   => array_filter(['estado' => $estado]),
             'jornadas'   => Evento::jornadas((int) $evento['id']),
             // Las categorías y duraciones salen de los dos formularios de
             // registro: una propuesta pudo llegar por cualquiera.
@@ -801,6 +865,29 @@ final class Admin
             // que nadie se dé cuenta.
             'puedeVerDocumento' => Guardia::puede('operador'),
         ]);
+    }
+
+    /** Cuántos registrados sin propuesta se muestran debajo de «Todas». */
+    private const SIN_PROPUESTA_EN_TODAS = 10;
+
+    /**
+     * La lista de Expositores tal como estaba: filtro, orden y página.
+     *
+     * Llega en un campo oculto del formulario de decisión. Solo se aceptan
+     * esas cinco claves con valores cortos y sin símbolos: nada más de lo que
+     * venga ahí llega a la dirección.
+     */
+    private function volverAExpositores(Peticion $peticion): string
+    {
+        parse_str($peticion->campo('volver'), $antes);
+        $limpio = [];
+        foreach (['estado', 'orden', 'dir', 'pagina', 'por'] as $clave) {
+            $valor = $antes[$clave] ?? '';
+            if (is_string($valor) && preg_match('/^[a-z0-9\-]{1,30}$/', $valor)) {
+                $limpio[$clave] = $valor;
+            }
+        }
+        return '/admin/expositores' . ($limpio ? '?' . http_build_query($limpio) : '');
     }
 
     /**
@@ -816,8 +903,13 @@ final class Admin
         $decision = $peticion->campo('decision');
         $observacion = mb_substr($peticion->campo('observacion'), 0, 1000);
 
+        // Se vuelve a la misma página, con el mismo filtro y el mismo orden: el
+        // comité revisa una tras otra, y volver siempre al principio de la
+        // lista obligaba a buscar otra vez por dónde iba.
+        $volver = $this->volverAExpositores($peticion);
+
         if (!in_array($decision, ['aprobada', 'observada', 'rechazada'], true)) {
-            Respuesta::redirigir('/admin/expositores', 'Decisión no válida.', 'warn');
+            Respuesta::redirigir($volver, 'Decisión no válida.', 'warn');
         }
 
         $propuesta = Bd::fila(
@@ -827,11 +919,11 @@ final class Admin
             [$id, (int) $evento['id']]
         );
         if (!$propuesta) {
-            Respuesta::redirigir('/admin/expositores', 'Esa propuesta no existe.', 'warn');
+            Respuesta::redirigir($volver, 'Esa propuesta no existe.', 'warn');
         }
 
         if ($decision === 'observada' && trim($observacion) === '') {
-            Respuesta::redirigir('/admin/expositores',
+            Respuesta::redirigir($volver,
                 'Escribe la observación antes de devolver la propuesta.', 'warn');
         }
 
@@ -853,7 +945,7 @@ final class Admin
                     [$jornadaId, (int) $evento['id']]
                 );
                 if (!$jornada) {
-                    Respuesta::redirigir('/admin/expositores',
+                    Respuesta::redirigir($volver,
                         'El día que elegiste ya no existe: se eliminó mientras revisabas la propuesta. '
                         . 'No se cambió nada; elige otro día y vuelve a aprobarla.', 'warn');
                 }
@@ -960,7 +1052,7 @@ final class Admin
                 ? ' Se le avisó por correo a ' . $propuesta['correo'] . '.'
                 : ' Pero no se pudo enviar el correo al expositor: revisa Configuración → Acceso y correo.';
         }
-        Respuesta::redirigir('/admin/expositores', $mensaje, $avisar && !$avisado ? 'warn' : 'ok');
+        Respuesta::redirigir($volver, $mensaje, $avisar && !$avisado ? 'warn' : 'ok');
     }
 
     /**

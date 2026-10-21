@@ -6,6 +6,8 @@
  * @var bool $puedeVerDocumento @var int $eventoId @var bool $correoListo
  * @var array $sinPropuesta @var array<int, true> $porEnlace  quiénes llegaron por el enlace privado
  * @var array<int, string> $actualizadas  cuándo cambió cada propuesta su expositor, por id
+ * @var App\Nucleo\Orden $orden @var App\Nucleo\Paginacion $paginacion  de la lista que se ve
+ * @var array $consulta  el filtro de estado, para los enlaces
  */
 defined('EVENTOS_TIC') || exit;
 
@@ -43,6 +45,11 @@ $estados = [
 $columnas = 'grid-template-columns:1.7fr 1.1fr 1fr .8fr .9fr';
 $columnasSin = 'grid-template-columns:1.6fr 1.1fr .9fr .8fr auto';
 $soloSinPropuesta = $estado === 'sin-propuesta';
+$conOrden = $consulta + $orden->consulta();
+$titulo = static fn(string $etiqueta, string $clave): string =>
+    tituloOrdenable($etiqueta, $clave, $orden, '/admin/expositores', $consulta + ['por' => $paginacion->porPagina]);
+// Para volver a la misma página después de decidir una propuesta.
+$volver = http_build_query($conOrden + ['pagina' => $paginacion->pagina, 'por' => $paginacion->porPagina]);
 ?>
 <div class="view view--wide stack stack--4">
 
@@ -88,8 +95,9 @@ $soloSinPropuesta = $estado === 'sin-propuesta';
     <div class="table__scroll">
       <div class="table__grid" style="min-width:820px">
         <div class="table__head" style="<?= $columnas ?>">
-          <span>Propuesta</span><span>Expositor</span><span>Categoría</span>
-          <span>Jornada</span><span>Estado</span>
+          <span><?= $titulo('Propuesta', 'propuesta') ?></span><span><?= $titulo('Expositor', 'expositor') ?></span>
+          <span><?= $titulo('Categoría', 'categoria') ?></span>
+          <span><?= $titulo('Jornada', 'jornada') ?></span><span><?= $titulo('Estado', 'estado') ?></span>
         </div>
 
         <?php if (!$propuestas): ?>
@@ -147,8 +155,12 @@ $soloSinPropuesta = $estado === 'sin-propuesta';
       </div>
     </div>
     <div class="table__foot">
-      <span>Mostrando <?= e((string) count($propuestas)) ?> propuestas</span>
-      <span>La agenda pública está en <?= e(u('/agenda')) ?></span>
+      <?= App\Nucleo\Respuesta::parcial('parciales/paginacion', [
+          'paginacion'    => $paginacion,
+          'rutaLista'     => '/admin/expositores',
+          'consultaLista' => $conOrden,
+          'nombreLista'   => 'propuestas',
+      ]) /* ya viene escapado */ ?>
     </div>
   </div>
   <?php endif; ?>
@@ -162,7 +174,7 @@ $soloSinPropuesta = $estado === 'sin-propuesta';
         <strong id="titulo-sin-propuesta" style="color:var(--c-title);font-weight:600">
           Registrados como expositores, sin propuesta todavía
         </strong>
-        <span class="tag"><?= e((string) count($sinPropuesta)) ?></span>
+        <span class="tag"><?= e((string) ($conteos['sin-propuesta'] ?? count($sinPropuesta))) ?></span>
       </div>
       <p class="help" style="margin:0;padding:12px var(--sp-4) 0">
         Tienen el perfil Expositor o llegaron por el enlace privado, pero no han enviado su
@@ -172,7 +184,12 @@ $soloSinPropuesta = $estado === 'sin-propuesta';
       <div class="table__scroll">
         <div class="table__grid" style="min-width:760px">
           <div class="table__head" style="<?= $columnasSin ?>">
-            <span>Expositor</span><span>Entidad</span><span>Teléfono</span><span>Se registró</span><span></span>
+            <?php if ($soloSinPropuesta): ?>
+              <span><?= $titulo('Expositor', 'expositor') ?></span><span><?= $titulo('Entidad', 'entidad') ?></span>
+              <span>Teléfono</span><span><?= $titulo('Se registró', 'registro') ?></span><span></span>
+            <?php else: ?>
+              <span>Expositor</span><span>Entidad</span><span>Teléfono</span><span>Se registró</span><span></span>
+            <?php endif; ?>
           </div>
           <?php if (!$sinPropuesta): ?>
             <div class="empty" style="margin:16px">Nadie: quienes se registraron como expositores ya enviaron su propuesta</div>
@@ -196,6 +213,23 @@ $soloSinPropuesta = $estado === 'sin-propuesta';
           <?php endforeach; endif; ?>
         </div>
       </div>
+      <?php if ($soloSinPropuesta): ?>
+        <div class="table__foot">
+          <?= App\Nucleo\Respuesta::parcial('parciales/paginacion', [
+              'paginacion'    => $paginacion,
+              'rutaLista'     => '/admin/expositores',
+              'consultaLista' => $conOrden,
+              'nombreLista'   => 'registrados sin propuesta',
+          ]) /* ya viene escapado */ ?>
+        </div>
+      <?php elseif (($conteos['sin-propuesta'] ?? 0) > count($sinPropuesta)): ?>
+        <?php /* Debajo de las propuestas van solo los primeros: la lista entera,
+                 con páginas y orden, está en su propio filtro. */ ?>
+        <div class="table__foot">
+          <span>Los <?= e((string) count($sinPropuesta)) ?> más recientes de <?= e((string) $conteos['sin-propuesta']) ?></span>
+          <a href="<?= e(u('/admin/expositores', ['estado' => 'sin-propuesta'])) ?>">Ver los <?= e((string) $conteos['sin-propuesta']) ?> ›</a>
+        </div>
+      <?php endif; ?>
     </section>
   <?php endif; ?>
 
@@ -333,6 +367,7 @@ $soloSinPropuesta = $estado === 'sin-propuesta';
         <form method="post" action="<?= e(u('/admin/expositores/decidir')) ?>" class="card">
           <?= testigo() ?>
           <input type="hidden" name="propuesta" value="<?= (int) $p['id'] ?>">
+          <input type="hidden" name="volver" value="<?= e($volver) ?>">
 
           <div class="card__head">
             <span>Validar la participación</span>

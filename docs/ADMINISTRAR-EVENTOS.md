@@ -3,7 +3,7 @@
 Qué se puede cambiar una vez creado, quién puede tocar qué, y qué no tiene vuelta atrás:
 eventos y jornadas, las propuestas de los expositores, el perfil Staff, la impresión de
 carnets, la acreditación en la puerta, la verificación en dos pasos del equipo, la
-recuperación de contraseñas y el formulario de registro.
+recuperación de contraseñas, el formulario de registro y cómo se recorren los listados largos.
 
 Todo lo de aquí está en **Administración → Eventos**, **QR por día**, **Expositores**,
 **Registros** y **Configuración**, y exige el rol **administrador** salvo donde se diga otra
@@ -396,6 +396,12 @@ entrada la ve el Staff en su propio grupo.
 El botón **Imprimir** saca todos los carnets de la lista, **una sola cara por persona y con el
 código QR dentro**. Caben seis por hoja tamaño carta; se imprime en cartulina y se recorta.
 
+Con más de 300 carnets en la lista, en vez de un botón hay uno por tanda: **1–300**,
+**301–600**… Cada código QR se dibuja en el servidor, y miles de una vez harían que la página
+tardara más de lo que el servidor deja correr. La pantalla de impresión dice qué tanda es y
+tiene **Siguiente tanda ›** para pasar a la otra. Hasta la 3.12 no había tandas, pero la
+impresión se cortaba en 500 sin avisar.
+
 Una cara y no dos es lo que hace que la función sirva: el carnet individual tiene anverso y
 reverso porque su dueño lo dobla por la mitad, pero para doscientos eso significa imprimir
 cuatrocientas caras y aparearlas a mano.
@@ -414,6 +420,9 @@ El filtro de la lista llega hasta la impresión. Es lo que de verdad se usa: «l
 Los registros a medias —quien creó su acceso con correo y contraseña y no llenó el formulario—
 no se imprimen, y la pantalla dice cuántos son. Un carnet sin nombre ni identificación es una
 cartulina en blanco que nadie ve hasta que la reparte.
+
+La lista de carnets va por páginas y se ordena desde los títulos de sus columnas, igual que
+Registros (ver 11). La impresión respeta el filtro y el orden.
 
 ---
 
@@ -771,3 +780,54 @@ Una lista corta para no llevarse sorpresas:
    mismo con el de *Registro de expositores* antes de enviar su enlace.
 6. **Comprueba el tamaño máximo de subida** en el diagnóstico, si esperas exposiciones. Es lo
    único de esta lista que se arregla fuera de la plataforma, y por tanto lo que más tarda.
+
+---
+
+## 11. Los listados largos: páginas, orden y cifras
+
+Desde la 3.13, **Registros**, **Carnets** y **Expositores** van por páginas. Hasta la 3.12 el
+listado de Registros mostraba como mucho 200 personas sin decirlo, y la tarjeta de arriba
+decía «200 en el filtro» aunque el evento tuviera 396.
+
+### 11.1 Las cifras de arriba
+
+En Registros, la primera tarjeta muestra **grande cuántos registros tiene el evento** y debajo,
+pequeño, **cuántos deja el filtro** («128 en el filtro», o «… en la lista, sin filtros»). Las
+otras tres —con al menos un ingreso, asistencia completa, sin completar o entidades— se
+cuentan sobre **todo el filtro**, no sobre la página que se ve.
+
+### 11.2 Las páginas
+
+Al pie de la tabla: cuáles se están viendo de cuántos («51–100 de 396 registros»), los números
+de página y **Por página: 25 · 50 · 100**. En el celular queda **‹ Página 2 de 8 ›**.
+
+La página, el filtro y el orden van en la dirección, así que se puede recargar, guardar en
+favoritos, compartir con otra persona del equipo y volver atrás con el navegador. Filtrar o
+cambiar el orden vuelve a la primera página.
+
+En Expositores van 25 propuestas por página. Al decidir una propuesta se vuelve a la misma
+página, con el mismo filtro y el mismo orden: no hace falta buscar otra vez por dónde iba la
+revisión. Debajo de «Todas» salen los diez registrados sin propuesta más recientes; la lista
+entera, con páginas y orden, está en el filtro **Sin propuesta**.
+
+### 11.3 Ordenar desde el título de cada columna
+
+Cada título que ordena lleva una **flecha doble pegada al texto**. Al pulsarlo, la tabla se
+ordena por esa columna de menor a mayor y su flecha se enciende hacia arriba; al pulsarlo otra
+vez, al revés. Ordena **todo el listado**, no solo la página que se ve.
+
+| Pantalla | Se ordena por |
+|---|---|
+| Registros | Asistente, municipio, entidad, perfil e ingresos (cuántos días entró) |
+| Carnets | Asistente, entidad, territorio y perfil |
+| Expositores | Propuesta, expositor, categoría, jornada y estado |
+| Expositores → Sin propuesta | Expositor, entidad y fecha de registro |
+
+Los vacíos —sin entidad, sin municipio, sin día asignado— van siempre al final. El
+**documento** no se ordena: va cifrado, y ordenarlo obligaría a descifrar a todo el evento en
+cada página.
+
+### 11.4 Exportar
+
+**Exportar CSV** saca todo lo que deja el filtro, en el orden de la tabla, no solo la página que
+se ve. Hasta la 3.12 se cortaba en 500 filas sin avisar.

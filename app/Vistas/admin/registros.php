@@ -1,15 +1,23 @@
 <?php
 /**
  * Registros y asistencia.
- * @var array $personas @var array $jornadas @var array $filtros
- * @var int $total @var bool $puedeVerSensibles
+ *
+ * El listado va por páginas y lo ordena la base de datos desde el título de
+ * cada columna. Las cifras de arriba son de todo el filtro, no de la página.
+ *
+ * @var array $personas  solo los de la página que se ve
+ * @var array $jornadas @var array $filtros @var int $total @var bool $puedeVerSensibles
+ * @var array{en_filtro: int, con_ingreso: int, completos: int, a_medias: int, entidades: int} $resumen
+ * @var App\Nucleo\Paginacion $paginacion @var App\Nucleo\Orden $orden
+ * @var array $consulta  los filtros con los nombres del formulario, para los enlaces
  */
 defined('EVENTOS_TIC') || exit;
 
 use App\Modelos\Persona;
 
 $columnas = 'grid-template-columns:1.5fr 1fr 1.1fr 1.2fr .8fr .9fr 44px';
-$conFiltro = array_filter($filtros);
+$conFiltro = $consulta !== [];
+$conOrden = $consulta + $orden->consulta();
 guiones('registros.js');
 ?>
 <div class="view view--wide stack stack--4">
@@ -20,7 +28,8 @@ guiones('registros.js');
       <h1>Registros y asistencia</h1>
     </div>
     <div class="row no-print">
-      <a class="btn btn--sm" href="<?= e(u('/admin/registros/exportar', $conFiltro)) ?>">Exportar CSV</a>
+      <?php /* Exporta todo lo que deja el filtro, en el orden de la tabla: no solo la página. */ ?>
+      <a class="btn btn--sm" href="<?= e(u('/admin/registros/exportar', $conOrden)) ?>">Exportar CSV</a>
       <?php if ($puedeVerSensibles): ?>
         <button class="btn btn--sm" type="button" data-abrir-modal="modal-sensible">Con caracterización</button>
       <?php endif; ?>
@@ -29,37 +38,25 @@ guiones('registros.js');
 
   <div class="grid-4">
     <?php
-    $conIngreso = 0;
-    $completos = 0;
-    $aMedias = 0;
-    $entidades = [];
-    foreach ($personas as $p) {
-        if (!Persona::registroCompleto($p)) {
-            $aMedias++;
-        }
-        $dias = Persona::diasDe($p['dias'] ?? null);
-        if ($dias) {
-            $conIngreso++;
-        }
-        if (count($dias) === count($jornadas) && $jornadas) {
-            $completos++;
-        }
-        if ($p['entidad'] !== '') {
-            $entidades[$p['entidad']] = true;
-        }
-    }
+    $enFiltro = $resumen['en_filtro'];
     $kpis = [
-      ['En el filtro', numero(count($personas)), 'de ' . numero($total) . ' registros'],
-      ['Con al menos un ingreso', numero($conIngreso), $personas ? round($conIngreso / count($personas) * 100) . '%' : '—'],
-      ['Asistencia completa', numero($completos), 'los ' . count($jornadas) . ' días'],
+      // Grande, cuántos registros tiene el evento; pequeño, cuántos deja el
+      // filtro. Al revés —el filtro grande— parecía que el evento tenía menos
+      // gente de la que tiene.
+      ['Registros', numero($total), $conFiltro
+          ? numero($enFiltro) . ' en el filtro'
+          : numero($enFiltro) . ' en la lista, sin filtros'],
+      ['Con al menos un ingreso', numero($resumen['con_ingreso']),
+          $enFiltro ? round($resumen['con_ingreso'] / $enFiltro * 100) . '% del filtro' : '—'],
+      ['Asistencia completa', numero($resumen['completos']), 'los ' . count($jornadas) . ' días'],
       // El cuarto cambia según haga falta: mientras haya registros a medias eso
       // es lo accionable hoy; cuando no los hay, vuelve el dato de reporte.
-      $aMedias > 0
-        ? ['Sin completar', numero($aMedias), 'crearon acceso, falta el formulario']
-        : ['Entidades', numero(count($entidades)), 'representadas'],
+      $resumen['a_medias'] > 0
+        ? ['Sin completar', numero($resumen['a_medias']), 'crearon acceso, falta el formulario']
+        : ['Entidades', numero($resumen['entidades']), 'representadas'],
     ];
     foreach ($kpis as [$etiqueta, $valor, $sub]): ?>
-      <div class="kpi">
+      <div class="kpi" data-kpi="<?= e($etiqueta) ?>">
         <span class="kpi__label"><?= e($etiqueta) ?></span>
         <strong class="kpi__value"><?= e($valor) ?></strong>
         <span class="kpi__sub"><?= e($sub) ?></span>
@@ -69,6 +66,10 @@ guiones('registros.js');
 
   <div class="table">
     <form class="table__tools no-print" method="get" action="<?= e(u('/admin/registros')) ?>">
+      <?php /* Filtrar vuelve a la primera página, pero conserva el orden y el tamaño. */ ?>
+      <input type="hidden" name="orden" value="<?= e($orden->clave) ?>">
+      <input type="hidden" name="dir" value="<?= e($orden->direccion) ?>">
+      <input type="hidden" name="por" value="<?= e((string) $paginacion->porPagina) ?>">
       <label class="sr-only" for="q">Buscar</label>
       <input class="input" id="q" name="q" value="<?= e((string) $filtros['texto']) ?>"
              placeholder="Buscar por nombre, correo, entidad o municipio…">
@@ -100,8 +101,14 @@ guiones('registros.js');
     <div class="table__scroll">
       <div class="table__grid">
         <div class="table__head" style="<?= $columnas ?>">
-          <span>Asistente</span><span>Documento</span><span>Municipio</span>
-          <span>Entidad</span><span>Perfil</span><span>Ingresos</span>
+          <span><?= tituloOrdenable('Asistente', 'nombre', $orden, '/admin/registros', $consulta + ['por' => $paginacion->porPagina]) ?></span>
+          <?php /* El documento no ordena: va cifrado, y ordenarlo obligaría a
+                   descifrar a todo el evento en cada página. */ ?>
+          <span title="No se ordena: el número va cifrado">Documento</span>
+          <span><?= tituloOrdenable('Municipio', 'municipio', $orden, '/admin/registros', $consulta + ['por' => $paginacion->porPagina]) ?></span>
+          <span><?= tituloOrdenable('Entidad', 'entidad', $orden, '/admin/registros', $consulta + ['por' => $paginacion->porPagina]) ?></span>
+          <span><?= tituloOrdenable('Perfil', 'perfil', $orden, '/admin/registros', $consulta + ['por' => $paginacion->porPagina]) ?></span>
+          <span><?= tituloOrdenable('Ingresos', 'ingresos', $orden, '/admin/registros', $consulta + ['por' => $paginacion->porPagina]) ?></span>
           <span class="sr-only">Ficha</span>
         </div>
 
@@ -163,8 +170,12 @@ guiones('registros.js');
     </div>
 
     <div class="table__foot">
-      <span>Mostrando <?= e(numero(count($personas))) ?> de <?= e(numero($total)) ?> registros</span>
-      <span>Actualizado ahora</span>
+      <?= App\Nucleo\Respuesta::parcial('parciales/paginacion', [
+          'paginacion'    => $paginacion,
+          'rutaLista'     => '/admin/registros',
+          'consultaLista' => $conOrden,
+          'nombreLista'   => 'registros',
+      ]) /* ya viene escapado */ ?>
     </div>
   </div>
 
@@ -217,7 +228,7 @@ guiones('registros.js');
       <div class="row row--end">
         <button class="btn" type="button" data-cerrar-modal>Cancelar</button>
         <a class="btn btn--primary"
-           href="<?= e(u('/admin/registros/exportar', $conFiltro + ['caracterizacion' => '1'])) ?>">
+           href="<?= e(u('/admin/registros/exportar', $conOrden + ['caracterizacion' => '1'])) ?>">
           Entiendo, exportar
         </a>
       </div>

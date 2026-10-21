@@ -421,6 +421,12 @@ restauró no es una copia.
    asistentes y equipo pueden pedir un enlace al correo desde «¿Olvidaste tu contraseña?», y un
    administrador puede enviárselo desde la ficha de la persona o desde **Organizadores**. Ver 7.4.
 
+   La 3.13 no toca la base de datos ni `config/`. **Registros**, **Carnets** y **Expositores** van
+   por páginas y se ordenan desde el título de cada columna; arriba, en Registros, va grande el
+   total del evento y pequeño lo que deja el filtro. Corrige además tres cortes que no se veían:
+   el listado mostraba como mucho 200 personas, y la exportación y la impresión de carnets se
+   detenían en 500. Ver 7.5.
+
    Si el usuario de la base de datos no tiene permiso de `ALTER` —pasa en algunos
    alojamientos—, la actualización automática no puede hacerse: lo anota en el registro,
    vuelve a intentarlo cada cinco minutos y la plataforma sigue funcionando. Para hacerlo a
@@ -626,6 +632,60 @@ completar el segundo paso con un código al correo: si pudiera, quien tuviera ac
 entraría al panel solo con eso. Quien perdió a la vez la contraseña y el teléfono pide a otra
 persona administradora **«Restablecer 2FA»** en Organizadores (o `php herramientas/cuenta.php
 sin-2fa --correo=…`).
+
+### 7.5 La 3.13: listados por páginas, sin tocar registros ni configuración
+
+**Qué cambia.**
+
+- **Registros, Carnets y Expositores van por páginas**, de 50 (25 en Expositores), con
+  **Por página: 25 · 50 · 100**.
+- **Cada título de columna ordena la tabla**, con su flecha pegada al texto, y ordena todo el
+  listado, no solo la página.
+- En Registros, la primera tarjeta muestra **grande el total del evento y pequeño lo que deja
+  el filtro**. Las otras cifras se cuentan sobre todo el filtro.
+- **La exportación saca todo el filtro**, en el orden de la tabla.
+- **Los carnets se imprimen por tandas de 300** cuando hay más.
+- Al decidir una propuesta, **se vuelve a la misma página de Expositores**.
+
+**Qué no cambia.** La base de datos —el esquema sigue en la 1.11.0, así que la actualización
+automática no tiene nada que hacer—, `config/`, `almacen/`, los registros, los carnets, las
+asistencias y las propuestas. Solo cambia cómo se consultan y se muestran.
+
+**Qué archivos cambian:**
+
+| Archivo | Para qué |
+|---|---|
+| `app/Nucleo/Paginacion.php` | **Nuevo.** Las páginas de un listado |
+| `app/Nucleo/Orden.php` | **Nuevo.** El orden elegido desde el título, contra una lista de columnas fija |
+| `app/Vistas/parciales/paginacion.php` | **Nuevo.** La barra de páginas del pie de cada tabla |
+| `app/ayudas.php` | El título de columna con su flecha |
+| `app/Modelos/Persona.php` | Las consultas del listado: página, cuenta, cifras y orden |
+| `app/Controladores/Admin.php` | Registros, la exportación y Expositores |
+| `app/Controladores/Carnet.php` | La lista de carnets y la impresión por tandas |
+| `app/Vistas/admin/registros.php`, `carnets.php`, `carnets-imprimir.php`, `expositores.php` | Las tablas, las tarjetas de arriba y las tandas |
+| `assets/css/components.css` | El estilo de las flechas y de la barra de páginas |
+| `index.php`, `herramientas/instalar.php`, `herramientas/correo.php` | El número de versión |
+
+**Cómo subirla:**
+
+1. Haz la copia de seguridad de siempre (punto 1 de arriba) y **descarga, tal como están en el
+   servidor, los archivos de la tabla que ya existen**: volver atrás es subirlos de nuevo.
+2. Sube los archivos de la tabla —o la versión completa, **sin tocar `config/` ni
+   `almacen/`**—. Si producción todavía no tiene la 3.12, sube la versión completa: la primera
+   visita creará además la tabla de los enlaces para recuperar la contraseña (7.4), que solo
+   agrega. No hace falta borrar cachés: el CSS lleva la fecha del archivo en su dirección
+   (`?v=…`) y cada navegador baja el nuevo en su siguiente visita.
+3. Compruébalo en **Registros**:
+   - arriba, «Registros» con el total grande;
+   - al pie, «1–50 de … registros» y los números de página;
+   - un clic en «Entidad» ordena la tabla y enciende su flecha;
+   - **Exportar CSV** trae a todos los del filtro.
+
+   En **Carnets**, con más de 300 personas con carnet, aparecen los botones por tandas.
+
+**Volver atrás:** sube otra vez los archivos que descargaste en el paso 1 y borra los tres
+nuevos (`app/Nucleo/Paginacion.php`, `app/Nucleo/Orden.php` y
+`app/Vistas/parciales/paginacion.php`). No hay nada que deshacer en la base de datos.
 
 ---
 

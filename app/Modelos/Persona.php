@@ -9,6 +9,8 @@ use App\Nucleo\Bd;
 use App\Nucleo\Bitacora;
 use App\Nucleo\Cripto;
 use App\Nucleo\Imagen;
+use App\Nucleo\Orden;
+use App\Nucleo\Peticion;
 
 /**
  * El asistente al evento.
@@ -359,12 +361,18 @@ final class Persona
     }
 
     /**
-     * Listado del backoffice, con filtros.
+     * Las condiciones del listado del backoffice.
      *
-     * Los filtros se arman con parámetros; lo único que se interpola es el
-     * nombre de la columna de orden, y sale de una lista blanca.
+     * Las comparten la página, la cuenta, las cifras de arriba y la
+     * exportación. Si cada una armara las suyas, tarde o temprano dirían cosas
+     * distintas sobre el mismo filtro.
+     *
+     * Los filtros van en parámetros. 'completos' deja fuera los registros a
+     * medias, con la misma regla que registroCompleto().
+     *
+     * @return array{0: array<int, string>, 1: array<string, mixed>}
      */
-    public static function buscar(int $eventoId, array $filtros = []): array
+    private static function condiciones(int $eventoId, array $filtros): array
     {
         $donde = ['p.evento_id = :evento'];
         $parametros = ['evento' => $eventoId];
@@ -411,8 +419,40 @@ final class Persona
                                  WHERE a.persona_id = p.id AND d.numero = :dia)';
             $parametros['dia'] = (int) $filtros['dia'];
         }
+        if (!empty($filtros['completos'])) {
+            $donde[] = 'NOT (' . self::sqlIncompleto($eventoId) . ')';
+        }
 
-        $limite = max(1, min(500, (int) ($filtros['limite'] ?? 200)));
+        return [$donde, $parametros];
+    }
+
+    /** registroCompleto() en SQL, al revés: la condición de un registro a medias. */
+    private static function sqlIncompleto(int $eventoId): string
+    {
+        return "TRIM(p.nombre) = ''"
+            . (Formulario::exigeDocumento($eventoId) ? ' OR p.documento_huella IS NULL' : '');
+    }
+
+    /**
+     * Listado del backoffice, con filtros.
+     *
+     * Lo único que se interpola es el orden, y sale de las columnas que
+     * declara cada pantalla (App\Nucleo\Orden).
+     *
+     * 'limite' y 'desde' parten el listado en páginas. Sin 'limite' trae todo
+     * lo que deje el filtro, que es lo que necesita la exportación: hasta la
+     * 3.12 se cortaba en silencio en quinientas filas, y el listado en
+     * doscientas.
+     */
+    public static function buscar(int $eventoId, array $filtros = [], ?Orden $orden = null): array
+    {
+        [$donde, $parametros] = self::condiciones($eventoId, $filtros);
+
+        $limite = '';
+        if (isset($filtros['limite'])) {
+            $limite = ' LIMIT ' . max(1, (int) $filtros['limite'])
+                . ' OFFSET ' . max(0, (int) ($filtros['desde'] ?? 0));
+        }
 
         return Bd::filas(
             'SELECT p.*,
@@ -422,10 +462,92 @@ final class Persona
                       WHERE a.persona_id = p.id) AS dias
                FROM {persona} p
               WHERE ' . implode(' AND ', $donde) . '
-           ORDER BY p.nombre
-              LIMIT ' . $limite,
+           ORDER BY ' . ($orden?->sql() ?? 'p.nombre, p.id') . $limite,
             $parametros
         );
+    }
+
+    /** Cuántas personas deja el filtro, sin traerlas. */
+    public static function contar(int $eventoId, array $filtros = []): int
+    {
+        [$donde, $parametros] = self::condiciones($eventoId, $filtros);
+        return (int) Bd::valor(
+            'SELECT COUNT(*) FROM {persona} p WHERE ' . implode(' AND ', $donde),
+            $parametros
+        );
+    }
+
+    /**
+     * Las cifras de arriba del listado, sobre todo el filtro.
+     *
+     * Antes se sacaban de las filas que había en pantalla. Con el listado
+     * cortado en doscientas, «Con al menos un ingreso» contaba solo a esas
+     * doscientas; con páginas, contaría solo a las cincuenta de la página.
+     *
+     * @return array{en_filtro: int, con_ingreso: int, completos: int, a_medias: int, entidades: int}
+     */
+    public static function resumen(int $eventoId, array $filtros, int $jornadas): array
+    {
+        [$donde, $parametros] = self::condiciones($eventoId, $filtros);
+        $dias = '(SELECT COUNT(*) FROM {asistencia} a
+                    JOIN {evento_dia} d ON d.id = a.evento_dia_id
+                   WHERE a.persona_id = p.id)';
+
+        $fila = Bd::fila(
+            'SELECT COUNT(*) AS en_filtro,
+                    COALESCE(SUM(' . $dias . ' > 0), 0) AS con_ingreso,
+                    COALESCE(SUM(' . ($jornadas > 0 ? $dias . ' >= ' . $jornadas : '0') . '), 0) AS completos,
+                    COALESCE(SUM(' . self::sqlIncompleto($eventoId) . '), 0) AS a_medias,
+                    COUNT(DISTINCT NULLIF(p.entidad, \'\')) AS entidades
+               FROM {persona} p
+              WHERE ' . implode(' AND ', $donde),
+            $parametros
+        ) ?? [];
+
+        return array_map('intval', [
+            'en_filtro'   => $fila['en_filtro'] ?? 0,
+            'con_ingreso' => $fila['con_ingreso'] ?? 0,
+            'completos'   => $fila['completos'] ?? 0,
+            'a_medias'    => $fila['a_medias'] ?? 0,
+            'entidades'   => $fila['entidades'] ?? 0,
+        ]);
+    }
+
+    /**
+     * Por qué columnas se puede ordenar el listado de personas.
+     *
+     * El documento no está: va cifrado, y ordenar por él exigiría descifrar a
+     * todo el evento en cada página, que es justo lo que el cifrado evita. El
+     * perfil se ordena por su nombre, no por su clave interna, que es lo que
+     * se ve en la tabla.
+     *
+     * @return array<string, array{0: string|array<int, string>, 1?: string}>
+     */
+    public static function columnasDeOrden(int $eventoId): array
+    {
+        $perfiles = perfilesDelEvento($eventoId);
+        $sinTildes = static fn(string $t): string => strtr(mb_strtolower($t),
+            ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ü' => 'u', 'ñ' => 'n~']);
+        uasort($perfiles, static fn(string $a, string $b): int => strcmp($sinTildes($a), $sinTildes($b)));
+        $claves = array_filter(array_keys($perfiles),
+            static fn($c): bool => (bool) preg_match('/^[a-z0-9_]{1,40}$/', (string) $c));
+
+        return [
+            'nombre'    => ['p.nombre', "TRIM(p.nombre) = ''"],
+            'municipio' => ['p.municipio', "p.municipio = ''"],
+            'entidad'   => ['p.entidad', "p.entidad = ''"],
+            // Las claves se comprobaron arriba: solo letras, números y guiones bajos.
+            'perfil'    => [$claves ? "FIELD(p.rol, '" . implode("', '", $claves) . "')" : 'p.rol'],
+            'ingresos'  => ['(SELECT COUNT(*) FROM {asistencia} a
+                                JOIN {evento_dia} d ON d.id = a.evento_dia_id
+                               WHERE a.persona_id = p.id)'],
+        ];
+    }
+
+    /** El orden elegido en la tabla, o por nombre si no se eligió ninguno. */
+    public static function ordenElegido(Peticion $peticion, int $eventoId): Orden
+    {
+        return Orden::desde($peticion, self::columnasDeOrden($eventoId), 'nombre', 'asc', 'p.nombre ASC, p.id ASC');
     }
 
     /**
@@ -434,12 +556,12 @@ final class Persona
      * Deja fuera los registros a medias —quien creó su acceso con correo y
      * contraseña y no llenó el formulario—: un carnet sin nombre ni documento
      * es una cartulina en blanco, y en una tanda de doscientas se cuela sin que
-     * nadie la vea hasta que la reparte.
+     * nadie la vea hasta que la reparte. Se filtra en la consulta y no
+     * después, para que las páginas y la cuenta salgan bien.
      */
-    public static function conCredencial(int $eventoId, array $filtros = []): array
+    public static function conCredencial(int $eventoId, array $filtros = [], ?Orden $orden = null): array
     {
-        $personas = self::buscar($eventoId, $filtros);
-        return array_values(array_filter($personas, static fn(array $p): bool => self::registroCompleto($p)));
+        return self::buscar($eventoId, ['completos' => true] + $filtros, $orden);
     }
 
     /**
@@ -454,18 +576,39 @@ final class Persona
      *
      * @param array<int, true> $porEnlace los de Formulario::llegadosPorEnlace()
      */
-    public static function expositoresSinPropuesta(int $eventoId, array $porEnlace = []): array
-    {
-        $ids = array_map('intval', array_keys($porEnlace));
+    public static function expositoresSinPropuesta(
+        int $eventoId,
+        array $porEnlace = [],
+        ?Orden $orden = null,
+        ?int $limite = null,
+        int $desde = 0
+    ): array {
         return Bd::filas(
-            "SELECT p.id, p.nombre, p.correo, p.telefono, p.entidad, p.municipio, p.rol, p.creado_en
+            'SELECT p.id, p.nombre, p.correo, p.telefono, p.entidad, p.municipio, p.rol, p.creado_en
                FROM {persona} p
-              WHERE p.evento_id = ?
-                AND NOT EXISTS (SELECT 1 FROM {propuesta} pr WHERE pr.persona_id = p.id)
-                AND (p.rol = 'expositor'" . ($ids ? ' OR p.id IN (' . implode(',', $ids) . ')' : '') . ')
-           ORDER BY p.creado_en DESC',
+              WHERE ' . self::sqlSinPropuesta($porEnlace) . '
+           ORDER BY ' . ($orden?->sql() ?? 'p.creado_en DESC, p.id DESC')
+            . ($limite !== null ? ' LIMIT ' . max(1, $limite) . ' OFFSET ' . max(0, $desde) : ''),
             [$eventoId]
         );
+    }
+
+    /** Cuántos son, sin traerlos: para los contadores del panel y de Expositores. */
+    public static function contarExpositoresSinPropuesta(int $eventoId, array $porEnlace = []): int
+    {
+        return (int) Bd::valor(
+            'SELECT COUNT(*) FROM {persona} p WHERE ' . self::sqlSinPropuesta($porEnlace),
+            [$eventoId]
+        );
+    }
+
+    /** Los ids del enlace son enteros: se pueden escribir en la consulta. */
+    private static function sqlSinPropuesta(array $porEnlace): string
+    {
+        $ids = array_map('intval', array_keys($porEnlace));
+        return "p.evento_id = ?
+                AND NOT EXISTS (SELECT 1 FROM {propuesta} pr WHERE pr.persona_id = p.id)
+                AND (p.rol = 'expositor'" . ($ids ? ' OR p.id IN (' . implode(',', $ids) . ')' : '') . ')';
     }
 
     /** Días en que ingresó, como arreglo de enteros. */

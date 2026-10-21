@@ -19,12 +19,12 @@ registra gente, se sella asistencia, se aprueban exposiciones y se exportan repo
 
 | | Qué hay |
 |---|---|
-| **Interfaz** | 25 pantallas, diseño y formulario de registro configurables por evento, responsive. En el celular, el menú es una barra de íconos abajo, como la de Instagram |
+| **Interfaz** | 25 pantallas, diseño y formulario de registro configurables por evento, responsive. Los listados largos van por páginas y se ordenan desde el título de cada columna. En el celular, el menú es una barra de íconos abajo, como la de Instagram |
 | **Backend** | PHP 8.1+ con PDO y MySQL/MariaDB, sin framework ni Composer |
 | **Instalación** | Asistente de seis pasos que crea, actualiza o anexa las tablas. Al subir una versión nueva, la base se pone al día sola en la primera visita |
 | **Autenticación** | Cinco formas de entrar: correo, QR personal, contraseña, WhatsApp y SMS. Se puede crear el acceso con solo correo y contraseña. El equipo, con contraseña y segundo factor. Quien olvida su contraseña la recupera con un enlace al correo, y un administrador puede enviárselo desde el panel |
 | **Códigos QR** | Generador **y lector** propios, verificados uno contra otro y contra una librería de referencia |
-| **Pruebas** | 745 comprobaciones de extremo a extremo, 160 de actualización desde la 1.0.0, 134 en navegador, y 641 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy y formulario de registro |
+| **Pruebas** | 774 comprobaciones de extremo a extremo, 160 de actualización desde la 1.0.0, 138 en navegador, y 641 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy y formulario de registro |
 
 ---
 
@@ -363,14 +363,14 @@ el enrutado, las cookies, los testigos y los guardias, que es donde suelen estar
 Incluye 19 comprobaciones en el bloque específico de seguridad y otras tantas repartidas por
 los guardias de cada pantalla.
 
-Estado actual: **745 de 745** de extremo a extremo, **77** del asistente de instalación,
+Estado actual: **774 de 774** de extremo a extremo, **77** del asistente de instalación,
 **160** de actualización de una instalación en producción por siete caminos, **46** del
 segundo factor —los vectores del RFC 6238 y el reloj del servidor corrido—, **64** de la
 configuración de los formularios de registro, **22** del hash de contraseñas,
 **19** del correo saliente, **19** de la dirección del visitante detrás del proxy, **21** de la
 fotografía del carnet, **61** de los adjuntos del expositor, **17** del saneado de logos SVG,
 **198** casos de QR idénticos entre PHP y JavaScript, **161** entre JavaScript y la referencia,
-**13** del lector de QR, **134** de interacción en navegador, y las 23 pantallas limpias en
+**13** del lector de QR, **138** de interacción en navegador, y las 23 pantallas limpias en
 escritorio, tableta y móvil.
 
 Las pruebas nacieron de errores reales, y por eso cubren lo que cubren: una instalación que se

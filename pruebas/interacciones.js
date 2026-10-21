@@ -628,6 +628,39 @@ function titulo(t) {
   comprobar('se cierra con Escape',
     await p3.locator('#modal-ficha').isHidden());
 
+  // ---- Ordenar desde el título de cada columna ----
+  // La flecha va pegada al título, no al otro lado de la columna: así se ve
+  // de un vistazo cuál ordena y hacia dónde.
+  comprobar('cada título que ordena lleva su flecha pegada al texto', await p3.evaluate(() => {
+    const titulos = Array.from(document.querySelectorAll('.table__head a.orden'));
+    return titulos.length >= 5 && titulos.every(a => {
+      const rango = document.createRange();
+      rango.selectNodeContents(a.firstChild);
+      const separacion = a.querySelector('.orden__flecha').getBoundingClientRect().left - rango.getBoundingClientRect().right;
+      return separacion >= 0 && separacion <= 10;
+    });
+  }));
+  const kpiTotal = (await p3.locator('[data-kpi="Registros"]').innerText()).replace(/\s+/g, ' ');
+  comprobar('arriba, grande el total de registros y pequeño lo del filtro',
+    /Registros \d[\d.]* \d[\d.]* en la lista/i.test(kpiTotal), kpiTotal);
+
+  await p3.locator('.table__head a.orden[data-orden="entidad"]').click();
+  await p3.waitForLoadState('networkidle');
+  const entidades = async () => (await p3.locator('.table__row > span:nth-child(4)').allInnerTexts())
+    .map(t => t.trim()).filter(t => t !== '—');
+  const ascendente = await entidades();
+  comprobar('al pulsar «Entidad» ordena por entidad, ascendente',
+    /orden=entidad&dir=asc/.test(p3.url()) && (await p3.locator('a.orden.is-asc[data-orden="entidad"]').count()) === 1
+    && ascendente.join('|') === [...ascendente].sort((a, b) => a.localeCompare(b, 'es')).join('|'),
+    ascendente.join(' | '));
+  await p3.locator('.table__head a.orden[data-orden="entidad"]').click();
+  await p3.waitForLoadState('networkidle');
+  const descendente = await entidades();
+  comprobar('al pulsarlo otra vez lo invierte',
+    /orden=entidad&dir=desc/.test(p3.url()) && (await p3.locator('a.orden.is-desc[data-orden="entidad"]').count()) === 1
+    && descendente.join('|') === [...ascendente].reverse().join('|'),
+    descendente.join(' | '));
+
   comprobar('sin errores de consola en el panel', erroresPanel.length === 0,
     erroresPanel.slice(0, 2).join(' | '));
 

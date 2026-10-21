@@ -260,3 +260,38 @@ function correoOculto(string $correo): string
         : mb_substr($usuario, 0, 1) . str_repeat('•', min(6, $largo - 2)) . mb_substr($usuario, -1);
     return $visible . '@' . $dominio;
 }
+
+/**
+ * El título de una columna que ordena el listado, con su flecha pegada.
+ *
+ * Es un enlace y no un botón con JavaScript: ordena la base de datos sobre
+ * todo el listado —no solo la página que se ve—, y así el orden se puede
+ * recargar, compartir y deshacer con «atrás». Cambiar el orden vuelve a la
+ * primera página: la que se estaba mirando ya no tiene las mismas filas.
+ *
+ * La flecha es doble: tenue mientras la columna no ordena, y con la mitad que
+ * corresponde encendida cuando sí.
+ */
+function tituloOrdenable(string $etiqueta, string $clave, App\Nucleo\Orden $orden, string $ruta, array $consulta = []): string
+{
+    $sentido = $orden->activa($clave) ? $orden->direccion : '';
+    $consulta = array_diff_key($consulta, ['pagina' => true, 'orden' => true, 'dir' => true]);
+    $nombre = mb_strtolower($etiqueta);
+
+    $titulo = match ($sentido) {
+        'asc'   => 'Ordenado por ' . $nombre . ', ascendente. Pulsa para invertirlo',
+        'desc'  => 'Ordenado por ' . $nombre . ', descendente. Pulsa para invertirlo',
+        default => 'Ordenar por ' . $nombre,
+    };
+
+    return '<a class="orden' . ($sentido !== '' ? ' is-' . $sentido : '') . '"'
+        . ' href="' . e(u($ruta, $consulta + $orden->consultaPara($clave))) . '"'
+        . ' title="' . e($titulo) . '" data-orden="' . e($clave) . '">'
+        . e($etiqueta)
+        . '<svg class="orden__flecha" viewBox="0 0 10 14" width="9" height="12" fill="currentColor" aria-hidden="true">'
+        . '<path class="orden__arriba" d="M5 1 1.5 5.5h7z"/><path class="orden__abajo" d="M5 13 1.5 8.5h7z"/></svg>'
+        . ($sentido !== ''
+            ? '<span class="sr-only">, en orden ' . ($sentido === 'asc' ? 'ascendente' : 'descendente') . '</span>'
+            : '')
+        . '</a>';
+}

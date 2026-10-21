@@ -11,16 +11,18 @@
  * impresión. Paginarlo aquí obligaría a saber el tamaño del papel, que es
  * justamente lo que el servidor no sabe.
  *
- * @var array $tarjetas @var array $filtros
+ * Los carnets salen por tandas (Carnet::TANDA): con más que eso, esta pantalla
+ * dice qué tanda es y lleva a la siguiente.
+ *
+ * @var array $tarjetas @var array $filtros @var array $consulta  filtros y orden
+ * @var int $tanda @var int $tandas @var int $conCarnet @var int $porTanda
  */
 defined('EVENTOS_TIC') || exit;
 
 $marca = require __DIR__ . '/../parciales/marca.php';
 
-$conFiltro = array_filter([
-    'q'   => (string) ($filtros['texto'] ?? ''),
-    'rol' => (string) ($filtros['rol'] ?? ''),
-]);
+$desde = ($tanda - 1) * $porTanda + 1;
+$hasta = min($conCarnet, $tanda * $porTanda);
 ?>
 <main class="main" id="contenido" style="padding:24px">
   <div class="view view--wide stack stack--4">
@@ -30,6 +32,9 @@ $conFiltro = array_filter([
         <span class="kicker">Impresión</span>
         <h1 style="font-size:26px">
           <?= e(numero(count($tarjetas))) ?> carnet<?= count($tarjetas) === 1 ? '' : 's' ?>
+          <?php if ($tandas > 1): ?>
+            <span class="muted" style="font-size:16px" data-tanda>· del <?= e(numero($desde)) ?> al <?= e(numero($hasta)) ?> de <?= e(numero($conCarnet)) ?></span>
+          <?php endif; ?>
         </h1>
         <p class="help">
           Una cara por persona, con el código incluido. Salen a tamaño real: imprime en
@@ -38,9 +43,25 @@ $conFiltro = array_filter([
       </div>
       <div class="row">
         <button class="btn btn--primary" type="button" data-imprimir>Imprimir</button>
-        <a class="btn" href="<?= e(u('/carnets', $conFiltro)) ?>">Volver</a>
+        <?php if ($tanda < $tandas): ?>
+          <a class="btn" href="<?= e(u('/carnets/imprimir', $consulta + ['tanda' => $tanda + 1])) ?>">
+            Siguiente tanda ›
+          </a>
+        <?php endif; ?>
+        <a class="btn" href="<?= e(u('/carnets', $consulta)) ?>">Volver</a>
       </div>
     </div>
+
+    <?php if ($tandas > 1): ?>
+      <div class="notice no-print">
+        <span class="notice__icon" aria-hidden="true">◆</span>
+        <span>
+          Tanda <?= e((string) $tanda) ?> de <?= e((string) $tandas) ?>. Se imprimen en tandas de
+          <?= e(numero($porTanda)) ?> para que la página cargue rápido: cuando termines esta,
+          pasa a la siguiente.
+        </span>
+      </div>
+    <?php endif; ?>
 
     <?php if (!$tarjetas): ?>
       <div class="empty">No hay ningún carnet que imprimir con ese filtro</div>

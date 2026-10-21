@@ -268,6 +268,12 @@ function cargaDeCookie(string $valor): string
     return base64_decode(urldecode($valor), true) ?: '';
 }
 
+/** Un número como lo escribe la plataforma: 1.234, con punto de miles. */
+function numeroColombiano(int $n): string
+{
+    return number_format($n, 0, ',', '.');
+}
+
 /** Extrae el token de un enlace /d/xxxx o /c/xxxx que aparezca en el HTML. */
 function tokenDe(string $html, string $tipo): string
 {
@@ -4309,6 +4315,137 @@ comprobar('quedan los enlaces para las pruebas de navegador',
     strlen((string) @file_get_contents($carpetaSalidas . '/enlace-clave-asistente.txt')) === 64
     && strlen((string) @file_get_contents($carpetaSalidas . '/enlace-clave-equipo.txt')) === 64);
 $pdo->exec("DELETE FROM {$P}intento");
+
+/* =========================================================================
+   18 · Listados largos: páginas, orden y cifras
+   -------------------------------------------------------------------------
+   Con 396 registros en producción, «Registros» mostraba 200 y la tarjeta de
+   arriba decía «200 en el filtro», como si no hubiera más. Carnets y la
+   exportación se cortaban en 500. Ahora los listados van por páginas, se
+   ordenan desde el título de cada columna sobre todo el listado —no solo la
+   página que se ve— y las cifras de arriba son de todo el filtro.
+   ========================================================================= */
+titulo('Páginas y orden de los listados');
+
+$pdo->exec("DELETE FROM {$P}intento");
+$eventoActivo = (int) $pdo->query("SELECT id FROM {$P}evento WHERE activo = 1 ORDER BY id LIMIT 1")->fetchColumn();
+$antesCarga = (int) $pdo->query("SELECT COUNT(*) FROM {$P}persona WHERE evento_id = $eventoActivo")->fetchColumn();
+
+// 520 personas: más que el tope viejo de la exportación, y más de una tanda de
+// impresión. Una de cada diez sin entidad, para ver que las vacías van al final.
+$insertar = $pdo->prepare("INSERT INTO {$P}persona (evento_id, nombre, correo, tipo_documento, documento_huella,
+    entidad, departamento, municipio, rol, creado_en, autorizo_datos_en)
+    VALUES (?, ?, ?, 'CC', ?, ?, 'Nariño', ?, 'participante', NOW(), NOW())");
+$pdo->beginTransaction();
+for ($i = 1; $i <= 520; $i++) {
+    $insertar->execute([$eventoActivo, sprintf('Carga %03d Prueba', $i), sprintf('carga%03d@carga.prueba', $i),
+        hash('sha256', 'carga-' . $i), $i % 10 === 0 ? '' : 'Entidad ' . chr(65 + $i % 26), 'Municipio ' . ($i % 5)]);
+}
+$pdo->commit();
+// Los tres primeros entraron todos los días del evento.
+$pdo->exec("INSERT INTO {$P}asistencia (persona_id, evento_dia_id, via)
+            SELECT p.id, d.id, 'manual' FROM {$P}persona p JOIN {$P}evento_dia d ON d.evento_id = p.evento_id
+             WHERE p.correo IN ('carga001@carga.prueba', 'carga002@carga.prueba', 'carga003@carga.prueba')");
+$totalEvento = $antesCarga + 520;
+$filas = static fn(string $html): int => substr_count($html, 'data-ficha=');
+$antes = static fn(string $html, string $a, string $b): bool =>
+    ($x = strpos($html, $a)) !== false && ($y = strpos($html, $b)) !== false && $x < $y;
+
+// ---- Las cifras de arriba -------------------------------------------------
+$html = $jefa->get('/admin/registros');
+preg_match('#data-kpi="Registros".*?kpi__value">([^<]+)<.*?kpi__sub">([^<]+)<#s', $html, $m);
+comprobar('la primera tarjeta muestra grande cuántos registros tiene el evento',
+    str_replace('.', '', trim($m[1] ?? '')) === (string) $totalEvento, json_encode($m[1] ?? null));
+comprobar('y pequeño cuántos deja el filtro', str_contains($m[2] ?? '', 'sin filtros'), $m[2] ?? '');
+comprobar('el listado trae una página, no todo', $filas($html) === 50, (string) $filas($html));
+comprobar('y el pie dice cuáles son de cuántos', str_contains($html, '1–50 de ' . numeroColombiano($totalEvento) . ' registros'));
+
+$html = $jefa->get('/admin/registros?q=' . rawurlencode('Carga 0'));
+preg_match('#data-kpi="Registros".*?kpi__value">([^<]+)<.*?kpi__sub">([^<]+)<#s', $html, $m);
+comprobar('con un filtro, el total sigue grande y el filtro va pequeño',
+    str_replace('.', '', trim($m[1] ?? '')) === (string) $totalEvento && trim($m[2] ?? '') === '99 en el filtro',
+    json_encode([$m[1] ?? null, $m[2] ?? null]));
+comprobar('las otras cifras son de todo el filtro, no de la página',
+    preg_match('#data-kpi="Con al menos un ingreso".*?kpi__value">3<#s', $html) === 1);
+$html = $jefa->get('/admin/registros?q=' . rawurlencode('Carga 0') . '&pagina=2');
+comprobar('la segunda página trae el resto', $filas($html) === 49 && str_contains($html, '51–99 de 99 registros'),
+    (string) $filas($html));
+$html = $jefa->get('/admin/registros?q=' . rawurlencode('Carga 0') . '&pagina=999');
+comprobar('una página que no existe lleva a la última', str_contains($html, '51–99 de 99 registros'));
+$html = $jefa->get('/admin/registros?por=25');
+comprobar('se pueden ver 25 por página', $filas($html) === 25);
+$html = $jefa->get('/admin/registros?por=7');
+comprobar('un tamaño que no se ofrece se ignora', $filas($html) === 50);
+
+// ---- El orden, desde el título de cada columna ------------------------------
+$html = $jefa->get('/admin/registros?q=carga.prueba&orden=nombre&dir=desc');
+comprobar('ordena por nombre de la Z a la A sobre todo el listado',
+    $antes($html, 'Carga 520 Prueba', 'Carga 519 Prueba') && !str_contains($html, 'Carga 001 Prueba'));
+comprobar('el título de la columna lo marca, con su flecha, y su enlace lo invierte',
+    preg_match('#class="orden is-desc" href="[^"]*orden=nombre&amp;dir=asc[^"]*"[^>]*data-orden="nombre">Asistente<svg#', $html) === 1);
+comprobar('los demás títulos ofrecen ordenar por ellos',
+    substr_count($html, 'class="orden"') === 4 && !str_contains($html, 'data-orden="documento"'));
+comprobar('las páginas conservan el filtro y el orden',
+    preg_match('#href="[^"]*q=carga\.prueba[^"]*orden=nombre&amp;dir=desc[^"]*pagina=2"[^>]*aria-label="Página 2"#', $html) === 1);
+comprobar('y el formulario del filtro también', str_contains($html, 'name="orden" value="nombre"')
+    && str_contains($html, 'name="dir" value="desc"'));
+
+$ultima = (int) ceil(520 / 50);
+$html = $jefa->get('/admin/registros?q=carga.prueba&orden=entidad&dir=asc&pagina=' . $ultima);
+comprobar('las filas sin entidad van al final, no al principio', str_contains($html, 'Carga 520 Prueba')
+    && !str_contains($jefa->get('/admin/registros?q=carga.prueba&orden=entidad&dir=asc'), 'Carga 010 Prueba'));
+$html = $jefa->get('/admin/registros?q=carga.prueba&orden=ingresos&dir=desc');
+comprobar('ordena por cuántos días entró', $antes($html, 'Carga 001 Prueba', 'Carga 004 Prueba')
+    && $antes($html, 'Carga 003 Prueba', 'Carga 004 Prueba'));
+$jefa->get('/admin/registros?orden=' . rawurlencode('nombre; DROP TABLE evt_persona') . '&dir=' . rawurlencode('asc --'));
+comprobar('un orden inventado se ignora, sin error', $jefa->codigo === 200
+    && (int) $pdo->query("SELECT COUNT(*) FROM {$P}persona WHERE evento_id = $eventoActivo")->fetchColumn() === $totalEvento);
+$jefa->get('/admin/registros?orden=documento');
+comprobar('y el documento no ordena: va cifrado', $jefa->codigo === 200);
+
+// ---- La exportación y los carnets: todo el filtro -----------------------------
+$csv = $jefa->get('/admin/registros/exportar?q=carga.prueba&orden=nombre&dir=desc');
+$lineasCsv = array_values(array_filter(explode("\n", trim($csv)), static fn(string $l): bool => str_contains($l, 'carga.prueba')));
+comprobar('la exportación trae todo el filtro, más de las quinientas de antes', count($lineasCsv) === 520, (string) count($lineasCsv));
+comprobar('en el orden de la tabla', str_contains($lineasCsv[0] ?? '', 'Carga 520 Prueba'));
+
+// Con carnet: con nombre, y con identificación si algún formulario la exige.
+// Cuál de las dos reglas rige depende de cómo dejaron el formulario las
+// secciones de antes; cualquiera de las dos cuentas vale.
+$html = $jefa->get('/carnets');
+preg_match('#1–50 de ([\d.]+) carnets#u', $html, $m);
+$conCarnet = (int) str_replace('.', '', $m[1] ?? '0');
+$posibles = [
+    (int) $pdo->query("SELECT COUNT(*) FROM {$P}persona WHERE evento_id = $eventoActivo AND TRIM(nombre) <> ''")->fetchColumn(),
+    (int) $pdo->query("SELECT COUNT(*) FROM {$P}persona WHERE evento_id = $eventoActivo
+                        AND TRIM(nombre) <> '' AND documento_huella IS NOT NULL")->fetchColumn(),
+];
+comprobar('Carnets también va por páginas', substr_count($html, 'class="table__row"') === 50
+    && in_array($conCarnet, $posibles, true), $conCarnet . ' · ' . json_encode($posibles));
+comprobar('y con más de 300 se imprime por tandas, con un botón para cada una',
+    str_contains($html, 'Imprimir por tandas de 300') && str_contains($html, 'tanda=2') && str_contains($html, '1–300'));
+$html = $jefa->get('/carnets/imprimir?tanda=2');
+comprobar('la segunda tanda trae el resto, y dice cuáles son',
+    substr_count($html, 'class="carnet-uno"') === $conCarnet - 300 && str_contains($html, 'Tanda 2 de 2'),
+    (string) substr_count($html, 'class="carnet-uno"'));
+$html = $jefa->get('/carnets?orden=perfil&dir=desc');
+comprobar('Carnets se ordena igual, desde sus títulos', $jefa->codigo === 200 && str_contains($html, 'class="orden is-desc"'));
+
+// ---- Expositores ---------------------------------------------------------------
+$html = $jefa->get('/admin/expositores?orden=expositor&dir=asc');
+comprobar('Expositores se ordena desde sus títulos', $jefa->codigo === 200
+    && str_contains($html, 'data-orden="jornada"') && str_contains($html, 'class="orden is-asc"'));
+comprobar('y su formulario de decisión recuerda dónde se estaba',
+    str_contains($html, 'name="volver" value="orden=expositor&amp;dir=asc&amp;pagina=1&amp;por=25"'));
+$jefa->post('/admin/expositores/decidir', ['propuesta' => '0', 'decision' => 'nada',
+    'volver' => 'estado=aprobada&orden=expositor&dir=desc&pagina=1&por=25&malo=' . rawurlencode('<script>')], false);
+comprobar('después de decidir vuelve a la misma lista, sin nada de más',
+    str_ends_with($jefa->cabecera('Location'), '/admin/expositores?estado=aprobada&orden=expositor&dir=desc&pagina=1&por=25'),
+    $jefa->cabecera('Location'));
+
+$pdo->exec("DELETE FROM {$P}persona WHERE correo LIKE '%@carga.prueba'");
+comprobar('el guion deja el evento como estaba',
+    (int) $pdo->query("SELECT COUNT(*) FROM {$P}persona WHERE evento_id = $eventoActivo")->fetchColumn() === $antesCarga);
 
 ajustarConfig($RAIZ, ['modo_correo' => $configAntesForm['modo_correo'] ?? null]);
 

@@ -13,6 +13,7 @@ use App\Nucleo\Autenticacion;
 use App\Nucleo\Bitacora;
 use App\Nucleo\Dispositivo;
 use App\Nucleo\Guardia;
+use App\Nucleo\Paginacion;
 use App\Nucleo\Peticion;
 use App\Nucleo\Qr;
 use App\Nucleo\Respuesta;
@@ -103,29 +104,45 @@ final class Carnet
        que para doscientos asistentes era imposible.
        ===================================================================== */
 
+    /** Cuántos carnets salen de una vez al imprimir. Ver imprimirTodos(). */
+    public const TANDA = 300;
+
     public function lista(Peticion $peticion): void
     {
         $evento = App::eventoExigido();
+        $eventoId = (int) $evento['id'];
         $filtros = [
             'texto' => $peticion->query('q'),
             'rol'   => $peticion->query('rol'),
-            'limite' => 500,
         ];
 
-        $personas = Persona::conCredencial((int) $evento['id'], $filtros);
+        $conCarnet = Persona::contar($eventoId, ['completos' => true] + $filtros);
+        $paginacion = Paginacion::desde($peticion, $conCarnet);
+        $orden = Persona::ordenElegido($peticion, $eventoId);
+        $personas = Persona::conCredencial($eventoId, $filtros + [
+            'limite' => $paginacion->porPagina,
+            'desde'  => $paginacion->desplazamiento(),
+        ], $orden);
 
-        Bitacora::registrar('carnets_listados', 'evento', (int) $evento['id'], [
-            'cuantos' => count($personas),
+        Bitacora::registrar('carnets_listados', 'evento', $eventoId, [
+            'cuantos' => $conCarnet,
         ]);
 
+        $total = Persona::contar($eventoId);
         Respuesta::vista('admin/carnets', [
-            'titulo'   => 'Carnets del evento',
-            'pantalla' => 'carnets',
-            'personas' => $personas,
-            'filtros'  => $filtros,
-            'total'    => (int) \App\Nucleo\Bd::valor(
-                'SELECT COUNT(*) FROM {persona} WHERE evento_id = ?', [(int) $evento['id']]
-            ),
+            'titulo'     => 'Carnets del evento',
+            'pantalla'   => 'carnets',
+            'personas'   => $personas,
+            'filtros'    => $filtros,
+            'conCarnet'  => $conCarnet,
+            'paginacion' => $paginacion,
+            'orden'      => $orden,
+            'consulta'   => array_filter(['q' => $filtros['texto'], 'rol' => $filtros['rol']]),
+            'total'      => $total,
+            // Los del evento entero que no tienen carnet, filtre lo que filtre:
+            // el aviso de abajo habla de ellos.
+            'sinCarnet'  => $total - Persona::contar($eventoId, ['completos' => true]),
+            'tanda'      => self::TANDA,
         ]);
     }
 
@@ -138,19 +155,31 @@ final class Carnet
      * lo que hace que nadie use la función. Con el código en la misma cara, se
      * recorta y ya sirve.
      *
-     * No se pagina aquí: el navegador reparte las tarjetas por hoja con
-     * «break-inside: avoid», que es lo que hace que ninguna quede cortada.
+     * El reparto por hoja lo hace el navegador con «break-inside: avoid», que
+     * es lo que hace que ninguna quede cortada. Lo que sí se parte es la
+     * impresión, en tandas de TANDA carnets. Cada uno lleva su código QR, que
+     * se dibuja en el servidor, y con miles de una vez la página tardaría más
+     * de lo que el servidor deja correr a PHP. Hasta la 3.12 se cortaba en
+     * quinientos sin avisar; ahora se dice qué tanda es y cuántas faltan.
      */
     public function imprimirTodos(Peticion $peticion): void
     {
         $evento = App::eventoExigido();
+        $eventoId = (int) $evento['id'];
         $filtros = [
             'texto' => $peticion->query('q'),
             'rol'   => $peticion->query('rol'),
-            'limite' => 500,
         ];
 
-        $personas = Persona::conCredencial((int) $evento['id'], $filtros);
+        $conCarnet = Persona::contar($eventoId, ['completos' => true] + $filtros);
+        $tandas = max(1, (int) ceil($conCarnet / self::TANDA));
+        $tanda = min(max(1, $peticion->entero('tanda', 1)), $tandas);
+        $orden = Persona::ordenElegido($peticion, $eventoId);
+
+        $personas = Persona::conCredencial($eventoId, $filtros + [
+            'limite' => self::TANDA,
+            'desde'  => ($tanda - 1) * self::TANDA,
+        ], $orden);
 
         // Cada carnet necesita su credencial. Se asegura aquí y no en la vista
         // para que una persona sin carnet emitido —registro recién completado—
@@ -169,14 +198,20 @@ final class Carnet
             ];
         }
 
-        Bitacora::registrar('carnets_impresos', 'evento', (int) $evento['id'], [
+        Bitacora::registrar('carnets_impresos', 'evento', $eventoId, [
             'cuantos' => count($tarjetas),
+            'tanda'   => $tandas > 1 ? $tanda . ' de ' . $tandas : '',
         ]);
 
         Respuesta::vista('admin/carnets-imprimir', [
             'titulo'       => 'Carnets para imprimir',
             'tarjetas'     => $tarjetas,
             'filtros'      => $filtros,
+            'consulta'     => array_filter(['q' => $filtros['texto'], 'rol' => $filtros['rol']]) + $orden->consulta(),
+            'tanda'        => $tanda,
+            'tandas'       => $tandas,
+            'conCarnet'    => $conCarnet,
+            'porTanda'     => self::TANDA,
             'sinPlantilla' => true,
         ]);
     }

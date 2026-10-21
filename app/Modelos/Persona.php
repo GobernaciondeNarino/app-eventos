@@ -544,10 +544,16 @@ final class Persona
         ];
     }
 
-    /** El orden elegido en la tabla, o por nombre si no se eligió ninguno. */
+    /**
+     * El orden elegido en la tabla, o por nombre si no se eligió ninguno.
+     *
+     * En los empates —la misma entidad, el mismo municipio— van por nombre, y
+     * los registros a medias, que todavía no tienen nombre, al final.
+     */
     public static function ordenElegido(Peticion $peticion, int $eventoId): Orden
     {
-        return Orden::desde($peticion, self::columnasDeOrden($eventoId), 'nombre', 'asc', 'p.nombre ASC, p.id ASC');
+        return Orden::desde($peticion, self::columnasDeOrden($eventoId), 'nombre', 'asc',
+            "(TRIM(p.nombre) = '') ASC, p.nombre ASC, p.id ASC");
     }
 
     /**

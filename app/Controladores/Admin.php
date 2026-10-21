@@ -10,6 +10,7 @@ use App\Modelos\Asistencia;
 use App\Modelos\Credencial;
 use App\Modelos\Evento;
 use App\Modelos\Persona;
+use App\Modelos\Recuperacion;
 use App\Modelos\Usuario;
 use App\Nucleo\App;
 use App\Nucleo\Autenticacion;
@@ -213,6 +214,8 @@ final class Admin
             'tieneClave'      => Persona::tieneClave($persona),
             'qrActivo'        => Autenticacion::activo('qr'),
             'claveNueva'      => (string) ($parametros['claveNueva'] ?? ''),
+            'claveActiva'     => Autenticacion::activo('clave'),
+            'enlaceClave'     => $parametros['enlaceClave'] ?? null,
             'urlAcceso'       => '',
         ];
 
@@ -280,6 +283,65 @@ final class Admin
         // La contraseña nueva NO viaja en la redirección ni en el aviso: se
         // pinta directamente en la respuesta de esta petición, una sola vez.
         $this->ficha($peticion, ['persona' => $id, 'claveNueva' => $nueva]);
+    }
+
+    /**
+     * Le envía a un asistente un enlace para que ponga él mismo una contraseña
+     * nueva.
+     *
+     * Es la otra salida cuando alguien no recuerda la suya, y la buena cuando
+     * no está delante: no hay que dictarle nada por teléfono, la contraseña la
+     * elige la persona y nadie más la conoce. La actual sigue sirviendo hasta
+     * que la cambie, así que enviarlo no le quita el acceso a nadie.
+     */
+    public function enviarEnlaceClave(Peticion $peticion): void
+    {
+        $evento = App::eventoExigido();
+        $id = $peticion->entero('persona');
+        $persona = Persona::porId($id);
+
+        if (!$persona || (int) $persona['evento_id'] !== (int) $evento['id']) {
+            Respuesta::redirigir('/admin/registros', 'Esa persona no existe en este evento.', 'warn');
+        }
+
+        $aviso = Autenticacion::activo('clave')
+            ? $this->enviarEnlaceDeClave('asistente', $persona)
+            : ['warn', 'El acceso con contraseña está apagado en «Acceso y correo»: esta persona entra con '
+                . 'un código al correo o con su QR, sin contraseña.'];
+
+        $this->ficha($peticion, ['persona' => $id, 'enlaceClave' => $aviso]);
+    }
+
+    /**
+     * Crea el enlace, lo envía y lo deja en la bitácora con quién lo envió.
+     *
+     * @return array{0: string, 1: string} el tipo de aviso y su texto
+     */
+    private function enviarEnlaceDeClave(string $tipo, array $cuenta): array
+    {
+        if (!Correo::disponible()) {
+            return ['warn', 'No hay correo saliente configurado, así que el enlace no llegaría. Configúralo en '
+                . '«Acceso y correo»' . ($tipo === 'asistente'
+                    ? ', o genérale una contraseña nueva y entrégasela en persona.' : '.')];
+        }
+
+        try {
+            $enviado = Recuperacion::enviar($tipo, $cuenta, (int) Guardia::usuarioActual()['id']);
+        } catch (\Throwable $e) {
+            \App\Nucleo\Registro::excepcion($e);
+            return ['danger', 'No se pudo preparar el enlace. Si la plataforma se acaba de actualizar, '
+                . 'pon al día la base de datos desde el panel y vuelve a intentarlo.'];
+        }
+
+        Bitacora::registrar('enlace_clave_enviado', $tipo === 'admin' ? 'usuario' : 'persona',
+            (int) $cuenta['id'], ['enviado' => $enviado]);
+
+        if (!$enviado) {
+            return ['danger', 'El correo no salió: ' . (Correo::ultimoError() ?: 'el servidor de correo no lo aceptó')
+                . '. Revisa «Acceso y correo».'];
+        }
+        return ['ok', 'Le enviamos a ' . $cuenta['correo'] . ' un enlace para poner una contraseña nueva. Vence '
+            . 'en 24 horas y sirve una sola vez; la contraseña actual sigue sirviendo mientras no la cambie.'];
     }
 
     /** Cambia el token del QR de acceso de una persona. */
@@ -1007,6 +1069,35 @@ final class Admin
 
         Usuario::cambiarEstado($id, $peticion->campo('estado'));
         Respuesta::redirigir('/admin/organizadores', 'Estado de la cuenta actualizado.');
+    }
+
+    /**
+     * Le envía a otra cuenta del equipo un enlace para cambiar su contraseña.
+     *
+     * Para quien la olvidó y no puede pedirlo él mismo, o para la cuenta recién
+     * creada: así la contraseña inicial no tiene que viajar por chat. El enlace
+     * no salta la verificación en dos pasos; si además perdió el teléfono, se
+     * restablece aparte, con «Restablecer 2FA».
+     */
+    public function enviarEnlaceClaveUsuario(Peticion $peticion): void
+    {
+        $yo = Guardia::usuarioActual();
+        $id = $peticion->entero('usuario');
+
+        if ($id === (int) $yo['id']) {
+            Respuesta::redirigir('/admin/clave', 'Tu propia contraseña la cambias aquí.', 'warn');
+        }
+        $objetivo = Usuario::porId($id);
+        if (!$objetivo) {
+            Respuesta::redirigir('/admin/organizadores', 'Esa cuenta no existe.', 'warn');
+        }
+        if ($objetivo['estado'] !== 'activo') {
+            Respuesta::redirigir('/admin/organizadores', 'La cuenta de ' . $objetivo['nombre']
+                . ' está suspendida. Reactívala antes de enviarle el enlace.', 'warn');
+        }
+
+        [$tipo, $mensaje] = $this->enviarEnlaceDeClave('admin', $objetivo);
+        Respuesta::redirigir('/admin/organizadores', $mensaje, $tipo);
     }
 
     /**

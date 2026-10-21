@@ -19,12 +19,12 @@ registra gente, se sella asistencia, se aprueban exposiciones y se exportan repo
 
 | | Qué hay |
 |---|---|
-| **Interfaz** | 21 pantallas, diseño y formulario de registro configurables por evento, responsive. En el celular, el menú es una barra de íconos abajo, como la de Instagram |
+| **Interfaz** | 25 pantallas, diseño y formulario de registro configurables por evento, responsive. En el celular, el menú es una barra de íconos abajo, como la de Instagram |
 | **Backend** | PHP 8.1+ con PDO y MySQL/MariaDB, sin framework ni Composer |
 | **Instalación** | Asistente de seis pasos que crea, actualiza o anexa las tablas. Al subir una versión nueva, la base se pone al día sola en la primera visita |
-| **Autenticación** | Cinco formas de entrar: correo, QR personal, contraseña, WhatsApp y SMS. Se puede crear el acceso con solo correo y contraseña. El equipo, con contraseña y segundo factor |
+| **Autenticación** | Cinco formas de entrar: correo, QR personal, contraseña, WhatsApp y SMS. Se puede crear el acceso con solo correo y contraseña. El equipo, con contraseña y segundo factor. Quien olvida su contraseña la recupera con un enlace al correo, y un administrador puede enviárselo desde el panel |
 | **Códigos QR** | Generador **y lector** propios, verificados uno contra otro y contra una librería de referencia |
-| **Pruebas** | 688 comprobaciones de extremo a extremo, 160 de actualización desde la 1.0.0, 127 en navegador, y 641 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy y formulario de registro |
+| **Pruebas** | 745 comprobaciones de extremo a extremo, 160 de actualización desde la 1.0.0, 134 en navegador, y 641 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy y formulario de registro |
 
 ---
 
@@ -132,7 +132,12 @@ pasa por `index.php`.
 
 Las cuentas del equipo viven en la tabla **`evt_usuario`** (el prefijo se elige al instalar),
 con la contraseña en hash Argon2id. Los asistentes al evento no están ahí: van a
-`evt_persona` y entran por correo, sin contraseña.
+`evt_persona` y entran con un código al correo, su QR o su propia contraseña.
+
+Quien olvidó su contraseña pulsa **«¿Olvidaste tu contraseña?»** en el acceso y le llega un
+enlace al correo para poner una nueva; un administrador también puede enviárselo, desde la
+ficha de la persona o desde **Organizadores**. El enlace sirve una vez, vence, y no salta el
+segundo factor. Ver `docs/SEGURIDAD.md` y `docs/ADMINISTRAR-EVENTOS.md` (8.5).
 
 Si el código de la aplicación no entra, la pantalla dice por qué —ya se usó, el reloj del
 servidor está corrido, la configuración no se puede leer— y ofrece entrar con un código que
@@ -358,14 +363,14 @@ el enrutado, las cookies, los testigos y los guardias, que es donde suelen estar
 Incluye 19 comprobaciones en el bloque específico de seguridad y otras tantas repartidas por
 los guardias de cada pantalla.
 
-Estado actual: **688 de 688** de extremo a extremo, **77** del asistente de instalación,
+Estado actual: **745 de 745** de extremo a extremo, **77** del asistente de instalación,
 **160** de actualización de una instalación en producción por siete caminos, **46** del
 segundo factor —los vectores del RFC 6238 y el reloj del servidor corrido—, **64** de la
 configuración de los formularios de registro, **22** del hash de contraseñas,
 **19** del correo saliente, **19** de la dirección del visitante detrás del proxy, **21** de la
 fotografía del carnet, **61** de los adjuntos del expositor, **17** del saneado de logos SVG,
 **198** casos de QR idénticos entre PHP y JavaScript, **161** entre JavaScript y la referencia,
-**13** del lector de QR, **127** de interacción en navegador, y las 19 pantallas limpias en
+**13** del lector de QR, **134** de interacción en navegador, y las 23 pantallas limpias en
 escritorio, tableta y móvil.
 
 Las pruebas nacieron de errores reales, y por eso cubren lo que cubren: una instalación que se

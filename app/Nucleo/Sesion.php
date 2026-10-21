@@ -277,6 +277,7 @@ final class Sesion
         Bd::ejecutar('DELETE FROM {codigo_acceso} WHERE expira_en < DATE_SUB(NOW(), INTERVAL 1 DAY)');
         Bd::ejecutar('DELETE FROM {intento} WHERE creado_en < DATE_SUB(NOW(), INTERVAL 1 DAY)');
         Dispositivo::podar();
+        \App\Modelos\Recuperacion::podar();
 
         // Los registros de error viejos se van con lo demás. Registro::podar()
         // existía desde el principio y no lo llamaba nadie: en una instalación

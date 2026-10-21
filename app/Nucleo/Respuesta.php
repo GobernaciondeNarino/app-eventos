@@ -111,6 +111,35 @@ final class Respuesta
         exit;
     }
 
+    /**
+     * Trabajo que puede esperar a que la respuesta ya haya salido.
+     *
+     * Para lo que no debe notarse en cuánto tarda la respuesta. Al pedir un
+     * enlace para recuperar la contraseña, el correo solo se envía si la cuenta
+     * existe, y enviarlo tarda: respondiendo antes de enviar, la espera no dice
+     * qué correos están registrados.
+     *
+     * Con PHP-FPM —lo normal en Plesk— la respuesta se entrega primero y el
+     * trabajo sigue después. Donde eso no existe, se hace igual antes de
+     * terminar: más lento, pero se hace.
+     */
+    public static function despues(callable $trabajo): void
+    {
+        register_shutdown_function(static function () use ($trabajo): void {
+            ignore_user_abort(true);
+            if (function_exists('fastcgi_finish_request')) {
+                @fastcgi_finish_request();
+            } elseif (function_exists('litespeed_finish_request')) {
+                @litespeed_finish_request();
+            }
+            try {
+                $trabajo();
+            } catch (\Throwable $e) {
+                Registro::excepcion($e);
+            }
+        });
+    }
+
     public static function redirigirAbsoluto(string $url): never
     {
         header('Location: ' . $url, true, 303);

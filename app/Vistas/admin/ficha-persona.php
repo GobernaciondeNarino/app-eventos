@@ -9,13 +9,16 @@
  * @var array $persona @var string $documento @var array|null $credencial
  * @var array $historial @var int $contactos @var array $caracterizacion
  * @var bool $esAdministrador @var bool $tieneClave @var bool $qrActivo
- * @var string $claveNueva @var string $urlAcceso
+ * @var string $claveNueva @var string $urlAcceso @var bool $claveActiva
+ * @var array{0: string, 1: string}|null $enlaceClave el resultado de enviarle el enlace
  */
 defined('EVENTOS_TIC') || exit;
 
 $id = (int) $persona['id'];
 $foto = (string) ($persona['foto'] ?? '') !== '' ? u('/medios/foto/' . $id) : '';
 $qrAcceso = $qrAcceso ?? '';
+$claveActiva = $claveActiva ?? true;
+$enlaceClave = $enlaceClave ?? null;
 ?>
 <div class="stack stack--4" data-ficha-contenido>
 
@@ -62,6 +65,14 @@ $qrAcceso = $qrAcceso ?? '';
           <button class="btn btn--sm" type="button" data-copiar="<?= e($claveNueva) ?>">Copiar</button>
         </span>
       </span>
+    </div>
+  <?php endif; ?>
+
+  <?php if ($enlaceClave !== null): ?>
+    <?php [$tipoEnlace, $textoEnlace] = $enlaceClave; ?>
+    <div class="notice notice--<?= e($tipoEnlace) ?>" role="status" data-enlace-clave="<?= e($tipoEnlace) ?>">
+      <span class="notice__icon" aria-hidden="true"><?= $tipoEnlace === 'ok' ? '✓' : '▲' ?></span>
+      <span><?= e($textoEnlace) ?></span>
     </div>
   <?php endif; ?>
 
@@ -180,8 +191,8 @@ $qrAcceso = $qrAcceso ?? '';
           <span>
             <strong>Su contraseña no se puede ver.</strong> La plataforma guarda solo una
             huella irreversible, así que nadie —tampoco un administrador, tampoco quien
-            copie la base— puede leerla. Lo que sí se puede es darle una nueva o dejarla
-            entrar con su QR.
+            copie la base— puede leerla. Lo que sí se puede es enviarle un enlace para que
+            ponga una nueva, darle una nueva o dejarla entrar con su QR.
           </span>
         </div>
 
@@ -191,11 +202,22 @@ $qrAcceso = $qrAcceso ?? '';
         </div>
 
         <div class="row">
+          <?php if ($claveActiva): ?>
+            <!-- Lo primero que se ofrece: la persona elige su contraseña y nadie
+                 más la conoce, y la actual sigue sirviendo hasta que la cambie. -->
+            <form method="post" action="<?= e(u('/admin/registros/enlace-clave')) ?>" data-ficha-accion
+                  data-confirmar="Se enviará a <?= e($persona['correo']) ?> un enlace para poner una contraseña nueva. Vence en 24 horas. ¿Continuar?">
+              <?= testigo() ?>
+              <input type="hidden" name="persona" value="<?= e((string) $id) ?>">
+              <button class="btn btn--sm btn--primary" type="submit">Enviarle un enlace por correo</button>
+            </form>
+          <?php endif; ?>
+
           <form method="post" action="<?= e(u('/admin/registros/clave')) ?>" data-ficha-accion
                 data-confirmar="Se generará una contraseña nueva y la anterior dejará de servir. ¿Continuar?">
             <?= testigo() ?>
             <input type="hidden" name="persona" value="<?= e((string) $id) ?>">
-            <button class="btn btn--sm btn--primary" type="submit">
+            <button class="btn btn--sm<?= $claveActiva ? '' : ' btn--primary' ?>" type="submit">
               <?= $tieneClave ? 'Generar una contraseña nueva' : 'Asignarle una contraseña' ?>
             </button>
           </form>

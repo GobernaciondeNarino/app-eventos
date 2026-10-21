@@ -89,6 +89,7 @@ $rotuloBoton = match ($metodo) {
             <input class="input<?= isset($errores['clave']) ? ' is-invalid' : '' ?>" type="password"
                    id="clave" name="clave" autocomplete="current-password" required>
             <?php if (isset($errores['clave'])): ?><span class="error"><?= e($errores['clave']) ?></span><?php endif; ?>
+            <span class="help"><a href="<?= e(u('/entrar/recuperar')) ?>" data-olvide>¿Olvidaste tu contraseña?</a></span>
           </div>
         <?php endif; ?>
 

@@ -259,7 +259,7 @@ solo uso, sin contraseña.
 
 ## 3.8 Qué tablas mirar para saber si la instalación grabó sus datos
 
-De las dieciséis tablas, el asistente solo escribe en **seis**. Las otras diez se crean vacías
+De las veinte tablas, el asistente solo escribe en **seis**. Las otras catorce se crean vacías
 y se van llenando con el uso. Si acabas de instalar y quieres comprobar que todo quedó
 guardado, mira estas seis y en este orden:
 
@@ -283,10 +283,11 @@ UNION ALL SELECT 'evt_migracion',    COUNT(*) FROM evt_migracion
 UNION ALL SELECT 'evt_bitacora',     COUNT(*) FROM evt_bitacora;
 ```
 
-Las diez restantes —`evt_persona`, `evt_persona_caracterizacion`, `evt_credencial`,
+Las catorce restantes —`evt_persona`, `evt_persona_caracterizacion`, `evt_credencial`,
 `evt_asistencia`, `evt_contacto`, `evt_charla`, `evt_propuesta`, `evt_sesion`,
-`evt_codigo_acceso`, `evt_intento`— **tienen que estar vacías recién instalado**. Que lo estén
-es lo correcto: se llenan con el uso.
+`evt_dispositivo`, `evt_codigo_acceso`, `evt_recuperacion_clave`, `evt_intento`,
+`evt_evento_formulario` y `evt_evento_formulario_expositores`— **tienen que estar vacías recién
+instalado**. Que lo estén es lo correcto: se llenan con el uso.
 
 No hace falta entrar a phpMyAdmin para esto: **`/cumbreAI/instalar/diagnostico`** cuenta lo
 mismo en una pantalla, y funciona aunque `config/config.php` todavía no exista.
@@ -413,6 +414,12 @@ restauró no es una copia.
    (`/exposicion`): ya registrado, el expositor envía su propuesta si llegó sin ella, la corrige
    y cambia sus documentos sin volver a escribirla. Las propuestas y los archivos que ya están
    no cambian; el correo de una propuesta devuelta lleva ahora a esa pantalla. Ver 7.3.
+
+   La 3.12 agrega **una tabla**, la de los enlaces para recuperar la contraseña
+   (`evt_recuperacion_clave`), y nada más en la base: no cambia ninguna tabla que ya exista ni
+   ningún registro. La crea sola la primera visita después de subir los archivos. Con ella,
+   asistentes y equipo pueden pedir un enlace al correo desde «¿Olvidaste tu contraseña?», y un
+   administrador puede enviárselo desde la ficha de la persona o desde **Organizadores**. Ver 7.4.
 
    Si el usuario de la base de datos no tiene permiso de `ALTER` —pasa en algunos
    alojamientos—, la actualización automática no puede hacerse: lo anota en el registro,
@@ -546,6 +553,80 @@ Para comprobarla, entra como un expositor —con su QR de acceso o su correo— 
 exposición» desde el aviso del carnet. Para volver atrás, sube los archivos que descargaste y
 borra `app/Vistas/publico/exposicion.php`.
 
+### 7.4 La 3.12: recuperar la contraseña por correo, sin tocar registros ni configuración
+
+**Qué agrega.** «¿Olvidaste tu contraseña?» en las dos pantallas de acceso —la de asistentes, con
+el método de contraseña, y la del equipo—. Se pide con el correo y llega un enlace para poner una
+contraseña nueva. Y en el panel, dos botones para enviar ese enlace: **«Enviarle un enlace por
+correo»** en la ficha de cada persona, y **«Enviar enlace»** en **Organizadores**,
+para cada cuenta del equipo.
+
+**Qué cambia en la base de datos.** Solo se **agrega** la tabla `evt_recuperacion_clave` (esquema
+1.11.0). La crea la actualización automática en la primera visita —lo mismo que hizo la 3.9 con
+la del formulario de expositores—, o el botón «Actualizar la base de datos» si la automática está
+apagada. No se modifica ninguna tabla existente ni ningún registro: las personas, las cuentas del
+equipo, sus contraseñas y sus segundos factores quedan como estaban. Nadie tiene que cambiar su
+contraseña ni volver a entrar.
+
+**Qué no cambia.** `config/config.php` —no hay que agregar nada—, `almacen/`, los registros, los
+carnets y las asistencias. Las contraseñas actuales siguen sirviendo; un enlace solo cambia la de
+quien lo usa, y solo cuando lo usa.
+
+**Lo que necesita para funcionar:**
+
+- **Correo saliente.** Es el mismo que ya envía los códigos de acceso (*Configuración → Acceso y
+  correo*). Si no sale, el enlace no llega: la pantalla de quien lo pide no lo dice —para no
+  revelar qué correos están registrados—, pero el registro de errores sí, y el botón del panel
+  avisa en el momento.
+- **`url_base` en `config/config.php`.** El asistente de instalación la escribe siempre; compruébalo
+  en `/cumbreAI/instalar/diagnostico` («url_base configurada»). Los enlaces que pide la propia
+  persona se arman solo con esa dirección: sin ella, alguien podría pedir el enlace de otra
+  persona con una cabecera `Host` falsa y hacerlo llegar apuntando a otro sitio. Si faltara, el
+  enlace no se envía y queda anotado en el registro de errores.
+
+**Qué archivos cambian:**
+
+| Archivo | Para qué |
+|---|---|
+| `app/Esquema.php` | La tabla nueva, y la versión del esquema 1.11.0 |
+| `app/Modelos/Recuperacion.php` | **Nuevo.** Crear, comprobar y gastar los enlaces |
+| `app/Controladores/Recuperar.php` | **Nuevo.** Pedir el enlace y poner la contraseña nueva, en las dos puertas |
+| `app/Vistas/publico/recuperar.php`, `app/Vistas/publico/nueva-clave.php` | **Nuevos.** Las pantallas del asistente |
+| `app/Vistas/admin/recuperar.php`, `app/Vistas/admin/nueva-clave.php` | **Nuevos.** Las pantallas del equipo |
+| `app/rutas.php` | Las direcciones nuevas |
+| `app/Vistas/publico/entrar.php`, `app/Vistas/publico/crear-acceso.php`, `app/Vistas/admin/entrar.php` | El enlace «¿Olvidaste tu contraseña?» |
+| `app/Controladores/Admin.php`, `app/Vistas/admin/ficha-persona.php`, `app/Vistas/admin/organizadores.php` | Los botones para enviar el enlace |
+| `app/Controladores/Acceso.php`, `app/Vistas/admin/verificar.php` | El segundo factor después de recuperar la contraseña (ver abajo) |
+| `app/Nucleo/Correo.php`, `app/Nucleo/Bitacora.php`, `app/Nucleo/Limite.php` | El correo, la bitácora y los topes de pedidos |
+| `app/Nucleo/Respuesta.php`, `app/Nucleo/Sesion.php`, `app/ayudas.php` | Enviar después de responder, la limpieza de enlaces vencidos y el correo enmascarado |
+| `index.php`, `herramientas/instalar.php`, `herramientas/correo.php` | El número de versión |
+
+**Cómo subirla:**
+
+1. Haz la copia de seguridad de siempre (punto 1 de arriba): **la base de datos y `config/`**.
+   Descarga además, tal como están en el servidor, los archivos de la tabla que ya existen.
+2. Sube los archivos de la tabla —o la versión completa, **sin tocar `config/` ni `almacen/`**—.
+3. Abre cualquier página de la plataforma. La primera visita crea la tabla; en `/admin` no debe
+   quedar ningún aviso de «base de datos atrasada». Si queda —el usuario de la base no tiene
+   permiso de `CREATE`—, pulsa **«Actualizar la base de datos»** en ese aviso.
+4. Compruébalo con una cuenta de prueba, no con la tuya: en `/cumbreAI/entrar`, elige
+   «Contraseña», pulsa **«¿Olvidaste tu contraseña?»**, escribe el correo y abre el enlace que
+   llega. Para el panel, igual desde `/cumbreAI/admin/entrar`, o con **«Enviar enlace»** en
+   Organizadores.
+
+**Volver atrás:** sube otra vez los archivos que descargaste en el paso 1 y borra los seis
+archivos nuevos de la tabla. La tabla `evt_recuperacion_clave` puede quedarse: la versión
+anterior no la usa ni la mira, y no estorba. Si prefieres quitarla, `DROP TABLE
+evt_recuperacion_clave;` en phpMyAdmin, después de volver a los archivos anteriores.
+
+**El segundo factor no cambia, con una precaución nueva.** El enlace cambia la contraseña del
+panel pero nunca abre sesión: después se entra con la contraseña nueva y el código de la
+aplicación, como siempre. Y durante las 24 horas siguientes a usar uno, esa cuenta no puede
+completar el segundo paso con un código al correo: si pudiera, quien tuviera acceso al buzón
+entraría al panel solo con eso. Quien perdió a la vez la contraseña y el teléfono pide a otra
+persona administradora **«Restablecer 2FA»** en Organizadores (o `php herramientas/cuenta.php
+sin-2fa --correo=…`).
+
 ---
 
 ## 8. Problemas frecuentes
@@ -583,14 +664,14 @@ php herramientas/cuenta.php estado
 
 O desde el navegador, en `/cumbreAI/instalar/diagnostico`.
 
-Responde qué hay y qué falta: el archivo de configuración, la conexión, las 16 tablas, cuántas
+Responde qué hay y qué falta: el archivo de configuración, la conexión, las tablas, cuántas
 cuentas administradoras activas existen, cuántos eventos, y el nombre exacto de la tabla donde
 viven las cuentas. Con eso, el caso es uno de estos cuatro:
 
 | Lo que dice el diagnóstico | Qué pasó | Cómo se arregla |
 |---|---|---|
 | `✕ cuentas administradoras activas: 0` | La instalación se interrumpió antes de crear la cuenta | El asistente se reabre solo en **modo reparación**: entra a `/cumbreAI/instalar`. O `cuenta.php crear` |
-| Hay cuenta, pero no recuerdas la contraseña | — | `php herramientas/cuenta.php clave --correo=…` |
+| Hay cuenta, pero no recuerdas la contraseña | — | **«¿Olvidaste tu contraseña?»** en el acceso del equipo: llega un enlace al correo (desde la 3.12). O que otra cuenta administradora te lo envíe desde **Organizadores**. Sin correo: `php herramientas/cuenta.php clave --correo=…` |
 | Entra pero se queda pidiendo el código de seis dígitos | El segundo factor quedó en un teléfono que ya no está | En la misma pantalla, **«Enviar un código a mi correo»**; después, **Configuración → Mi cuenta** para escanear un QR nuevo. Sin correo: otra cuenta administradora, desde **Organizadores → Restablecer 2FA**, o `php herramientas/cuenta.php sin-2fa --correo=…` |
 | «La configuración de tu verificación en dos pasos no se puede leer» | La llave de cifrado cambió (se perdió `config/config.php`, ver 7.1) | Código por correo desde esa pantalla; o lo mismo que la fila anterior |
 | `✕ tablas` o `✕ conexión` | La base no es la que cree, o le falta el esquema | Revisa `config/config.php` y repite el asistente en modo **Actualizar** |

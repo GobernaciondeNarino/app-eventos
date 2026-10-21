@@ -4,7 +4,10 @@ defined('EVENTOS_TIC') || exit;
 
 use App\Modelos\Usuario;
 
-$columnas = 'grid-template-columns:1.4fr 1.35fr 1fr .7fr 1.15fr';
+// La última columna lleva el estado y hasta tres acciones —enviar el enlace
+// de la contraseña, restablecer el segundo factor, suspender—: es la que más
+// ancho necesita para que los botones no se partan ni se salgan del cuadro.
+$columnas = 'grid-template-columns:1.3fr 1.3fr .8fr .55fr 1.5fr';
 $permisos = [
     ['Administrador', ['Configurar el evento y la identidad', 'Aprobar propuestas',
                        'Exportar con caracterización', 'Gestionar el equipo']],
@@ -76,6 +79,18 @@ $permisos = [
                   <span class="tag tag--danger" title="La configuración guardada no se puede leer con la llave actual">2FA ilegible</span>
                 <?php elseif (!Usuario::tieneSegundoFactor($u) && $u['rol'] === 'administrador'): ?>
                   <span class="tag tag--danger" title="Todavía no ha activado el segundo factor">Sin 2FA</span>
+                <?php endif; ?>
+                <?php if ((int) $u['id'] !== (int) $usuario['id'] && $u['estado'] === 'activo'): ?>
+                  <!-- La contraseña la elige la persona con el enlace, y la
+                       actual sigue sirviendo hasta que la cambie. -->
+                  <form method="post" action="<?= e(u('/admin/organizadores/enlace-clave')) ?>"
+                        data-confirmar="Se enviará a <?= e($u['correo']) ?> un enlace para cambiar su contraseña. Vence en 24 horas y no salta la verificación en dos pasos. ¿Continuar?">
+                    <?= testigo() ?>
+                    <input type="hidden" name="usuario" value="<?= (int) $u['id'] ?>">
+                    <button class="btn btn--sm" type="submit"
+                            title="Enviarle por correo un enlace para cambiar su contraseña"
+                            aria-label="Enviar a <?= e($u['nombre']) ?> un enlace para cambiar su contraseña">Enviar enlace</button>
+                  </form>
                 <?php endif; ?>
                 <?php if ((int) $u['id'] !== (int) $usuario['id'] && $estado2fa !== 'ninguno'): ?>
                   <form method="post" action="<?= e(u('/admin/organizadores/segundo-factor')) ?>"
@@ -180,7 +195,8 @@ $permisos = [
           <span class="notice__icon">◆</span>
           <span>
             Entrégale la contraseña por un canal seguro, nunca por correo junto con el
-            enlace. Si el rol es administrador, tendrá que activar el segundo factor antes
+            enlace; o, ya creada la cuenta, envíale desde la lista un enlace para que elija
+            la suya. Si el rol es administrador, tendrá que activar el segundo factor antes
             de poder usar el panel.
           </span>
         </div>

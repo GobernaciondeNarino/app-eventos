@@ -6,6 +6,7 @@ namespace App\Controladores;
 defined('EVENTOS_TIC') || exit;
 
 use App\Modelos\Persona;
+use App\Modelos\Recuperacion;
 use App\Modelos\Usuario;
 use App\Nucleo\App;
 use App\Nucleo\Autenticacion;
@@ -557,7 +558,7 @@ final class Acceso
         }
 
         $estado2fa = Usuario::estadoSegundoFactor($usuario);
-        $porCorreo = $this->respaldoPorCorreo();
+        $porCorreo = $this->respaldoPorCorreo($usuario);
         $correo = (string) $usuario['correo'];
         $errores = [];
         $avisos = [];
@@ -697,6 +698,7 @@ final class Acceso
             'ilegible'      => $estado2fa === 'ilegible',
             'mensajeIlegible' => $this->mensajeIlegible($porCorreo),
             'porCorreo'     => $porCorreo,
+            'respaldoSuspendido' => $this->respaldoSuspendido($usuario),
             'correoOculto'  => $this->correoOculto($correo),
             'correoEnviado' => is_array($correo2fa) && (int) ($correo2fa['hasta'] ?? 0) >= time(),
             'resincronizando' => $this->resincronizacion($datos) !== null,
@@ -739,10 +741,24 @@ final class Acceso
      * Solo si hay correo saliente configurado, y se puede apagar con
      * 'respaldo_2fa_correo' => false para quien prefiera que el segundo factor
      * sea solo la aplicación.
+     *
+     * Tampoco durante el día siguiente a recuperar la contraseña con un enlace
+     * del correo. Con el respaldo encendido, el buzón solo bastaría para
+     * entrar al panel: con él se pide el enlace, se pone una contraseña nueva
+     * y con él se recibe el código. Así el segundo paso sigue siendo el
+     * teléfono, que es para lo que está.
      */
-    private function respaldoPorCorreo(): bool
+    private function respaldoPorCorreo(array $usuario): bool
     {
-        return (bool) Config::obtener('respaldo_2fa_correo', true) && Correo::disponible();
+        return (bool) Config::obtener('respaldo_2fa_correo', true) && Correo::disponible()
+            && !Recuperacion::recienteDeEquipo((int) $usuario['id']);
+    }
+
+    /** ¿El respaldo por correo está apagado justamente por una recuperación reciente? */
+    private function respaldoSuspendido(array $usuario): bool
+    {
+        return (bool) Config::obtener('respaldo_2fa_correo', true) && Correo::disponible()
+            && Recuperacion::recienteDeEquipo((int) $usuario['id']);
     }
 
     private function mensajeIlegible(bool $porCorreo): string
@@ -767,12 +783,7 @@ final class Acceso
     /** «a•••o@narino.gov.co»: lo justo para reconocer el buzón. */
     private function correoOculto(string $correo): string
     {
-        [$usuario, $dominio] = array_pad(explode('@', $correo, 2), 2, '');
-        $largo = mb_strlen($usuario);
-        $visible = $largo <= 2
-            ? mb_substr($usuario, 0, 1) . '•'
-            : mb_substr($usuario, 0, 1) . str_repeat('•', min(6, $largo - 2)) . mb_substr($usuario, -1);
-        return $visible . '@' . $dominio;
+        return \correoOculto($correo);
     }
 
     /**

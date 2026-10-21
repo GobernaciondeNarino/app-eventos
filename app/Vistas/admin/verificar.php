@@ -7,6 +7,7 @@
  * @var bool   $ilegible         la configuración guardada no se puede descifrar
  * @var string $mensajeIlegible
  * @var bool   $porCorreo        se ofrece el código por correo
+ * @var bool   $respaldoSuspendido  no se ofrece porque la contraseña se recuperó por correo hace poco
  * @var string $correoOculto
  * @var bool   $correoEnviado
  * @var bool   $resincronizando  se espera el segundo código de una resincronización
@@ -79,6 +80,20 @@ $avisos = $avisos ?? [];
           <p class="help" data-reloj-aviso hidden></p>
         </div>
       </form>
+    <?php endif; ?>
+
+    <?php if (!empty($respaldoSuspendido)): ?>
+      <!-- Con el respaldo por correo encendido, el buzón solo bastaría para
+           entrar: con él se recupera la contraseña y con él llega el código. -->
+      <div class="notice" role="note" data-respaldo-suspendido>
+        <span class="notice__icon" aria-hidden="true">◆</span>
+        <span>
+          Cambiaste tu contraseña con un enlace del correo hace menos de un día, así que por
+          ahora el segundo paso no se puede hacer con un código al correo: tiene que ser tu
+          aplicación. Si no la tienes, pide a otra persona administradora que restablezca tu
+          verificación en dos pasos desde «Organizadores».
+        </span>
+      </div>
     <?php endif; ?>
 
     <?php if ($porCorreo): ?>

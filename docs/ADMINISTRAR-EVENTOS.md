@@ -2,8 +2,8 @@
 
 Qué se puede cambiar una vez creado, quién puede tocar qué, y qué no tiene vuelta atrás:
 eventos y jornadas, las propuestas de los expositores, el perfil Staff, la impresión de
-carnets, la acreditación en la puerta, la verificación en dos pasos del equipo y el formulario
-de registro.
+carnets, la acreditación en la puerta, la verificación en dos pasos del equipo, la
+recuperación de contraseñas y el formulario de registro.
 
 Todo lo de aquí está en **Administración → Eventos**, **QR por día**, **Expositores**,
 **Registros** y **Configuración**, y exige el rol **administrador** salvo donde se diga otra
@@ -475,6 +475,10 @@ orden.
 
 Si el mensaje te llega sin haberlo pedido, alguien escribió tu contraseña correcta: cámbiala.
 
+Durante las 24 horas siguientes a cambiar la contraseña con un enlace del correo (8.5), esta
+opción no aparece para esa cuenta: el segundo paso tiene que ser la aplicación. Si no, quien
+tuviera acceso al buzón entraría al panel solo con eso.
+
 ### 8.3 Mi cuenta: restablecer el código QR
 
 **Administración → Configuración → Mi cuenta**, para todo el equipo. Sirve cuando se cambió de
@@ -498,6 +502,41 @@ y, al entrar con su contraseña, escanea un QR nuevo. La tuya propia se restable
 Configuración → Mi cuenta, no desde ahí. Queda en la bitácora.
 
 Por consola, quien tenga acceso al servidor: `php herramientas/cuenta.php sin-2fa --correo=…`.
+
+### 8.5 Cuando alguien olvidó su contraseña
+
+Desde la 3.12 se recupera con un enlace al correo, en las dos puertas. Nadie puede *ver* una
+contraseña —se guarda una huella irreversible—, pero sí poner una nueva:
+
+| Quién | Lo hace la propia persona | Lo hace un administrador |
+|---|---|---|
+| **Asistente** | En **Entrar → Contraseña**, «¿Olvidaste tu contraseña?». Escribe su correo y le llega un enlace | En **Registros**, su ficha → **«Enviarle un enlace por correo»** |
+| **Equipo organizador** | En el acceso del equipo, «¿Olvidaste tu contraseña?» | En **Organizadores**, en su fila → **«Enviar enlace»** |
+
+Cómo funciona el enlace:
+
+- **Sirve una sola vez y vence**: en una hora si lo pidió la persona, en 24 horas si se lo
+  enviaste tú. Si se pide otro, el anterior deja de servir: que use siempre el último que llegó.
+- **Su contraseña actual sigue sirviendo** hasta que ponga la nueva. Enviar el enlace no le
+  quita el acceso a nadie.
+- Al poner la nueva, **se cierran sus sesiones abiertas** en otros teléfonos o computadores.
+- El **asistente** queda dentro al guardarla. La cuenta del **equipo** no: entra después con la
+  contraseña nueva y el código de su aplicación, como siempre. Si además perdió el teléfono,
+  restablécele el segundo factor (8.4): durante un día después de usar el enlace no puede
+  entrar con un código al correo.
+- La pantalla donde se pide responde lo mismo exista o no el correo. Si alguien dice que no le
+  llega: que revise no deseado, que use el correo con el que se registró, y comprueba en
+  **Configuración → Acceso y correo** que el correo salga. El botón del panel sí dice en el
+  momento si el correo no salió.
+- A una cuenta del equipo **suspendida** no se le envía: reactívala antes.
+- Si el acceso de asistentes con contraseña está apagado (Configuración → Acceso y correo), no
+  hay contraseña que recuperar: entran con un código al correo o con su QR, y la ficha no
+  ofrece el enlace.
+
+Para alguien que está delante y no tiene su correo a mano sigue estando **«Generar una
+contraseña nueva»** en la ficha, que se muestra una sola vez para dictársela.
+
+Cada pedido, cada envío —con quién lo hizo— y cada uso quedan en la bitácora.
 
 ---
 

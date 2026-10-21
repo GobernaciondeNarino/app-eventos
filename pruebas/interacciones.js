@@ -449,6 +449,41 @@ function titulo(t) {
   comprobar('el aviso se anuncia a un lector de pantalla',
     (await estado.getAttribute('aria-live')) === 'polite');
 
+  /* ---- ¿Olvidaste tu contraseña? ----
+     Al lado de la contraseña, no escondido al pie: es justo donde mira quien
+     se equivocó al escribirla. */
+  titulo('Recuperar la contraseña');
+
+  await p4.goto(BASE + '/entrar?metodo=clave', { waitUntil: 'networkidle' });
+  const olvide = p4.locator('#clave ~ .help a[data-olvide]');
+  comprobar('debajo de la contraseña está «¿Olvidaste tu contraseña?»', (await olvide.count()) === 1);
+  await olvide.click();
+  await p4.waitForLoadState('networkidle');
+  comprobar('lleva a pedir el enlace, con el campo del correo listo para escribir',
+    new URL(p4.url()).pathname.endsWith('/entrar/recuperar')
+    && await p4.evaluate(() => document.activeElement && document.activeElement.id === 'correo'));
+  await p4.fill('#correo', 'nadie.inscrito@narino.gov.co');
+  await p4.click('button[type=submit]');
+  await p4.waitForLoadState('networkidle');
+  comprobar('al pedirlo dice que revise el correo, sin decir si está registrado',
+    (await p4.locator('[data-recuperar-enviado]').count()) === 1
+    && !/no está registrado|no existe/i.test(await p4.locator('main').innerText()));
+
+  /* El enlace de verdad lo deja extremo-a-extremo.php: abrirlo no lo gasta. */
+  const ENLACE_CLAVE = (() => {
+    try { return fs.readFileSync('pruebas/capturas/enlace-clave-asistente.txt', 'utf8').trim(); } catch (e) { return ''; }
+  })();
+  if (ENLACE_CLAVE) {
+    await p4.goto(BASE + '/entrar/recuperar/' + ENLACE_CLAVE, { waitUntil: 'networkidle' });
+    const estadoNueva = p4.locator('[data-clave-estado]');
+    await p4.locator('#clave').fill('una-clave-larga');
+    await p4.locator('#clave2').fill('una-clave-distinta');
+    comprobar('en la contraseña nueva también avisa al momento si no coinciden',
+      /no coinciden/i.test(await estadoNueva.innerText()), (await estadoNueva.innerText()).trim());
+  } else {
+    console.log('  (sin enlace de prueba: corre antes extremo-a-extremo.php)');
+  }
+
   /* =====================================================================
      Panel: pestañas y ficha
      ===================================================================== */
@@ -574,6 +609,20 @@ function titulo(t) {
     (await p3.locator('#modal-ficha').innerText()).slice(0, 90).replace(/\n/g, ' | '));
   comprobar('y dice que la contraseña no se puede ver',
     (await p3.locator('#modal-ficha').innerText()).includes('no se puede ver'));
+
+  // Enviarle el enlace para cambiarla: pregunta antes y la respuesta llega
+  // dentro del mismo diálogo, sin perder la tabla. Aquí el correo no sale —el
+  // servidor de pruebas no tiene a dónde enviarlo—, y eso también se dice ahí.
+  const botonEnlace = p3.locator('#modal-ficha button:has-text("Enviarle un enlace por correo")');
+  comprobar('la ficha ofrece enviarle un enlace para cambiar la contraseña', (await botonEnlace.count()) === 1);
+  let preguntoAntes = '';
+  p3.once('dialog', d => { preguntoAntes = d.message(); d.accept(); });
+  await botonEnlace.click();
+  await p3.waitForSelector('#modal-ficha [data-enlace-clave]', { timeout: 15000 }).catch(() => null);
+  comprobar('pregunta antes de enviarlo, diciendo a qué correo', preguntoAntes.includes('mzambrano@narino.gov.co'), preguntoAntes);
+  comprobar('y el resultado aparece dentro del diálogo, sin salir de la tabla',
+    (await p3.locator('#modal-ficha [data-enlace-clave]').count()) === 1 && p3.url() === antesDeAbrir,
+    (await p3.locator('#modal-ficha').innerText()).slice(0, 120).replace(/\n/g, ' | '));
 
   await p3.keyboard.press('Escape');
   comprobar('se cierra con Escape',

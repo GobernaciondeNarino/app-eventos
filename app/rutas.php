@@ -32,6 +32,7 @@ use App\Controladores\Escaneo;
 use App\Controladores\Instalador;
 use App\Controladores\Medios;
 use App\Controladores\Publico;
+use App\Controladores\Recuperar;
 
 /* =========================================================================
    Instalación
@@ -79,6 +80,12 @@ $enrutador->ambos('/entrar/crear', [Acceso::class, 'crearCuenta']);
 // El token es de 128 bits y hay límite por IP contra la enumeración.
 $enrutador->get('/entrar/qr/{token:token}', [Acceso::class, 'porQr']);
 $enrutador->post('/salir', [Acceso::class, 'salirAsistente']);
+
+// «Olvidé mi contraseña»: se pide un enlace al correo y con él se pone una
+// nueva. Abrir el enlace no lo gasta —los antivirus del correo lo abren antes
+// que la persona—; guardar la contraseña sí.
+$enrutador->ambos('/entrar/recuperar', [Recuperar::class, 'pedirAsistente']);
+$enrutador->ambos('/entrar/recuperar/{token:token}', [Recuperar::class, 'nuevaAsistente']);
 
 /* =========================================================================
    Códigos QR
@@ -137,6 +144,11 @@ $enrutador->post('/admin/salir', [Acceso::class, 'salirEquipo']);
 // no ha pasado el guardia del panel, y el propio método comprueba la sesión.
 $enrutador->ambos('/admin/clave', [Acceso::class, 'cambiarClave']);
 
+// La misma recuperación por correo, para el equipo. El enlace cambia la
+// contraseña pero no abre sesión: el segundo factor se pasa igual que siempre.
+$enrutador->ambos('/admin/recuperar', [Recuperar::class, 'pedirEquipo']);
+$enrutador->ambos('/admin/recuperar/{token:token}', [Recuperar::class, 'nuevaEquipo']);
+
 $enrutador->get('/admin', [Admin::class, 'panel'], 'admin:consulta');
 
 // Configuración: un módulo con pestañas. La de la cuenta propia es para todo el
@@ -165,6 +177,7 @@ $enrutador->get('/admin/registros/exportar', [Admin::class, 'exportar'], 'admin:
 // que la pantalla de acreditación.
 $enrutador->get('/admin/registros/{persona:num}', [Admin::class, 'ficha'], 'admin:consulta');
 $enrutador->post('/admin/registros/clave', [Admin::class, 'restablecerClave'], 'admin:administrador');
+$enrutador->post('/admin/registros/enlace-clave', [Admin::class, 'enviarEnlaceClave'], 'admin:administrador');
 $enrutador->post('/admin/registros/qr', [Admin::class, 'regenerarQrAcceso'], 'admin:administrador');
 
 // El perfil de asistencia. Exige administrador porque por aquí se pone «Staff»,
@@ -187,6 +200,7 @@ $enrutador->post('/admin/organizadores/crear', [Admin::class, 'crearUsuario'], '
 $enrutador->post('/admin/organizadores/estado', [Admin::class, 'cambiarEstadoUsuario'], 'admin:administrador');
 $enrutador->post('/admin/organizadores/rol', [Admin::class, 'cambiarRolUsuario'], 'admin:administrador');
 $enrutador->post('/admin/organizadores/segundo-factor', [Admin::class, 'restablecerSegundoFactor'], 'admin:administrador');
+$enrutador->post('/admin/organizadores/enlace-clave', [Admin::class, 'enviarEnlaceClaveUsuario'], 'admin:administrador');
 
 $enrutador->get('/admin/eventos', [Admin::class, 'eventos'], 'admin:administrador');
 $enrutador->post('/admin/eventos/crear', [Admin::class, 'crearEvento'], 'admin:administrador');

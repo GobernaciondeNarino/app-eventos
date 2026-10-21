@@ -36,6 +36,7 @@ guiones('claves.js');
       <span class="stack" style="gap:6px">
         <span><?= e($err('correo')) ?></span>
         <span><a href="<?= e(u('/entrar', ['metodo' => 'clave', 'destino' => $destino])) ?>">Entrar con ese correo ›</a></span>
+        <span><a href="<?= e(u('/entrar/recuperar')) ?>">¿No recuerdas la contraseña? Recupérala con un enlace al correo ›</a></span>
       </span>
     </div>
   <?php endif; ?>

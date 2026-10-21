@@ -62,6 +62,7 @@ $marca = require __DIR__ . '/../parciales/marca.php';
           <label class="label" for="clave">Contraseña</label>
           <input class="input" id="clave" name="clave" type="password"
                  autocomplete="current-password" required>
+          <span class="help"><a href="<?= e(u('/admin/recuperar')) ?>" data-olvide>¿Olvidaste tu contraseña?</a></span>
         </div>
 
         <button class="btn btn--primary btn--block btn--lg" type="submit">Entrar</button>

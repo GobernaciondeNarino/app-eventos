@@ -298,9 +298,10 @@ proxy, y `pruebas/proxy-y-limites.php` cubre las dos mitades.
 
 ### Fuerza bruta
 
-`App\Nucleo\Limite` cubre siete acciones con ventanas y castigos distintos: acceso del
+`App\Nucleo\Limite` cubre estas acciones con ventanas y castigos distintos: acceso del
 equipo (por cuenta y por IP), código de correo, envío de códigos, resolución de tokens de QR,
-preregistro por IP e intercambio de contactos.
+preregistro por IP, intercambio de contactos y, desde la 3.12, los pedidos de enlaces para
+recuperar la contraseña (por correo y por IP) y los enlaces inventados (por IP).
 
 Hay dos clases de regla y confundirlas deja huecos:
 
@@ -391,6 +392,13 @@ existen aunque el texto sea idéntico.
 
 Lo mismo en el acceso del asistente: pedir un código para un correo no registrado responde
 igual que para uno registrado.
+
+Y en «¿Olvidaste tu contraseña?», en las dos puertas: la pantalla que sigue es idéntica exista
+o no la cuenta —y, en la del equipo, esté o no suspendida—. Como el correo solo se envía cuando
+la cuenta existe, y enviarlo tarda, se envía **después de responder** (`Respuesta::despues()`,
+con `fastcgi_finish_request()` en PHP-FPM): la espera tampoco delata nada. Los topes cuentan
+todos los pedidos, haya cuenta o no; si contaran solo unos, el bloqueo diría cuáles correos
+están registrados.
 
 ### Subida de archivos
 
@@ -618,6 +626,9 @@ tendría en claro las de todos los asistentes.
 
 Lo que sí ofrece la ficha de *Registros*, para un administrador:
 
+- **Enviarle un enlace por correo** (desde la 3.12), para que ponga ella misma una contraseña
+  nueva. Es lo primero que se ofrece: nadie más llega a conocerla, y la actual sigue sirviendo
+  hasta que la cambie. Ver la sección siguiente.
 - **Generar una contraseña nueva**, de diez caracteres sin letras ni números que se confundan
   al dictarlos por teléfono (sin `I`, `O`, `0` ni `1`). Se muestra **una sola vez** y no
   viaja en la redirección ni en el aviso: se pinta en la respuesta de esa misma petición.
@@ -625,7 +636,51 @@ Lo que sí ofrece la ficha de *Registros*, para un administrador:
   quien pide restablecer una contraseña suele haber perdido el control de la cuenta.
 - **Enseñarle su QR de acceso**, que entra sin escribir nada, y anularlo si hizo falta.
 
-Ambas acciones quedan en la bitácora, y abrir una ficha también.
+Todas las acciones quedan en la bitácora, y abrir una ficha también.
+
+### Recuperar la contraseña por correo
+
+Desde la 3.12, en las dos puertas: el asistente que entra con contraseña y el equipo
+organizador. Se pide desde «¿Olvidaste tu contraseña?» o lo envía un administrador desde el
+panel (la ficha de la persona, o **Organizadores** para el equipo). En los dos casos llega un
+enlace al correo de la cuenta. Lo que lo hace seguro (`App\Modelos\Recuperacion`,
+`App\Controladores\Recuperar`):
+
+1. **El enlace no se guarda.** Lleva 256 bits al azar; en `evt_recuperacion_clave` queda solo su
+   SHA-256. Quien copie la tabla no obtiene enlaces que sirvan.
+2. **Sirve una vez y vence.** Una hora si lo pidió la persona; un día si lo envió un
+   administrador, porque quien lo recibe así puede no estar mirando el correo. Pedir otro deja
+   sin efecto los anteriores, y usarlo también. Gastarlo es una sola sentencia condicionada
+   (`… WHERE usado_en IS NULL`): dos envíos simultáneos del formulario no cambian la contraseña
+   dos veces.
+3. **Abrirlo no lo gasta; guardar la contraseña sí.** Los filtros del correo institucional
+   abren los enlaces para revisarlos antes que la persona: si abrir bastara, llegaría gastado.
+4. **Va atado al buzón al que se envió** (un HMAC del correo con la llave de la instalación).
+   Si la cuenta cambia de correo, el enlace que fue a la dirección vieja deja de servir.
+5. **La dirección del enlace sale de `url_base`**, no de la cabecera `Host` de la petición, que
+   la pone quien pide. Sin esto, alguien podría pedir el enlace de otra persona con un `Host`
+   suyo y el correo legítimo llegaría apuntando a su servidor («envenenamiento del enlace de
+   recuperación»). Si `url_base` faltara, el enlace pedido desde la pantalla de acceso no se
+   envía y queda anotado; el que envía un administrador desde el panel sí, porque esa petición
+   es suya.
+6. **La página no deja rastro del enlace**: responde con `Referrer-Policy: no-referrer` y
+   `Cache-Control: no-store`.
+7. **Al guardarla se cierra todo lo abierto.** Las sesiones de esa cuenta, y en el asistente
+   también sus dispositivos recordados: quien recupera una contraseña puede estar haciéndolo
+   porque alguien más entró.
+8. **El asistente queda dentro; el equipo no.** Abrir el enlace demuestra que se controla el
+   buzón, que es justo lo que demuestra el código por correo del asistente, así que entra. Al
+   equipo no se le abre sesión: entra después con la contraseña nueva y su segundo factor, como
+   siempre. Y como el respaldo del segundo factor también llega al correo, **durante 24 horas
+   después de usar un enlace esa cuenta no puede completar el segundo paso con un código al
+   correo** (`Recuperacion::recienteDeEquipo()`); si pudiera, el buzón solo bastaría para entrar
+   al panel. Quien perdió a la vez la contraseña y el teléfono necesita que otra persona
+   administradora le restablezca el segundo factor.
+9. **Una cuenta suspendida no recibe enlaces**, ni pidiéndolo ni desde el panel, y el que ya
+   tuviera no le sirve mientras lo esté. Con el acceso por contraseña apagado para los
+   asistentes, no hay nada que recuperar: la pantalla lleva al acceso por código.
+10. **Queda en la bitácora**: cada pedido (`enlace_clave_pedido`), cada envío desde el panel con
+    quién lo hizo (`enlace_clave_enviado`) y cada uso (`clave_recuperada`). Nunca el enlace.
 
 ### El formulario de registro se configura, pero no se puede desarmar
 

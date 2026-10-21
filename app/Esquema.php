@@ -15,7 +15,7 @@ use App\Nucleo\Bd;
  */
 final class Esquema
 {
-    public const VERSION = '1.10.0';
+    public const VERSION = '1.11.0';
 
     /**
      * Columnas que ya existen pero cambiaron de tipo.
@@ -479,6 +479,35 @@ final class Esquema
                     'PRIMARY KEY (id)',
                     'KEY idx_codigo_persona (persona_id, expira_en)',
                     'CONSTRAINT fk_codigo_persona FOREIGN KEY (persona_id) REFERENCES {persona} (id) ON DELETE CASCADE',
+                ],
+            ],
+
+            // 1.11.0. Tabla nueva y nada más: la actualización automática la
+            // crea sin tocar ninguna de las que ya hay.
+            'recuperacion_clave' => [
+                'nota' => 'Enlaces de un solo uso para poner una contraseña nueva, de asistentes y del equipo. Se guarda el hash del enlace, no el enlace.',
+                'columnas' => [
+                    'id'            => 'INT UNSIGNED NOT NULL AUTO_INCREMENT',
+                    // Las mismas palabras que en la tabla de sesiones:
+                    // 'asistente' es una persona, 'admin' una cuenta del equipo.
+                    'tipo'          => "ENUM('admin','asistente') NOT NULL",
+                    'sujeto_id'     => 'INT UNSIGNED NOT NULL',
+                    'token_hash'    => 'CHAR(64) NOT NULL',
+                    // La huella del buzón al que se envió. Si la cuenta cambia
+                    // de correo, el enlace que fue al anterior deja de servir.
+                    'correo_huella' => 'CHAR(64) NOT NULL',
+                    // Quién del equipo lo envió desde el panel; vacío si lo
+                    // pidió la propia persona.
+                    'enviado_por'   => 'INT UNSIGNED NULL',
+                    'usado_en'      => 'DATETIME NULL',
+                    'expira_en'     => 'DATETIME NOT NULL',
+                    'creado_en'     => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
+                ],
+                'llaves' => [
+                    'PRIMARY KEY (id)',
+                    'UNIQUE KEY uq_recuperacion_token (token_hash)',
+                    'KEY idx_recuperacion_sujeto (tipo, sujeto_id)',
+                    'KEY idx_recuperacion_expira (expira_en)',
                 ],
             ],
 

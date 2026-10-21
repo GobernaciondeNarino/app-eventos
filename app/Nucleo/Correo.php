@@ -1133,6 +1133,61 @@ final class Correo
     }
 
     /**
+     * El enlace para poner una contraseña nueva.
+     *
+     * Para el asistente y para el equipo, pedido por la propia persona o
+     * enviado desde el panel. El mensaje dice siempre qué pasa si no lo pidió:
+     * nada, la contraseña sigue igual. Sin eso, un correo así asusta más de lo
+     * que ayuda.
+     */
+    public static function enlaceParaClave(
+        string $destinatario,
+        string $nombre,
+        string $evento,
+        string $enlace,
+        string $vence,
+        bool $desdeElPanel,
+        bool $esEquipo,
+        bool $conSegundoFactor = false
+    ): bool {
+        $h = static fn(string $t): string => htmlspecialchars($t, ENT_QUOTES, 'UTF-8');
+        $donde = $esEquipo ? 'al panel del equipo organizador de ' . $evento : 'a ' . $evento;
+
+        $asunto = $esEquipo ? 'Enlace para cambiar tu contraseña del panel' : 'Tu enlace para poner una contraseña nueva';
+        $saludo = trim($nombre) !== '' ? 'Hola, ' . trim($nombre) . '.' : 'Hola.';
+        $motivo = $desdeElPanel
+            ? 'La administración del evento te envió este enlace para que pongas una contraseña nueva para entrar ' . $donde . '.'
+            : 'Pediste poner una contraseña nueva para entrar ' . $donde . '.';
+        $boton = $esEquipo ? 'Cambiar mi contraseña' : 'Poner mi contraseña nueva';
+        $plazo = 'El enlace vence en ' . $vence . ' y sirve una sola vez.';
+        $siNo = $desdeElPanel
+            ? 'Si no esperabas este mensaje, ignóralo: tu contraseña sigue siendo la misma mientras no abras el enlace y la cambies.'
+            : 'Si no lo pediste, ignora este mensaje: tu contraseña sigue siendo la misma y nadie entró a tu cuenta.';
+        $segundoPaso = $conSegundoFactor
+            ? 'Al entrar con la contraseña nueva te pediremos también el código de tu aplicación de autenticación.'
+            : '';
+
+        $html = self::plantilla(
+            $evento,
+            $esEquipo ? 'Cambia tu contraseña del panel' : 'Pon tu contraseña nueva',
+            '<p style="margin:0 0 16px">' . $h($saludo) . ' ' . $h($motivo) . '</p>'
+            . '<p style="margin:0 0 22px"><a href="' . $h($enlace) . '" '
+            . 'style="background:#0C2E3C;color:#fff;padding:13px 22px;text-decoration:none;'
+            . 'display:inline-block;font-weight:600">' . $h($boton) . '</a></p>'
+            . '<p style="margin:0 0 12px;font-size:14px;color:#556">' . $h($plazo)
+            . ($segundoPaso !== '' ? ' ' . $h($segundoPaso) : '') . '</p>'
+            . '<p style="margin:0 0 12px;font-size:14px;color:#556">' . $h($siNo) . '</p>'
+            . '<p style="margin:0;font-size:12px;color:#6E8A9C;word-break:break-all">Si el botón no abre, '
+            . 'copia esta dirección en el navegador: ' . $h($enlace) . '</p>'
+        );
+
+        $texto = $saludo . "\n\n" . $motivo . "\n\n" . $boton . ': ' . $enlace . "\n\n"
+            . $plazo . ($segundoPaso !== '' ? ' ' . $segundoPaso : '') . "\n\n" . $siNo;
+
+        return self::enviar($destinatario, $asunto, $html, $texto);
+    }
+
+    /**
      * La decisión sobre una propuesta de exposición, para quien la envió.
      *
      * Va en los tres casos —aprobada, devuelta, rechazada— con lo que el comité

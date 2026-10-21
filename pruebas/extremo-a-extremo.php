@@ -4023,6 +4023,293 @@ comprobar('y corregir su teléfono no toca su propuesta',
 
 $pdo->exec("DELETE FROM {$P}persona WHERE id = $idPonente");
 
+/* =========================================================================
+   17 · Recuperar la contraseña
+   -------------------------------------------------------------------------
+   «Olvidé mi contraseña» para el asistente y para el equipo, y el enlace que
+   un administrador envía desde el panel. Lo que se cuida: que la pantalla no
+   diga qué correos están registrados, que el enlace sirva una sola vez y se
+   guarde solo su hash, que abrirlo no lo gaste —los antivirus del correo lo
+   abren antes que la persona— y que al equipo no le salte el segundo factor.
+   ========================================================================= */
+titulo('Recuperar la contraseña');
+
+$pdo->exec("DELETE FROM {$P}intento");
+$cuantosCorreos = static function () use ($RAIZ): int {
+    $archivos = glob($RAIZ . '/almacen/registro/*.log.php') ?: [];
+    sort($archivos);
+    return substr_count((string) @file_get_contents((string) end($archivos)), 'Correo no enviado');
+};
+$enlaceDel = static fn(string $correo, string $ruta): string =>
+    preg_match('#' . preg_quote($ruta, '#') . '/([a-f0-9]{64})#', $correo, $m) ? $m[1] : '';
+$filaEnlace = static fn(string $token): array => $pdo->query("SELECT * FROM {$P}recuperacion_clave
+    WHERE token_hash = '" . hash('sha256', $token) . "'")->fetch(PDO::FETCH_ASSOC) ?: [];
+
+// ---- El asistente que la olvidó -------------------------------------------
+$html = (new Cliente($BASE))->get('/entrar?metodo=clave');
+comprobar('el acceso con contraseña ofrece «¿Olvidaste tu contraseña?»',
+    str_contains($html, '¿Olvidaste tu contraseña?') && str_contains($html, '/entrar/recuperar"'));
+
+$olvidadiza = new Cliente($BASE);
+$olvidadiza->get('/entrar/crear');
+$olvidadiza->post('/entrar/crear', ['correo' => 'olvido.clave@narino.gov.co', 'clave' => 'primera-clave-1',
+    'clave2' => 'primera-clave-1', 'habeas' => '1']);
+$idOlvido = (int) $pdo->query("SELECT id FROM {$P}persona WHERE correo = 'olvido.clave@narino.gov.co'")->fetchColumn();
+comprobar('hay una persona con contraseña para probar', $idOlvido > 0);
+
+$anonimo = new Cliente($BASE);
+$html = $anonimo->get('/entrar/recuperar');
+comprobar('la pantalla para pedir el enlace responde', $anonimo->codigo === 200 && str_contains($html, 'Recupera tu contraseña'));
+$antes = $cuantosCorreos();
+$html = $anonimo->post('/entrar/recuperar', ['correo' => 'olvido.clave@narino.gov.co']);
+$respuestaConCuenta = trim(strip_tags((string) preg_replace('#<(script|style)\b.*?</\1>#s', '', $html)));
+comprobar('al pedirlo dice que revise su correo', str_contains($html, 'Revisa tu correo'));
+$correo = $ultimoCorreo();
+$tokenA = $enlaceDel($correo, '/entrar/recuperar');
+comprobar('le llega un correo con el enlace, que vence en una hora',
+    $cuantosCorreos() === $antes + 1 && $tokenA !== '' && str_contains($correo, '60 minutos')
+    && str_contains($correo, 'Si no lo pediste, ignora este mensaje'), mb_substr($correo, 0, 300));
+
+$antes = $cuantosCorreos();
+$html = $anonimo->post('/entrar/recuperar', ['correo' => 'nadie.inscrito@narino.gov.co']);
+$respuestaSinCuenta = trim(strip_tags((string) preg_replace('#<(script|style)\b.*?</\1>#s', '', $html)));
+comprobar('con un correo que no está registrado responde exactamente lo mismo, y no envía nada',
+    $respuestaSinCuenta === $respuestaConCuenta && $cuantosCorreos() === $antes);
+
+$fila = $filaEnlace($tokenA);
+comprobar('en la base queda el hash del enlace, nunca el enlace',
+    ($fila['sujeto_id'] ?? '') == $idOlvido && ($fila['tipo'] ?? '') === 'asistente'
+    && (int) $pdo->query("SELECT COUNT(*) FROM {$P}recuperacion_clave WHERE token_hash = '$tokenA'")->fetchColumn() === 0);
+
+// Un segundo pedido deja sin efecto el primero.
+$anonimo->post('/entrar/recuperar', ['correo' => 'olvido.clave@narino.gov.co']);
+$tokenB = $enlaceDel($ultimoCorreo(), '/entrar/recuperar');
+$html = $anonimo->get('/entrar/recuperar/' . $tokenA);
+comprobar('pedir otro deja sin efecto el anterior', $anonimo->codigo === 410 && str_contains($html, 'venció'),
+    (string) $anonimo->codigo);
+
+$html = $anonimo->get('/entrar/recuperar/' . $tokenB);
+comprobar('el enlace abre la pantalla de la contraseña nueva', $anonimo->codigo === 200
+    && str_contains($html, 'Pon tu contraseña nueva'), (string) $anonimo->codigo);
+comprobar('dice para qué cuenta sin mostrar el correo entero',
+    str_contains($html, 'o••••••e@narino.gov.co') && !str_contains($html, 'olvido.clave@'));
+comprobar('y no deja el enlace en la cabecera Referer ni en ninguna caché',
+    $anonimo->cabecera('Referrer-Policy') === 'no-referrer' && str_contains($anonimo->cabecera('Cache-Control'), 'no-store'));
+$anonimo->get('/entrar/recuperar/' . $tokenB);
+comprobar('abrirlo dos veces no lo gasta: los antivirus del correo lo abren antes que la persona',
+    $anonimo->codigo === 200 && empty($filaEnlace($tokenB)['usado_en']));
+
+$html = $anonimo->post('/entrar/recuperar/' . $tokenB, ['clave' => 'corta', 'clave2' => 'corta']);
+comprobar('exige el largo mínimo', str_contains($html, 'al menos'));
+$html = $anonimo->post('/entrar/recuperar/' . $tokenB, ['clave' => 'segunda-clave-2', 'clave2' => 'otra-cosa-2']);
+comprobar('y que las dos coincidan', str_contains($html, 'no coinciden') && empty($filaEnlace($tokenB)['usado_en']));
+
+$html = $anonimo->post('/entrar/recuperar/' . $tokenB, ['clave' => 'segunda-clave-2', 'clave2' => 'segunda-clave-2']);
+comprobar('al guardarla queda dentro', str_contains($html, 'guardamos tu contraseña nueva')
+    || str_contains($html, 'Completa tu registro'), substr(strip_tags($html), 0, 160));
+$olvidadiza->get('/carnet', false);
+comprobar('las sesiones que tenía abiertas se cierran', $olvidadiza->codigo === 303
+    && str_contains($olvidadiza->cabecera('Location'), '/entrar'), $olvidadiza->codigo . ' → ' . $olvidadiza->cabecera('Location'));
+$html = $anonimo->get('/entrar/recuperar/' . $tokenB);
+comprobar('el enlace ya no sirve otra vez', $anonimo->codigo === 410 && str_contains($html, 'ya se usó'));
+
+$prueba = new Cliente($BASE);
+$prueba->get('/entrar?metodo=clave');
+$html = $prueba->post('/entrar', ['metodo' => 'clave', 'correo' => 'olvido.clave@narino.gov.co', 'clave' => 'primera-clave-1']);
+comprobar('la contraseña anterior ya no entra', str_contains($html, 'no coinciden'));
+$html = $prueba->post('/entrar', ['metodo' => 'clave', 'correo' => 'olvido.clave@narino.gov.co', 'clave' => 'segunda-clave-2']);
+comprobar('la nueva sí', str_contains($html, 'Completa tu registro') || str_contains($html, 'Bienvenido'),
+    substr(strip_tags($html), 0, 160));
+comprobar('y queda en la bitácora que se pidió y que se usó',
+    (int) $pdo->query("SELECT COUNT(*) FROM {$P}bitacora WHERE entidad = 'persona' AND entidad_id = $idOlvido
+                        AND accion IN ('enlace_clave_pedido', 'clave_recuperada')")->fetchColumn() === 3);
+
+// Quien guardó la contraseña quedó dentro: lo que sigue, desde otro navegador.
+$anonimo = new Cliente($BASE);
+$html = $anonimo->get('/entrar/recuperar/' . str_repeat('ab', 32));
+comprobar('un enlace inventado no sirve', $anonimo->codigo === 404 && str_contains($html, 'no sirve'));
+$anonimo->get('/entrar/recuperar');
+$anonimo->post('/entrar/recuperar', ['correo' => 'olvido.clave@narino.gov.co']);
+$tokenC = $enlaceDel($ultimoCorreo(), '/entrar/recuperar');
+// Con un día de margen: la conexión de este guion no está en la hora de Bogotá,
+// la de la aplicación sí, y unos minutos no alcanzan a vencerlo para ella.
+$pdo->exec("UPDATE {$P}recuperacion_clave SET expira_en = DATE_SUB(NOW(), INTERVAL 1 DAY)
+             WHERE token_hash = '" . hash('sha256', $tokenC) . "'");
+$html = $anonimo->get('/entrar/recuperar/' . $tokenC);
+comprobar('uno vencido tampoco, y lo dice', $tokenC !== '' && $anonimo->codigo === 410 && str_contains($html, 'Este enlace venció'),
+    $tokenC . ' · ' . $anonimo->codigo);
+
+// Pedirlo muchas veces seguidas para el mismo correo se corta, exista o no.
+$anonimo->get('/entrar/recuperar');
+for ($i = 0; $i < 5; $i++) {
+    $anonimo->post('/entrar/recuperar', ['correo' => 'insistente@narino.gov.co']);
+}
+comprobar('pedir el enlace sin parar para el mismo correo se bloquea', $anonimo->codigo === 429, (string) $anonimo->codigo);
+$pdo->exec("DELETE FROM {$P}intento");
+
+// ---- Desde la ficha, el administrador se lo envía -------------------------
+$idJefa = (int) $pdo->query("SELECT id FROM {$P}usuario WHERE correo = 'aerazo@narino.gov.co'")->fetchColumn();
+$html = $jefa->get('/admin/registros/' . $idOlvido);
+comprobar('la ficha ofrece enviarle un enlace por correo', str_contains($html, 'Enviarle un enlace por correo'));
+$html = $jefa->post('/admin/registros/enlace-clave', ['persona' => (string) $idOlvido]);
+$correo = $ultimoCorreo();
+$tokenPanel = $enlaceDel($correo, '/entrar/recuperar');
+comprobar('al enviarlo, la ficha confirma a qué correo salió',
+    str_contains($html, 'data-enlace-clave="ok"') && str_contains($html, 'Le enviamos a olvido.clave@narino.gov.co'));
+comprobar('el correo dice que lo envió la administración y que vence en 24 horas',
+    $tokenPanel !== '' && str_contains($correo, 'La administración del evento te envió este enlace') && str_contains($correo, '24 horas'));
+$fila = $filaEnlace($tokenPanel);
+comprobar('queda anotado quién lo envió, y que dura un día',
+    (int) ($fila['enviado_por'] ?? 0) === $idJefa && strtotime((string) ($fila['expira_en'] ?? '')) > time() + 23 * 3600);
+comprobar('y en la bitácora, a nombre de quien lo envió',
+    (int) $pdo->query("SELECT COUNT(*) FROM {$P}bitacora WHERE accion = 'enlace_clave_enviado'
+                        AND entidad_id = $idOlvido AND usuario_id = $idJefa")->fetchColumn() === 1);
+$recibe = new Cliente($BASE);
+$recibe->get('/entrar/recuperar/' . $tokenPanel);
+$recibe->post('/entrar/recuperar/' . $tokenPanel, ['clave' => 'tercera-clave-3', 'clave2' => 'tercera-clave-3']);
+// Con la sesión abierta y el registro a medias, el carnet manda a completarlo;
+// sin sesión mandaría a identificarse.
+$recibe->get('/carnet', false);
+comprobar('la persona lo usa y queda dentro', $recibe->codigo === 303
+    && str_contains($recibe->cabecera('Location'), '/registro'), $recibe->codigo . ' → ' . $recibe->cabecera('Location'));
+comprobar('la actividad del panel lo cuenta',
+    str_contains($jefa->get('/admin'), 'cambió su contraseña con el enlace del correo que le envió la administración'));
+
+// Sin el acceso por contraseña, no hay contraseña que recuperar.
+$configAntesRecuperar = leerConfig($RAIZ);
+ajustarConfig($RAIZ, ['auth_metodos' => ['correo', 'qr']]);
+$sinClave = new Cliente($BASE);
+$sinClave->get('/entrar/recuperar', false);
+comprobar('con el acceso por contraseña apagado, «recuperar» lleva al acceso por código',
+    $sinClave->codigo === 303 && str_ends_with(parse_url($sinClave->cabecera('Location'), PHP_URL_PATH) ?: '', '/entrar'));
+comprobar('y la ficha no ofrece enviar el enlace', !str_contains($jefa->get('/admin/registros/' . $idOlvido), 'Enviarle un enlace por correo'));
+ajustarConfig($RAIZ, ['auth_metodos' => $configAntesRecuperar['auth_metodos'] ?? null]);
+$pdo->exec("DELETE FROM {$P}persona WHERE id = $idOlvido");
+
+// ---- El equipo: pedirlo, usarlo y el segundo factor -----------------------
+$html = (new Cliente($BASE))->get('/admin/entrar');
+comprobar('el acceso del equipo también ofrece «¿Olvidaste tu contraseña?»', str_contains($html, '/admin/recuperar"'));
+
+$jefa->get('/admin/organizadores');
+$jefa->post('/admin/organizadores/crear', ['nombre' => 'Coordinación de Recuperación', 'correo' => 'recupera.panel@narino.gov.co',
+    'rol' => 'administrador', 'puesto' => 'Mesa técnica', 'clave' => 'clave inicial muy larga']);
+$idRecupera = (int) $pdo->query("SELECT id FROM {$P}usuario WHERE correo = 'recupera.panel@narino.gov.co'")->fetchColumn();
+comprobar('hay una cuenta del equipo para probar', $idRecupera > 0);
+
+// Activa su segundo factor, como haría al entrar por primera vez.
+$equipo = new Cliente($BASE);
+$equipo->get('/admin/entrar');
+$equipo->post('/admin/entrar', ['correo' => 'recupera.panel@narino.gov.co', 'clave' => 'clave inicial muy larga']);
+$html = $equipo->get('/admin/activar-2fa');
+preg_match('#letter-spacing:\.14em[^>]*>([A-Z2-7 ]{32,})<#', $html, $m);
+$secretoRecupera = str_replace(' ', '', trim($m[1] ?? ''));
+$intervaloAlta = intdiv(time(), 30);
+$equipo->post('/admin/activar-2fa', ['codigo' => $codigoDe($secretoRecupera)]);
+comprobar('la cuenta tiene su segundo factor activo',
+    (int) $pdo->query("SELECT totp_confirmado FROM {$P}usuario WHERE id = $idRecupera")->fetchColumn() === 1);
+$equipo->post('/admin/salir', []);
+
+$anonimo = new Cliente($BASE);
+$anonimo->get('/admin/recuperar');
+$antes = $cuantosCorreos();
+$html = $anonimo->post('/admin/recuperar', ['correo' => 'recupera.panel@narino.gov.co']);
+$respuestaConCuenta = trim(strip_tags((string) preg_replace('#<(script|style)\b.*?</\1>#s', '', $html)));
+$correo = $ultimoCorreo();
+$tokenEquipo = $enlaceDel($correo, '/admin/recuperar');
+comprobar('el equipo pide el enlace y le llega al correo',
+    str_contains($html, 'Revisa tu correo') && $cuantosCorreos() === $antes + 1 && $tokenEquipo !== '');
+comprobar('el correo avisa que después le pediremos el código de su aplicación',
+    str_contains($correo, 'te pediremos también el código de tu aplicación'));
+$antes = $cuantosCorreos();
+$html = $anonimo->post('/admin/recuperar', ['correo' => 'no.es.del.equipo@narino.gov.co']);
+comprobar('con un correo que no es del equipo responde lo mismo, y no envía nada',
+    trim(strip_tags((string) preg_replace('#<(script|style)\b.*?</\1>#s', '', $html))) === $respuestaConCuenta
+    && $cuantosCorreos() === $antes);
+
+$html = $anonimo->get('/admin/recuperar/' . $tokenEquipo);
+comprobar('el enlace abre la pantalla de la contraseña nueva del panel',
+    $anonimo->codigo === 200 && str_contains($html, 'name="nueva"') && str_contains($html, 'r••••••l@narino.gov.co'));
+$html = $anonimo->post('/admin/recuperar/' . $tokenEquipo, ['nueva' => 'once letras', 'nueva2' => 'once letras']);
+comprobar('pide al menos doce caracteres, como al cambiarla desde el panel', str_contains($html, 'al menos 12'));
+$anonimo->post('/admin/recuperar/' . $tokenEquipo,
+    ['nueva' => 'la clave nueva del panel', 'nueva2' => 'la clave nueva del panel'], false);
+comprobar('al guardarla lleva al acceso, sin abrir sesión',
+    $anonimo->codigo === 303 && str_ends_with(parse_url($anonimo->cabecera('Location'), PHP_URL_PATH) ?: '', '/admin/entrar'));
+comprobar('y la marca de «debe cambiarla» se quita: ahora la eligió la persona',
+    (int) $pdo->query("SELECT debe_cambiar FROM {$P}usuario WHERE id = $idRecupera")->fetchColumn() === 0);
+$anonimo->get('/admin', false);
+comprobar('el panel sigue cerrado para quien solo tiene el enlace', $anonimo->codigo === 303);
+
+$equipo = new Cliente($BASE);
+$equipo->get('/admin/entrar');
+$html = $equipo->post('/admin/entrar', ['correo' => 'recupera.panel@narino.gov.co', 'clave' => 'la clave nueva del panel']);
+comprobar('con la contraseña nueva llega al segundo factor, no al panel', str_contains($html, 'Verificación en dos pasos'));
+comprobar('y durante un día el segundo paso no se puede hacer con un código al correo',
+    str_contains($html, 'data-respaldo-suspendido') && !str_contains($html, 'Enviar un código a mi correo'));
+$antes = $cuantosCorreos();
+$equipo->post('/admin/verificar', ['accion' => 'enviar_correo']);
+comprobar('ni pidiéndolo a mano', $cuantosCorreos() === $antes);
+$esperarSiguiente($intervaloAlta);
+$html = $equipo->post('/admin/verificar', ['codigo' => $codigoDe($secretoRecupera)]);
+comprobar('con el código de la aplicación entra', $enElPanel($html), substr(strip_tags($html), 0, 160));
+$pdo->exec("UPDATE {$P}recuperacion_clave SET usado_en = DATE_SUB(NOW(), INTERVAL 2 DAY) WHERE sujeto_id = $idRecupera AND tipo = 'admin'");
+$otraVez = new Cliente($BASE);
+$otraVez->get('/admin/entrar');
+$html = $otraVez->post('/admin/entrar', ['correo' => 'recupera.panel@narino.gov.co', 'clave' => 'la clave nueva del panel']);
+comprobar('pasado el día, el código por correo vuelve a estar', str_contains($html, 'Enviar un código a mi correo'));
+
+// ---- Organizadores: enviárselo a otra cuenta ------------------------------
+$html = $jefa->get('/admin/organizadores');
+comprobar('Organizadores ofrece enviar el enlace a las otras cuentas',
+    preg_match('#enlace-clave"[^>]*>.{0,600}name="usuario" value="' . $idRecupera . '"#s', $html) === 1);
+comprobar('pero no a la propia', preg_match('#enlace-clave"[^>]*>.{0,600}name="usuario" value="' . $idJefa . '"#s', $html) === 0);
+$html = $jefa->post('/admin/organizadores/enlace-clave', ['usuario' => (string) $idRecupera]);
+$correo = $ultimoCorreo();
+comprobar('al enviarlo lo confirma, y le llega el enlace del panel',
+    str_contains($html, 'Le enviamos a recupera.panel@narino.gov.co') && $enlaceDel($correo, '/admin/recuperar') !== ''
+    && str_contains($correo, 'La administración del evento te envió este enlace'));
+$jefa->post('/admin/organizadores/enlace-clave', ['usuario' => (string) $idJefa], false);
+comprobar('la propia contraseña se cambia en su pantalla, no así',
+    $jefa->codigo === 303 && str_contains($jefa->cabecera('Location'), '/admin/clave'));
+$tokenSuspendida = $enlaceDel($correo, '/admin/recuperar');
+$jefa->post('/admin/organizadores/estado', ['usuario' => (string) $idRecupera, 'estado' => 'suspendido']);
+$html = $jefa->post('/admin/organizadores/enlace-clave', ['usuario' => (string) $idRecupera]);
+comprobar('a una cuenta suspendida no se le envía', str_contains($html, 'está suspendida'));
+$html = $anonimo->get('/admin/recuperar/' . $tokenSuspendida);
+comprobar('y el enlace que ya tenía no le sirve mientras lo esté', $anonimo->codigo === 403 && str_contains($html, 'suspendida'));
+$antes = $cuantosCorreos();
+$anonimo->post('/admin/recuperar', ['correo' => 'recupera.panel@narino.gov.co']);
+comprobar('ni pidiéndolo ella misma', $cuantosCorreos() === $antes);
+
+$operadora = new Cliente($BASE);
+$jefa->post('/admin/organizadores/crear', ['nombre' => 'Operadora de Puerta', 'correo' => 'operadora.puerta@narino.gov.co',
+    'rol' => 'operador', 'puesto' => 'Puerta', 'clave' => 'clave de la puerta larga']);
+// Sin la marca de «debe cambiarla», que mandaría a cambiarla antes de mirar el rol.
+$pdo->exec("UPDATE {$P}usuario SET debe_cambiar = 0 WHERE correo = 'operadora.puerta@narino.gov.co'");
+$operadora->get('/admin/entrar');
+$operadora->post('/admin/entrar', ['correo' => 'operadora.puerta@narino.gov.co', 'clave' => 'clave de la puerta larga']);
+$operadora->post('/admin/organizadores/enlace-clave', ['usuario' => (string) $idJefa], false);
+comprobar('solo un administrador puede enviar enlaces a otras cuentas', $operadora->codigo === 403, (string) $operadora->codigo);
+
+$pdo->exec("DELETE FROM {$P}usuario WHERE correo IN ('recupera.panel@narino.gov.co', 'operadora.puerta@narino.gov.co')");
+$pdo->exec("DELETE FROM {$P}intento");
+
+// Para las pruebas de navegador, un enlace vigente de cada puerta, en la
+// carpeta de salidas, que no va al repositorio: abrirlos no los gasta. El del
+// asistente es de Carlos y no de María, porque interacciones.js le envía a
+// María otro desde su ficha, y ese deja sin efecto el anterior.
+$paraNavegador = new Cliente($BASE);
+$paraNavegador->get('/entrar/recuperar');
+$paraNavegador->post('/entrar/recuperar', ['correo' => 'cbolanos@tumaco.gov.co']);
+file_put_contents($carpetaSalidas . '/enlace-clave-asistente.txt', $enlaceDel($ultimoCorreo(), '/entrar/recuperar'));
+$paraNavegador->get('/admin/recuperar');
+$paraNavegador->post('/admin/recuperar', ['correo' => 'aerazo@narino.gov.co']);
+file_put_contents($carpetaSalidas . '/enlace-clave-equipo.txt', $enlaceDel($ultimoCorreo(), '/admin/recuperar'));
+comprobar('quedan los enlaces para las pruebas de navegador',
+    strlen((string) @file_get_contents($carpetaSalidas . '/enlace-clave-asistente.txt')) === 64
+    && strlen((string) @file_get_contents($carpetaSalidas . '/enlace-clave-equipo.txt')) === 64);
+$pdo->exec("DELETE FROM {$P}intento");
+
 ajustarConfig($RAIZ, ['modo_correo' => $configAntesForm['modo_correo'] ?? null]);
 
 /* =========================================================================

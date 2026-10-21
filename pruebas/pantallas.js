@@ -28,7 +28,14 @@ const ANCHO = Number(process.env.ANCHO || 1440);
 const ADMIN = { correo: 'aerazo@narino.gov.co', clave: 'una frase larga y facil de recordar' };
 const ASISTENTE = 'mzambrano@narino.gov.co';
 
-const PUBLICAS = ['/', '/registro', '/entrar/crear', '/agenda', '/entrar', '/admin/entrar'];
+const PUBLICAS = ['/', '/registro', '/entrar/crear', '/agenda', '/entrar', '/admin/entrar',
+                  '/entrar/recuperar', '/admin/recuperar'];
+
+/* Las pantallas de la contraseña nueva necesitan un enlace vigente. Los deja
+   extremo-a-extremo.php en la carpeta de salidas; abrirlos no los gasta. */
+const enlaceDePrueba = archivo => {
+  try { return fs.readFileSync(path.join(__dirname, 'capturas', archivo), 'utf8').trim(); } catch (e) { return ''; }
+};
 const ASISTENTE_RUTAS = ['/carnet', '/checkin', '/contactos'];
 const ADMIN_RUTAS = ['/admin', '/admin/escaner', '/admin/registros', '/admin/qr-dias',
                      '/admin/expositores', '/admin/organizadores', '/admin/eventos', '/admin/identidad', '/admin/autenticacion',
@@ -36,7 +43,7 @@ const ADMIN_RUTAS = ['/admin', '/admin/escaner', '/admin/registros', '/admin/qr-
 
 let fallos = 0;
 
-async function revisar(page, ruta, etiqueta) {
+async function revisar(page, ruta, etiqueta, alias = '') {
   const errores = [];
   const onConsola = m => { if (m.type() === 'error') errores.push('consola: ' + m.text()); };
   const onError = e => errores.push('excepción: ' + e.message);
@@ -74,7 +81,10 @@ async function revisar(page, ruta, etiqueta) {
     };
   });
 
-  const nombre = (etiqueta + ruta).replace(/[^\w]+/g, '_').replace(/^_|_$/g, '') || 'inicio';
+  // Con alias, la ruta —que puede llevar un enlace privado— no sale en el
+  // nombre de la captura ni en la consola.
+  const visible = alias || ruta;
+  const nombre = (etiqueta + visible).replace(/[^\w]+/g, '_').replace(/^_|_$/g, '') || 'inicio';
   await page.screenshot({
     path: path.join(__dirname, 'capturas', ANCHO + '-' + nombre + '.png'),
     fullPage: true,
@@ -85,7 +95,7 @@ async function revisar(page, ruta, etiqueta) {
   if (mal) fallos++;
 
   console.log(
-    (resp && resp.ok() ? '·' : '!') + ' ' + (etiqueta + ' ' + ruta).padEnd(30)
+    (resp && resp.ok() ? '·' : '!') + ' ' + (etiqueta + ' ' + visible).padEnd(30)
     + ' bloques:' + info.bloques
     + ' alto:' + String(info.alto).padStart(5)
     + ' desbordeH:' + (info.desborde ? 'SÍ' : 'no')
@@ -111,6 +121,15 @@ async function revisar(page, ruta, etiqueta) {
   });
   const pub = await ctxPublico.newPage();
   for (const ruta of PUBLICAS) await revisar(pub, ruta, 'público');
+
+  for (const [archivo, ruta, alias] of [
+    ['enlace-clave-asistente.txt', '/entrar/recuperar/', '/entrar/recuperar/(enlace)'],
+    ['enlace-clave-equipo.txt', '/admin/recuperar/', '/admin/recuperar/(enlace)'],
+  ]) {
+    const token = enlaceDePrueba(archivo);
+    if (token) await revisar(pub, ruta + token, 'público', alias);
+    else console.log('  (sin ' + archivo + ': corre antes extremo-a-extremo.php)');
+  }
 
   // ---- Asistente ----
   await pub.goto(BASE + '/entrar', { waitUntil: 'networkidle' });

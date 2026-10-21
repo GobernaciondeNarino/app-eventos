@@ -63,6 +63,7 @@ $p(
     '                      └─── propuesta ─── charla      al aprobarse',
     '',
     'usuario ─── sesion            equipo organizador y sus sesiones',
+    'recuperacion_clave            enlaces para poner una contraseña nueva, de personas y del equipo',
     'intento                       contador para el límite de fuerza bruta',
     'bitacora                      auditoría; solo inserciones',
     'migracion                     versión del esquema aplicada',

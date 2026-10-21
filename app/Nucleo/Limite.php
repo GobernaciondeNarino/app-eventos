@@ -47,6 +47,12 @@ final class Limite
         'token_qr'         => [30, 300, 900],    // enumeración de credenciales
         'preregistro_ip'   => [60, 3600, 900],   // altas masivas; toda una sede comparte IP
         'contacto'         => [60, 3600, 600],   // intercambios, por persona
+        // Enlaces para recuperar la contraseña. Se cuenta cada pedido, exista o
+        // no la cuenta, por la misma razón que el envío de códigos: si solo se
+        // contaran unos, el bloqueo diría cuáles correos están registrados.
+        'recuperar_clave'    => [4, 3600, 3600],   // por correo
+        'recuperar_clave_ip' => [30, 3600, 900],   // por IP; toda una sede sale por la misma
+        'enlace_clave'       => [30, 300, 900],    // enlaces que no existen, por IP
         // Cada prueba de correo abre una conexión y puede esperar quince
         // segundos. Sin tope, el botón es una forma cómoda de tener ocupado al
         // servidor; y probar contra Google muchas veces seguidas hace que

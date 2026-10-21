@@ -140,6 +140,17 @@ final class Bitacora
             'exportacion'        => "$quien exportó registros" . (($detalle['sensible'] ?? false) ? ' con caracterización' : ''),
             'contacto_creado'    => 'Intercambio de contacto entre asistentes',
             'usuario_creado'     => "$quien agregó a alguien al equipo",
+            'clave_cambiada'     => "$quien cambió su contraseña",
+            'clave_asistente_restablecida' => "$quien le generó una contraseña nueva a un asistente",
+            'enlace_clave_pedido' => ($entrada['entidad'] ?? '') === 'usuario'
+                ? 'Se pidió un enlace para recuperar la contraseña de una cuenta del equipo'
+                : 'Un asistente pidió un enlace para recuperar su contraseña',
+            'enlace_clave_enviado' => "$quien envió un enlace para cambiar la contraseña"
+                . (($entrada['entidad'] ?? '') === 'usuario' ? ' a una cuenta del equipo' : ' a un asistente')
+                . (empty($detalle['enviado']) ? ', pero el correo no salió' : ''),
+            'clave_recuperada'   => (($entrada['entidad'] ?? '') === 'usuario' ? 'Una cuenta del equipo' : 'Un asistente')
+                . ' cambió su contraseña con el enlace del correo'
+                . (($detalle['origen'] ?? '') === 'panel' ? ' que le envió la administración' : ''),
             'usuario_restablecido' => 'Se restableció el acceso de una cuenta administradora',
             'segundo_factor_retirado' => 'Se retiró el segundo factor de una cuenta',
             'segundo_factor_activado' => "$quien activó la verificación en dos pasos",

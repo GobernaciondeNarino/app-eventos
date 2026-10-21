@@ -243,3 +243,20 @@ function navegadorLegible(?string $agente): string
 
     return $navegador . ' en ' . $sistema;
 }
+
+/**
+ * «a•••o@narino.gov.co»: lo justo para que su dueño reconozca el buzón.
+ *
+ * Se usa en las pantallas a las que se llega sin haber entrado —la del
+ * segundo factor, la de la contraseña nueva—, donde escribir el correo entero
+ * se lo enseñaría a cualquiera que tenga el enlace delante.
+ */
+function correoOculto(string $correo): string
+{
+    [$usuario, $dominio] = array_pad(explode('@', $correo, 2), 2, '');
+    $largo = mb_strlen($usuario);
+    $visible = $largo <= 2
+        ? mb_substr($usuario, 0, 1) . '•'
+        : mb_substr($usuario, 0, 1) . str_repeat('•', min(6, $largo - 2)) . mb_substr($usuario, -1);
+    return $visible . '@' . $dominio;
+}

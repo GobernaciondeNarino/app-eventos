@@ -427,6 +427,12 @@ restauró no es una copia.
    el listado mostraba como mucho 200 personas, y la exportación y la impresión de carnets se
    detenían en 500. Ver 7.5.
 
+   La 3.14 agrega **una tabla**, la de los tokens de la API (`evt_api_token`), y nada más en la
+   base: no cambia ninguna tabla que ya exista ni ningún registro. La crea sola la primera
+   visita. Con ella, otros sistemas consultan en JSON quiénes se registraron, con un token que
+   se crea en **Configuración → API**. Mientras nadie cree un token, la API no responde a nadie.
+   Ver 7.6.
+
    Si el usuario de la base de datos no tiene permiso de `ALTER` —pasa en algunos
    alojamientos—, la actualización automática no puede hacerse: lo anota en el registro,
    vuelve a intentarlo cada cinco minutos y la plataforma sigue funcionando. Para hacerlo a
@@ -686,6 +692,81 @@ asistencias y las propuestas. Solo cambia cómo se consultan y se muestran.
 **Volver atrás:** sube otra vez los archivos que descargaste en el paso 1 y borra los tres
 nuevos (`app/Nucleo/Paginacion.php`, `app/Nucleo/Orden.php` y
 `app/Vistas/parciales/paginacion.php`). No hay nada que deshacer en la base de datos.
+
+### 7.6 La 3.14: la API de consulta, sin tocar registros ni configuración
+
+**Qué agrega.** Una API de solo lectura, en JSON, para que otro sistema consulte quiénes se
+registraron: `/cumbreAI/api/v1/personas` (todos los perfiles), `/api/v1/expositores` (con su
+propuesta y su lugar en la agenda) y `/api/v1/perfiles` (cuántos hay de cada uno), con filtros
+en la dirección. Cada sistema usa su propio token, que un administrador crea y revoca en la
+pestaña nueva **Configuración → API**. La referencia completa está en `docs/API.md`.
+
+**Qué cambia en la base de datos.** Solo se **agrega** la tabla `evt_api_token` (esquema
+1.12.0). La crea la actualización automática en la primera visita —lo mismo que la 3.12 con la
+de recuperar la contraseña—, o el botón «Actualizar la base de datos» si la automática está
+apagada. No se modifica ninguna tabla existente ni ningún registro.
+
+**Qué no cambia.** `config/config.php` —no hay que agregar nada—, `almacen/`, los registros, los
+carnets, las asistencias, las propuestas y las cuentas del equipo. Nadie tiene que volver a
+entrar. **Mientras nadie cree un token, la API responde 401 a todo**: subir la versión no abre
+ningún dato.
+
+**Qué archivos cambian:**
+
+| Archivo | Para qué |
+|---|---|
+| `app/Controladores/Api.php` | **Nuevo.** Las consultas de la API, sus filtros y sus errores |
+| `app/Modelos/TokenApi.php` | **Nuevo.** Crear, comprobar, contar y revocar los tokens |
+| `app/Vistas/admin/config-api.php` | **Nuevo.** La pestaña Configuración → API |
+| `app/Esquema.php` | La tabla nueva, y la versión del esquema 1.12.0 |
+| `app/rutas.php` | Las direcciones de la API y de la pestaña |
+| `app/Controladores/Configuracion.php`, `app/Vistas/parciales/pestanas-configuracion.php` | La pestaña nueva |
+| `app/Nucleo/Peticion.php`, `app/Nucleo/Respuesta.php`, `app/Nucleo/App.php` | Reconocer una consulta a la API: sus errores salen en JSON y no lleva cookies |
+| `app/Nucleo/Paginacion.php`, `app/Nucleo/Limite.php`, `app/Nucleo/Bitacora.php`, `app/Modelos/Persona.php` | Las páginas de la API, el tope de tokens inventados y la bitácora de los tokens |
+| `assets/js/app.js` | En el celular, la pestaña activa queda a la vista en la fila de pestañas |
+| `index.php`, `herramientas/instalar.php`, `herramientas/correo.php` | El número de versión |
+| `.htaccess` | **Opcional**, ver abajo |
+
+**El `.htaccess`, aparte.** Trae dos líneas nuevas para que Apache le pase a PHP la cabecera
+`Authorization: Bearer …`, la forma recomendada de enviar el token. **No hace falta para que la
+API funcione**: sin ellas el token sirve igual en la dirección (`?token=…`) y en la cabecera
+`X-Api-Token`. Si en producción nunca tocaste el `.htaccess`, puedes subir el nuevo. Si lo
+cambiaste —por ejemplo, activaste la redirección a HTTPS o el HSTS—, no lo reemplaces: ábrelo
+en el Administrador de archivos de Plesk y agrega solo esto justo debajo de `RewriteEngine On`:
+
+```apache
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+```
+
+Un error en el `.htaccess` deja todo el sitio en «Error 500», así que guarda antes una copia
+del que hay y, después de cambiarlo, abre la portada en el acto: si no carga, vuelve a subir
+la copia.
+
+**Cómo subirla:**
+
+1. Haz la copia de seguridad de siempre (punto 1 de arriba): **la base de datos y `config/`**.
+   Descarga además, tal como están en el servidor, los archivos de la tabla que ya existen.
+2. Sube los archivos de la tabla —o la versión completa, **sin tocar `config/` ni
+   `almacen/`**, y con el cuidado de arriba para el `.htaccess`—. Si producción todavía no tiene
+   la 3.13, sube la versión completa.
+3. Abre cualquier página de la plataforma. La primera visita crea la tabla; en `/admin` no debe
+   quedar ningún aviso de «base de datos atrasada». Si queda —el usuario de la base no tiene
+   permiso de `CREATE`—, pulsa **«Actualizar la base de datos»** en ese aviso.
+4. Compruébalo:
+   - `https://tic.narino.gov.co/cumbreAI/api/v1` responde `{"error": {"codigo": 401, …}}`;
+   - en **Configuración → API**, crea un token de prueba **sin datos de contacto** y abre la
+     primera consulta de ejemplo de la pantalla: responde el evento y las consultas;
+   - abre `…/api/v1/expositores?estado=aprobada&token=…` y compara con **Expositores** en el
+     panel;
+   - **revoca** el token de prueba: la misma dirección vuelve a responder 401.
+
+**Volver atrás:** sube otra vez los archivos que descargaste en el paso 1 —también el
+`.htaccess`, si lo cambiaste— y borra los tres nuevos (`app/Controladores/Api.php`,
+`app/Modelos/TokenApi.php` y `app/Vistas/admin/config-api.php`). La tabla `evt_api_token` puede
+quedarse: la versión anterior no la usa ni la mira, y no estorba. Si prefieres quitarla, `DROP
+TABLE evt_api_token;` en phpMyAdmin, después de volver a los archivos anteriores. Con los
+archivos anteriores, la API deja de existir y todos los tokens dejan de servir.
 
 ---
 

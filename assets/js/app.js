@@ -297,6 +297,17 @@
     mostrar(conError >= 0 ? conError : 0);
   });
 
+  /* En el teléfono la fila de pestañas se desplaza de lado, y la activa podía
+     quedar fuera de la vista: en Configuración, quien entraba a «API» o a
+     «Mi cuenta» no veía en qué pestaña estaba. Se centra la activa.        */
+  $$('.tabs').forEach(function (fila) {
+    var activa = $('.tabs__btn.is-active', fila);
+    if (!activa || fila.scrollWidth <= fila.clientWidth) return;
+    var caja = fila.getBoundingClientRect();
+    var boton = activa.getBoundingClientRect();
+    fila.scrollLeft += (boton.left - caja.left) - (caja.width - boton.width) / 2;
+  });
+
   /* ---- Envíos: evitar el doble clic --------------------------------------
      En la puerta del evento, con conexión lenta, la gente pulsa dos veces y
      se generan registros duplicados.                                      */

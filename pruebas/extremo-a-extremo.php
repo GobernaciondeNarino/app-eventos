@@ -217,6 +217,9 @@ final class Cliente
         return 0;
     }
 
+    /** Cabeceras de más en cada petición, como las que manda un programa a la API. */
+    public array $extra = [];
+
     private function cabeceraCookies(): string
     {
         $partes = [];
@@ -226,6 +229,9 @@ final class Cliente
             }
         }
         $cabecera = "User-Agent: PruebaExtremoAExtremo/1.0\r\n";
+        foreach ($this->extra as $nombre => $valor) {
+            $cabecera .= $nombre . ': ' . $valor . "\r\n";
+        }
         return $partes ? $cabecera . 'Cookie: ' . implode('; ', $partes) . "\r\n" : $cabecera;
     }
 
@@ -4448,6 +4454,399 @@ comprobar('el guion deja el evento como estaba',
     (int) $pdo->query("SELECT COUNT(*) FROM {$P}persona WHERE evento_id = $eventoActivo")->fetchColumn() === $antesCarga);
 
 ajustarConfig($RAIZ, ['modo_correo' => $configAntesForm['modo_correo'] ?? null]);
+
+/* =========================================================================
+   19 · La API de consulta
+   -------------------------------------------------------------------------
+   Otros sistemas consultan en JSON quiénes se registraron, con los filtros en
+   la dirección y un token que se crea en Configuración → API. Solo lee; nunca
+   entrega la identificación, la caracterización ni lo que escribe el comité,
+   y el correo y el teléfono solo con un token de alcance «contacto».
+   ========================================================================= */
+titulo('La API de consulta');
+
+$pdo->exec("DELETE FROM {$P}intento");
+$api = new Cliente($BASE);
+$pedirApi = static function (Cliente $c, string $ruta): array {
+    $c->get($ruta);
+    return json_decode($c->cuerpo, true) ?: [];
+};
+$enJson = static fn(Cliente $c): bool => str_starts_with($c->cabecera('Content-Type'), 'application/json');
+$tokenDeLaPantalla = static fn(string $html): string =>
+    preg_match('/data-copiar="([a-f0-9]{64})"/', $html, $m) ? $m[1] : '';
+$cuenta = static fn(string $sql): int => (int) $pdo->query($sql)->fetchColumn();
+
+// ---- Sin token no hay nada ----------------------------------------------------
+$r = $pedirApi($api, '/api/v1/personas');
+comprobar('sin token, la API responde 401 en JSON', $api->codigo === 401 && $enJson($api)
+    && ($r['error']['codigo'] ?? 0) === 401, $api->codigo . ' · ' . $api->cabecera('Content-Type'));
+comprobar('y dice dónde se consigue uno', str_contains($r['error']['mensaje'] ?? '', 'Configuración → API'));
+comprobar('sin quedar en ninguna caché', str_contains($api->cabecera('Cache-Control'), 'no-store'));
+$r = $pedirApi($api, '/api/v1/personas?token=' . str_repeat('a', 64));
+comprobar('con uno inventado, 401 también', $api->codigo === 401 && ($r['error']['titulo'] ?? '') === 'Token no válido');
+$r = $pedirApi($api, '/api/v1/no-existe');
+comprobar('una consulta que no existe responde 404 en JSON, no con la página de error',
+    $api->codigo === 404 && ($r['error']['codigo'] ?? 0) === 404);
+
+// ---- Los tokens, en Configuración → API ----------------------------------------
+$html = $jefa->get('/admin/configuracion/api');
+comprobar('Configuración tiene la pestaña API, todavía sin tokens', $jefa->codigo === 200
+    && str_contains($html, 'href="' . $base . '/admin/configuracion/api"') && str_contains($html, 'Todavía no hay ninguno'));
+$jefa->post('/admin/configuracion/api/crear', ['nombre' => 'ab', 'alcance' => 'basico']);
+$jefa->post('/admin/configuracion/api/crear', ['nombre' => 'Sistema sin alcance', 'alcance' => 'todo']);
+comprobar('sin un nombre de verdad, o con un alcance que no existe, no se crea',
+    $cuenta("SELECT COUNT(*) FROM {$P}api_token") === 0);
+
+$html = $jefa->post('/admin/configuracion/api/crear', ['nombre' => 'Sitio web de la Secretaría TIC', 'alcance' => 'basico']);
+$tokenSitio = $tokenDeLaPantalla($html);
+comprobar('al crearlo, el token aparece una vez para copiarlo, con consultas de ejemplo',
+    strlen($tokenSitio) === 64 && str_contains($html, 'data-token-nuevo') && str_contains($html, 'única vez que aparece')
+    && str_contains($html, '/api/v1/personas?perfil=participante&amp;token=' . $tokenSitio));
+$filaToken = $pdo->query("SELECT * FROM {$P}api_token")->fetch(PDO::FETCH_ASSOC) ?: [];
+comprobar('en la base queda su hash, no el token', ($filaToken['token_hash'] ?? '') === hash('sha256', $tokenSitio)
+    && !in_array($tokenSitio, array_map('strval', $filaToken), true) && ($filaToken['pista'] ?? '') === substr($tokenSitio, 0, 8));
+comprobar('con su nombre, su alcance y quién lo creó', ($filaToken['nombre'] ?? '') === 'Sitio web de la Secretaría TIC'
+    && ($filaToken['alcance'] ?? '') === 'basico' && (int) ($filaToken['creado_por'] ?? 0) === $idJefa);
+$html = $jefa->get('/admin/configuracion/api');
+comprobar('al volver a la pantalla ya no se ve: solo sus primeros caracteres', !str_contains($html, $tokenSitio)
+    && str_contains($html, substr($tokenSitio, 0, 8) . '…') && str_contains($html, 'Nunca se ha usado')
+    && str_contains($html, '1 vigente<'));
+
+// ---- Qué se consulta ----------------------------------------------------------------
+$personasEvento = $cuenta("SELECT COUNT(*) FROM {$P}persona WHERE evento_id = $eventoActivo");
+$r = $pedirApi($api, '/api/v1?token=' . $tokenSitio);
+comprobar('/api/v1 dice qué se puede consultar, con qué filtros y sobre qué evento', $api->codigo === 200
+    && ($r['alcance'] ?? '') === 'basico' && ($r['evento']['id'] ?? 0) === $eventoActivo
+    && count($r['consultas'] ?? []) === 3 && isset($r['consultas'][1]['filtros']['perfil'])
+    && str_ends_with($r['consultas'][1]['url'] ?? '', $base . '/api/v1/personas'), mb_substr($api->cuerpo, 0, 300));
+
+$porPerfil = $pdo->query("SELECT rol, COUNT(*) FROM {$P}persona WHERE evento_id = $eventoActivo GROUP BY rol")
+    ->fetchAll(PDO::FETCH_KEY_PAIR);
+$r = $pedirApi($api, '/api/v1/perfiles?token=' . $tokenSitio);
+$totales = array_column($r['datos'] ?? [], 'total', 'clave');
+$cuadra = ($r['total'] ?? -1) === $personasEvento && array_sum($totales) === $personasEvento;
+foreach ($porPerfil as $rol => $n) {
+    $cuadra = $cuadra && ($totales[$rol] ?? -1) === (int) $n;
+}
+comprobar('/perfiles cuenta a las personas de cada perfil, y la suma da el total', $cuadra, json_encode($totales));
+
+$r = $pedirApi($api, '/api/v1/personas?por=200&token=' . $tokenSitio);
+$cuerpoApi = $api->cuerpo;
+comprobar('/personas trae a todo el evento', $api->codigo === 200 && ($r['paginacion']['total'] ?? 0) === $personasEvento
+    && count($r['datos'] ?? []) === min(200, $personasEvento), (string) ($r['paginacion']['total'] ?? ''));
+$una = $r['datos'][0] ?? [];
+comprobar('cada persona con su perfil, entidad, carnet, ingresos y propuesta',
+    isset($una['id'], $una['perfil']['clave'], $una['perfil']['nombre']) && array_key_exists('entidad', $una)
+    && array_key_exists('carnet', $una) && is_array($una['ingresos'] ?? null) && array_key_exists('propuesta', $una)
+    && is_bool($una['registro_completo'] ?? null));
+comprobar('sin alcance de contacto, ni correo ni teléfono', !array_key_exists('correo', $una)
+    && !array_key_exists('telefono', $una) && !str_contains($cuerpoApi, '@narino.gov.co') && !str_contains($cuerpoApi, '@tumaco.gov.co'));
+$huellas = $pdo->query("SELECT documento_huella FROM {$P}persona WHERE documento_huella IS NOT NULL")->fetchAll(PDO::FETCH_COLUMN);
+$fugasEn = static function (string $cuerpo) use ($huellas): array {
+    $fuga = [];
+    foreach (['"documento', 'huella', '"etnia"', '"genero"', '"discapacidad"', '"foto', '"token', '"observacion',
+              'requerimientos', 'clave_hash'] as $clave) {
+        if (str_contains($cuerpo, $clave)) {
+            $fuga[] = $clave;
+        }
+    }
+    foreach ($huellas as $huella) {
+        if (str_contains($cuerpo, (string) $huella)) {
+            $fuga[] = 'una huella';
+        }
+    }
+    return $fuga;
+};
+comprobar('nunca la identificación, la caracterización ni la foto', $fugasEn($cuerpoApi) === [],
+    implode(', ', $fugasEn($cuerpoApi)));
+
+// ---- Páginas ----------------------------------------------------------------------
+$vistos = [];
+$pedidas = 0;
+for ($pagina = 1; $pagina <= 200; $pagina++) {
+    $r = $pedirApi($api, '/api/v1/personas?por=7&pagina=' . $pagina . '&token=' . $tokenSitio);
+    $pedidas++;
+    if (($r['datos'] ?? []) === []) {
+        break;
+    }
+    array_push($vistos, ...array_column($r['datos'], 'id'));
+}
+$paginasApi = (int) ceil($personasEvento / 7);
+comprobar('pidiendo páginas hasta que una llegue vacía, cada persona sale una vez y el recorrido termina',
+    count($vistos) === $personasEvento && count(array_unique($vistos)) === $personasEvento && $pedidas === $paginasApi + 1,
+    count($vistos) . ' de ' . $personasEvento . ' en ' . $pedidas . ' consultas');
+comprobar('y la página vacía dice cuál es la última', $api->codigo === 200
+    && array_key_exists('siguiente', $r['paginacion'] ?? []) && $r['paginacion']['siguiente'] === null
+    && ($r['paginacion']['anterior'] ?? 0) === $paginasApi && ($r['paginacion']['paginas'] ?? 0) === $paginasApi);
+
+// ---- Orden y filtros ----------------------------------------------------------------
+$r = $pedirApi($api, '/api/v1/personas?por=200&orden=nombre&dir=desc&token=' . $tokenSitio);
+$esperado = array_map('intval', $pdo->query("SELECT id FROM {$P}persona WHERE evento_id = $eventoActivo
+    ORDER BY (TRIM(nombre) = '') ASC, nombre DESC, id ASC")->fetchAll(PDO::FETCH_COLUMN));
+comprobar('ordena por lo que se pida, sobre todo el listado', array_column($r['datos'] ?? [], 'id') === $esperado
+    && ($r['orden'] ?? []) === ['campo' => 'nombre', 'dir' => 'desc']);
+$r = $pedirApi($api, '/api/v1/personas?por=200&orden=registro&dir=desc&token=' . $tokenSitio);
+$esperado = array_map('intval', $pdo->query("SELECT id FROM {$P}persona WHERE evento_id = $eventoActivo
+    ORDER BY creado_en DESC, (TRIM(nombre) = '') ASC, nombre ASC, id ASC")->fetchAll(PDO::FETCH_COLUMN));
+comprobar('también por fecha de registro', array_column($r['datos'] ?? [], 'id') === $esperado);
+
+$soloExpositores = $cuenta("SELECT COUNT(*) FROM {$P}persona WHERE evento_id = $eventoActivo AND rol = 'expositor'");
+$r = $pedirApi($api, '/api/v1/personas?perfil=expositor&por=200&token=' . $tokenSitio);
+comprobar('perfil=expositor trae solo ese perfil', $soloExpositores > 0 && ($r['paginacion']['total'] ?? -1) === $soloExpositores
+    && array_unique(array_column(array_column($r['datos'] ?? [], 'perfil'), 'clave')) === ['expositor']);
+$dosPerfiles = $cuenta("SELECT COUNT(*) FROM {$P}persona WHERE evento_id = $eventoActivo AND rol IN ('expositor', 'staff')");
+$r = $pedirApi($api, '/api/v1/personas?perfil=' . rawurlencode('expositor, staff') . '&token=' . $tokenSitio);
+comprobar('y varios, separados por comas', ($r['paginacion']['total'] ?? -1) === $dosPerfiles
+    && ($r['filtros']['perfil'] ?? null) === ['expositor', 'staff']);
+
+$conIngreso = $pdo->query("SELECT d.numero, COUNT(DISTINCT a.persona_id) AS n FROM {$P}asistencia a
+    JOIN {$P}evento_dia d ON d.id = a.evento_dia_id WHERE d.evento_id = $eventoActivo
+    GROUP BY d.numero ORDER BY n DESC, d.numero LIMIT 1")->fetch(PDO::FETCH_ASSOC) ?: ['numero' => 0, 'n' => 0];
+$r = $pedirApi($api, '/api/v1/personas?dia=' . $conIngreso['numero'] . '&por=200&token=' . $tokenSitio);
+$entraronTodos = true;
+foreach ($r['datos'] ?? [] as $d) {
+    $entraronTodos = $entraronTodos && in_array((int) $conIngreso['numero'], $d['ingresos'], true);
+}
+comprobar('dia trae a quienes entraron ese día', (int) $conIngreso['n'] > 0 && $entraronTodos
+    && ($r['paginacion']['total'] ?? -1) === (int) $conIngreso['n'], json_encode($conIngreso));
+
+$aMedias = $pedirApi($api, '/api/v1/personas?completo=0&por=200&token=' . $tokenSitio);
+$completos = $pedirApi($api, '/api/v1/personas?completo=1&por=200&token=' . $tokenSitio);
+comprobar('completo separa los registros completos de los que quedaron a medias',
+    ($aMedias['paginacion']['total'] ?? 0) + ($completos['paginacion']['total'] ?? 0) === $personasEvento
+    && !in_array(true, array_column($aMedias['datos'] ?? [], 'registro_completo'), true)
+    && !in_array(false, array_column($completos['datos'] ?? [], 'registro_completo'), true));
+
+$r = $pedirApi($api, '/api/v1/personas?q=' . rawurlencode('bolaños') . '&token=' . $tokenSitio);
+comprobar('q busca en el nombre, sin importar mayúsculas',
+    in_array('Carlos Andrés Bolaños', array_column($r['datos'] ?? [], 'nombre'), true));
+$r = $pedirApi($api, '/api/v1/personas?q=' . rawurlencode('cbolanos@') . '&token=' . $tokenSitio);
+comprobar('pero no en el correo: sin alcance de contacto no sirve para averiguar quién está registrado',
+    ($r['paginacion']['total'] ?? -1) === 0);
+$r = $pedirApi($api, '/api/v1/personas?q=' . rawurlencode('%') . '&token=' . $tokenSitio);
+comprobar('los comodines se buscan como texto', ($r['paginacion']['total'] ?? -1) === 0);
+
+$malEscritos = [
+    '/api/v1/personas?perfiles=expositor'         => 'Filtro desconocido',
+    '/api/v1/personas?perfil=inventado'           => 'Perfil desconocido',
+    '/api/v1/personas?perfil[]=expositor'         => 'Filtro no válido',
+    '/api/v1/personas?dia=uno'                    => 'Número no válido',
+    '/api/v1/personas?dia=99'                     => 'Día no válido',
+    '/api/v1/personas?orden=documento'            => 'Orden desconocido',
+    '/api/v1/personas?dir=abajo'                  => 'Dirección desconocida',
+    '/api/v1/personas?por=500'                    => 'Número no válido',
+    '/api/v1/personas?completo=si'                => 'Filtro no válido',
+    '/api/v1/personas?registrado_desde=2026-02-30' => 'Fecha no válida',
+    '/api/v1/expositores?estado=nueva'            => 'Estado desconocido',
+    '/api/v1/perfiles?pagina=2'                   => 'Filtro desconocido',
+];
+$noAvisan = [];
+foreach ($malEscritos as $ruta => $titulo) {
+    $r = $pedirApi($api, $ruta . '&token=' . $tokenSitio);
+    if ($api->codigo !== 400 || ($r['error']['titulo'] ?? '') !== $titulo) {
+        $noAvisan[] = $ruta . ' → ' . $api->codigo . ' ' . ($r['error']['titulo'] ?? '');
+    }
+}
+comprobar('un filtro que no se entiende responde 400 y dice qué admite, en vez de ignorarse', $noAvisan === [],
+    implode(' · ', $noAvisan));
+$r = $pedirApi($api, '/api/v1/personas?perfil=inventado&token=' . $tokenSitio);
+comprobar('por ejemplo, los perfiles que sí existen', str_contains($r['error']['mensaje'] ?? '', 'participante'));
+$r = $pedirApi($api, '/api/v1/personas?evento=999999&token=' . $tokenSitio);
+comprobar('un evento que no existe responde 404', $api->codigo === 404 && ($r['error']['titulo'] ?? '') === 'Evento no encontrado');
+
+// ---- Expositores ----------------------------------------------------------------------
+$ultimaPropuesta = "pr.id = (SELECT MAX(x.id) FROM {$P}propuesta x WHERE x.persona_id = p.id)";
+$expositoresPanel = $cuenta("SELECT COUNT(*) FROM {$P}persona p WHERE p.evento_id = $eventoActivo AND (p.rol = 'expositor'
+    OR EXISTS (SELECT 1 FROM {$P}propuesta x WHERE x.persona_id = p.id)
+    OR p.id IN (SELECT b.entidad_id FROM {$P}bitacora b WHERE b.accion IN ('registro', 'registro_actualizado')
+                AND b.entidad = 'persona' AND b.detalle LIKE '%\"formulario\":\"expositores\"%'))");
+$r = $pedirApi($api, '/api/v1/expositores?por=200&token=' . $tokenSitio);
+$cuerpoApi = $api->cuerpo;
+comprobar('/expositores trae a los mismos que Expositores en el panel', $expositoresPanel > 0
+    && ($r['paginacion']['total'] ?? -1) === $expositoresPanel, ($r['paginacion']['total'] ?? '') . ' de ' . $expositoresPanel);
+$conPropuesta = array_values(array_filter(array_column($r['datos'] ?? [], 'propuesta')));
+comprobar('con su propuesta: título, categoría, resumen y estado', $conPropuesta !== []
+    && isset($conPropuesta[0]['titulo'], $conPropuesta[0]['categoria'], $conPropuesta[0]['resumen'], $conPropuesta[0]['estado']));
+comprobar('y sin lo que el comité le escribió al expositor ni sus requerimientos',
+    !str_contains($cuerpoApi, 'Ajusta el detalle a una charla') && !str_contains($cuerpoApi, 'micrófono inalámbrico')
+    && $fugasEn($cuerpoApi) === [],
+    implode(', ', $fugasEn($cuerpoApi)));
+
+$aprobadas = $cuenta("SELECT COUNT(*) FROM {$P}persona p JOIN {$P}propuesta pr ON $ultimaPropuesta
+                       WHERE p.evento_id = $eventoActivo AND pr.estado = 'aprobada'");
+$r = $pedirApi($api, '/api/v1/expositores?estado=aprobada&por=200&token=' . $tokenSitio);
+comprobar('estado=aprobada trae las aprobadas', $aprobadas > 0 && ($r['paginacion']['total'] ?? -1) === $aprobadas
+    && array_unique(array_map(static fn(array $d): string => (string) ($d['propuesta']['estado'] ?? ''), $r['datos'] ?? [])) === ['aprobada']);
+$r = $pedirApi($api, '/api/v1/expositores?estado=sin-propuesta&por=200&token=' . $tokenSitio);
+comprobar('y sin-propuesta, a quienes todavía no la envían', ($r['datos'] ?? []) !== []
+    && array_filter(array_column($r['datos'], 'propuesta')) === []);
+
+// La agenda. Dos exposiciones aprobadas y agendadas al revés de como llegaron
+// —la segunda, el primer día y más temprano—, para ver que el orden sale de
+// la agenda y no del registro. Al final todo vuelve a como estaba.
+$dias = $pdo->query("SELECT id, numero, fecha FROM {$P}evento_dia WHERE evento_id = $eventoActivo ORDER BY numero")
+    ->fetchAll(PDO::FETCH_ASSOC);
+$sinAgenda = $pdo->query("SELECT pr.id, pr.estado FROM {$P}propuesta pr JOIN {$P}persona p ON p.id = pr.persona_id
+    WHERE p.evento_id = $eventoActivo AND $ultimaPropuesta AND pr.estado IN ('aprobada', 'pendiente')
+      AND NOT EXISTS (SELECT 1 FROM {$P}charla c WHERE c.propuesta_id = pr.id)
+ ORDER BY pr.id LIMIT 2")->fetchAll(PDO::FETCH_KEY_PAIR);
+$agendar = $pdo->prepare("INSERT INTO {$P}charla (propuesta_id, evento_dia_id, hora_inicio, salon) VALUES (?, ?, ?, ?)");
+[$primera, $segunda] = array_keys($sinAgenda) + [0, 0];
+$ultimoDia = end($dias) ?: [];
+$primerDia = reset($dias) ?: [];
+if ($primera && $segunda && $primerDia) {
+    $pdo->exec("UPDATE {$P}propuesta SET estado = 'aprobada' WHERE id IN ($primera, $segunda)");
+    $agendar->execute([$primera, $ultimoDia['id'], '15:30:00', 'Sala 2']);
+    $agendar->execute([$segunda, $primerDia['id'], '08:00:00', 'Auditorio principal']);
+}
+
+$r = $pedirApi($api, '/api/v1/expositores?dia=' . (int) ($primerDia['numero'] ?? 0) . '&por=200&token=' . $tokenSitio);
+$suya = null;
+foreach ($r['datos'] ?? [] as $d) {
+    if (($d['propuesta']['id'] ?? 0) === (int) $segunda) {
+        $suya = $d;
+    }
+}
+comprobar('dia trae lo agendado ese día, con su fecha, hora y salón', $suya !== null && count($r['datos']) === 1
+    && ($suya['propuesta']['agenda'] ?? null) === ['dia' => (int) $primerDia['numero'], 'fecha' => (string) $primerDia['fecha'],
+        'hora' => '08:00', 'salon' => 'Auditorio principal'],
+    json_encode([array_keys($sinAgenda), $suya['propuesta']['agenda'] ?? null], JSON_UNESCAPED_UNICODE));
+$r = $pedirApi($api, '/api/v1/expositores?orden=jornada&por=200&token=' . $tokenSitio);
+$porAgenda = array_map(static fn(array $d): int => (int) ($d['propuesta']['id'] ?? 0), $r['datos'] ?? []);
+$enAgenda = array_map(static fn(array $d): bool => isset($d['propuesta']['agenda']), $r['datos'] ?? []);
+comprobar('orden=jornada sigue la agenda, y lo que no está en ella va al final',
+    array_slice($porAgenda, 0, 2) === [(int) $segunda, (int) $primera] && !in_array(true, array_slice($enAgenda, 2), true),
+    json_encode($porAgenda));
+$r = $pedirApi($api, '/api/v1/expositores?orden=jornada&dir=desc&por=200&token=' . $tokenSitio);
+comprobar('y al revés, con lo que no está en la agenda igual al final',
+    array_slice(array_map(static fn(array $d): int => (int) ($d['propuesta']['id'] ?? 0), $r['datos'] ?? []), 0, 2)
+        === [(int) $primera, (int) $segunda]);
+$pdo->exec("UPDATE {$P}charla SET publicada = 0 WHERE propuesta_id = $segunda");
+$r = $pedirApi($api, '/api/v1/expositores?dia=' . (int) ($primerDia['numero'] ?? 0) . '&token=' . $tokenSitio);
+comprobar('de la agenda sale solo lo publicado, como en la agenda pública', ($r['paginacion']['total'] ?? -1) === 0);
+
+if ($primera && $segunda) {
+    $pdo->exec("DELETE FROM {$P}charla WHERE propuesta_id IN ($primera, $segunda)");
+    $restaurar = $pdo->prepare("UPDATE {$P}propuesta SET estado = ? WHERE id = ?");
+    foreach ($sinAgenda as $id => $estado) {
+        $restaurar->execute([$estado, $id]);
+    }
+}
+
+// ---- Con alcance de contacto ------------------------------------------------------------
+$html = $jefa->post('/admin/configuracion/api/crear', ['nombre' => 'Tablero de la Secretaría', 'alcance' => 'contacto']);
+$tokenTablero = $tokenDeLaPantalla($html);
+$r = $pedirApi($api, '/api/v1/personas?q=' . rawurlencode('cbolanos@') . '&token=' . $tokenTablero);
+$conContacto = $r['datos'][0] ?? [];
+comprobar('con alcance de contacto salen el correo y el teléfono, y q busca también en el correo',
+    strlen($tokenTablero) === 64 && ($r['paginacion']['total'] ?? 0) === 1 && ($conContacto['correo'] ?? '') === 'cbolanos@tumaco.gov.co'
+    && array_key_exists('telefono', $conContacto) && is_bool($conContacto['comparte_telefono'] ?? null));
+$r = $pedirApi($api, '/api/v1?token=' . $tokenTablero);
+comprobar('y /api/v1 dice con qué alcance se consulta', ($r['alcance'] ?? '') === 'contacto');
+$html = $jefa->get('/admin');
+comprobar('la bitácora dice quién creó cada token y para qué sistema',
+    str_contains($html, 'creó un token de la API para «Sitio web de la Secretaría TIC»')
+    && str_contains($html, 'creó un token de la API para «Tablero de la Secretaría», con correo y teléfono'));
+
+// ---- Cabeceras, cookies y uso ----------------------------------------------------------
+$programa = new Cliente($BASE);
+$programa->extra = ['Authorization' => 'Bearer ' . $tokenSitio];
+$r = $pedirApi($programa, '/api/v1/perfiles');
+comprobar('el token sirve también en la cabecera Authorization: Bearer', $programa->codigo === 200 && isset($r['datos']));
+$programa->extra = ['X-Api-Token' => $tokenSitio];
+$r = $pedirApi($programa, '/api/v1/perfiles');
+comprobar('y en X-Api-Token', $programa->codigo === 200 && isset($r['datos']));
+comprobar('la API no pone cookies: no hay sesión que mantener', !preg_grep('/^Set-Cookie:/i', $programa->cabeceras));
+
+$usoDe = static fn(string $t): array => $pdo->query("SELECT id, usos, ultimo_uso_en FROM {$P}api_token
+    WHERE token_hash = '" . hash('sha256', $t) . "'")->fetch(PDO::FETCH_ASSOC) ?: [];
+$antes = $usoDe($tokenSitio);
+$pedirApi($api, '/api/v1/perfiles?token=' . $tokenSitio);
+$despues = $usoDe($tokenSitio);
+comprobar('cada consulta queda anotada en su token', (int) ($despues['usos'] ?? 0) === (int) ($antes['usos'] ?? -1) + 1
+    && ($despues['ultimo_uso_en'] ?? null) !== null);
+$html = $jefa->get('/admin/configuracion/api');
+comprobar('y la pantalla dice cuándo se usó por última vez y cuántas veces', str_contains($html, 'Último uso')
+    && str_contains($html, numeroColombiano((int) $despues['usos']) . ' consultas'));
+
+// ---- Topes -------------------------------------------------------------------------------
+$pdo->prepare("UPDATE {$P}api_token SET ventana_usos = 600, ventana_inicio = ? WHERE id = ?")
+    ->execute([date('Y-m-d H:i:s'), $despues['id']]);
+$r = $pedirApi($api, '/api/v1/perfiles?token=' . $tokenSitio);
+comprobar('pasadas 600 consultas en diez minutos, 429 con Retry-After', $api->codigo === 429
+    && $api->cabecera('Retry-After') !== '' && ($r['error']['codigo'] ?? 0) === 429);
+$pedirApi($api, '/api/v1/perfiles?token=' . $tokenTablero);
+comprobar('el tope es de cada token: los demás siguen', $api->codigo === 200);
+$pdo->prepare("UPDATE {$P}api_token SET ventana_inicio = ? WHERE id = ?")
+    ->execute([date('Y-m-d H:i:s', time() - 11 * 60), $despues['id']]);
+$pedirApi($api, '/api/v1/perfiles?token=' . $tokenSitio);
+comprobar('y pasada la ventana vuelve a responder', $api->codigo === 200);
+
+$pdo->exec("DELETE FROM {$P}intento");
+for ($i = 0; $i < 20; $i++) {
+    $pedirApi($api, '/api/v1/perfiles?token=' . bin2hex(random_bytes(32)));
+}
+$r = $pedirApi($api, '/api/v1/perfiles?token=' . bin2hex(random_bytes(32)));
+comprobar('quien insiste con tokens que no sirven queda bloqueado un rato', $api->codigo === 429
+    && $api->cabecera('Retry-After') !== '' && ($r['error']['titulo'] ?? '') === 'Demasiados intentos');
+$pedirApi($api, '/api/v1/perfiles?token=' . $tokenTablero);
+comprobar('pero un token vigente, desde la misma dirección, sigue respondiendo', $api->codigo === 200);
+$pdo->exec("DELETE FROM {$P}intento");
+
+// ---- Revocar ---------------------------------------------------------------------------------
+$jefa->get('/admin/configuracion/api');
+$jefa->post('/admin/configuracion/api/revocar', ['token' => (string) $despues['id']]);
+$r = $pedirApi($api, '/api/v1/perfiles?token=' . $tokenSitio);
+comprobar('un token revocado deja de servir en el acto', $api->codigo === 401 && ($r['error']['titulo'] ?? '') === 'Token no válido');
+$pedirApi($api, '/api/v1/perfiles?token=' . $tokenTablero);
+comprobar('sin tocar a los demás', $api->codigo === 200);
+$html = $jefa->get('/admin/configuracion/api');
+comprobar('en la pantalla queda como revocado, sin botón', str_contains($html, '>Revocado<')
+    && substr_count($html, '>Revocar</button>') === 1 && str_contains($html, '1 vigente<'));
+$html = $jefa->get('/admin');
+comprobar('y la bitácora lo dice', str_contains($html, 'revocó un token de la API: el de «Sitio web de la Secretaría TIC»'));
+
+$operadorApi = new Cliente($BASE);
+$operadorApi->get('/admin/entrar');
+$operadorApi->post('/admin/entrar', ['correo' => 'puerta@narino.gov.co', 'clave' => 'una clave mia y bien larga']);
+$operadorApi->get('/admin', false);
+$adentro = $operadorApi->codigo === 200;
+$operadorApi->get('/admin/configuracion/api', false);
+$noLaVe = $operadorApi->codigo !== 200;
+$tokensAntes = $cuenta("SELECT COUNT(*) FROM {$P}api_token");
+$operadorApi->post('/admin/configuracion/api/crear', ['nombre' => 'Colado', 'alcance' => 'contacto'], false);
+comprobar('solo un administrador ve y crea tokens', $adentro && $noLaVe && $operadorApi->codigo === 403
+    && $cuenta("SELECT COUNT(*) FROM {$P}api_token") === $tokensAntes, $operadorApi->codigo . ' · ' . ($adentro ? 'adentro' : 'sin entrar'));
+
+// ---- Sin la tabla de los tokens ---------------------------------------------------------
+// Lo que pasa si la base no se pudo poner al día sola. La marca de «al día» se
+// renueva antes, para que la actualización automática no la cree en medio.
+@touch($RAIZ . '/almacen/registro/esquema-al-dia.php');
+$pdo->exec("RENAME TABLE {$P}api_token TO {$P}api_token_aparte");
+$jefa->get('/admin/configuracion/api', false);
+$pestanaSinTabla = $jefa->codigo === 303 && str_ends_with($jefa->cabecera('Location'), '/admin');
+$r = $pedirApi($api, '/api/v1/perfiles?token=' . $tokenTablero);
+$apiSinTabla = $api->codigo === 503 && ($r['error']['titulo'] ?? '') === 'API no disponible';
+$pdo->exec("DROP TABLE IF EXISTS {$P}api_token");
+$pdo->exec("RENAME TABLE {$P}api_token_aparte TO {$P}api_token");
+comprobar('sin la tabla, la pestaña lleva al panel, donde está el botón que la crea', $pestanaSinTabla,
+    $jefa->codigo . ' → ' . $jefa->cabecera('Location'));
+comprobar('y la API responde 503 en JSON, explicando por qué', $apiSinTabla, $api->codigo . ' ' . mb_substr($api->cuerpo, 0, 120));
+$pedirApi($api, '/api/v1/perfiles?token=' . $tokenTablero);
+comprobar('con la tabla de vuelta, todo sigue como estaba', $api->codigo === 200);
+
+// ---- Rastro ---------------------------------------------------------------------------------
+// Ni siquiera su comienzo: la traza de un error lleva los argumentos de cada
+// llamada, y con el fallo de arriba el token podía quedar escrito a medias.
+$registros = implode('', array_map('file_get_contents', glob($RAIZ . '/almacen/registro/*') ?: []));
+$bitacoraEntera = implode("\n", $pdo->query("SELECT CONCAT(accion, ' ', COALESCE(detalle, '')) FROM {$P}bitacora")
+    ->fetchAll(PDO::FETCH_COLUMN));
+$rastro = false;
+foreach ([$tokenSitio, $tokenTablero] as $t) {
+    $rastro = $rastro || str_contains($registros, substr($t, 0, 12)) || str_contains($bitacoraEntera, substr($t, 0, 12));
+}
+comprobar('los tokens no quedan escritos, ni a medias, en los registros de la aplicación ni en la bitácora',
+    !$rastro && str_contains($registros, 'api_token'));
 
 /* =========================================================================
    Resultado

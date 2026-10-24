@@ -694,6 +694,46 @@ enlace al correo de la cuenta. Lo que lo hace seguro (`App\Modelos\Recuperacion`
 10. **Queda en la bitácora**: cada pedido (`enlace_clave_pedido`), cada envío desde el panel con
     quién lo hizo (`enlace_clave_enviado`) y cada uso (`clave_recuperada`). Nunca el enlace.
 
+### La API de consulta
+
+Desde la 3.14, otros sistemas consultan en JSON quiénes se registraron (`/api/v1`, ver
+`docs/API.md`). Es una puerta más a los datos personales, y por eso (`App\Controladores\Api`,
+`App\Modelos\TokenApi`):
+
+1. **Solo lee.** Solo hay rutas `GET`; por ahí no se crea, cambia ni borra nada.
+2. **Un token por sistema, que solo crea un administrador** en Configuración → API, con un
+   nombre que dice para qué sistema es. Se revoca uno sin tocar a los demás, y la pantalla
+   muestra cuándo se usó cada uno por última vez y cuántas consultas lleva.
+3. **El token no se guarda.** Lleva 256 bits al azar; en `evt_api_token` queda su SHA-256 y sus
+   primeros ocho caracteres, para reconocerlo en la lista. Se ve una sola vez, al crearlo.
+   Adivinarlo no es viable, y quien copie la tabla no obtiene tokens que sirvan.
+4. **Lo que entrega está en una lista cerrada** (`Api::persona()`): lo que no está ahí no sale.
+   Nunca la identificación —ni cifrada ni su huella—, la caracterización, la foto, lo que el
+   comité le escribe al expositor, sus requerimientos, ningún token o código ni ninguna
+   contraseña. El correo y el teléfono, solo con un token de alcance **contacto**; con el básico,
+   la búsqueda tampoco mira el correo, para que no sirva para averiguar si alguien está
+   registrado. La agenda que entrega es la pública: solo lo publicado.
+5. **Filtros en parámetros, orden de una lista fija.** Los textos van a `LIKE` como parámetros,
+   con los comodines escapados; el orden se elige por clave contra una lista de expresiones
+   (`App\Nucleo\Orden`), como en el panel. Un filtro desconocido o con un valor que no se
+   entiende responde 400: nunca se ignora para devolver más de lo que se pidió.
+6. **Topes.** 600 consultas cada diez minutos por token, contadas en su propia fila con una sola
+   sentencia. Y por IP, 20 intentos con tokens que no sirven en cinco minutos bloquean esos
+   intentos quince: solo esos, para que un sistema con un token vigente detrás de la misma
+   dirección no se quede sin servicio porque otro siga usando uno revocado.
+7. **Sin rastro.** Las respuestas llevan `Cache-Control: no-store`, `Referrer-Policy:
+   no-referrer` y `X-Robots-Tag: noindex`; la API no pone cookies, así que no hay sesión que
+   robar ni testigo que falsificar, y no envía cabeceras CORS: un navegador no deja que una
+   página de otro sitio lea sus respuestas. El token nunca queda en la bitácora ni en el
+   registro de errores (la ruta se anota sin la cadena de consulta). Sí puede quedar en los
+   registros de acceso del servidor web si va en la dirección: por eso se recomienda la
+   cabecera `Authorization: Bearer`, que el `.htaccess` le pasa a PHP.
+8. **Errores en JSON**, también los generales —una ruta que no existe, la base caída, un fallo
+   inesperado—, sin trazas ni rutas del servidor.
+9. **Queda en la bitácora** quién creó cada token, para qué sistema y con qué alcance
+   (`api_token_creado`), y quién lo revocó (`api_token_revocado`). Las consultas no van a la
+   bitácora, que es de solo inserción y crecería sin medida: se cuentan en la fila del token.
+
 ### El formulario de registro se configura, pero no se puede desarmar
 
 Desde la 3.7 un administrador decide en **Configuración → Registro** qué campos pide el
@@ -963,7 +1003,7 @@ conviene decirlo con claridad en la pantalla de privacidad.
 | Finalidad determinada | Acreditación, control de asistencia y reportes de cobertura del evento |
 | Datos sensibles con tratamiento reforzado | Tabla aparte, nunca obligatorios —ni siquiera por configuración—, exportación con rol administrador y auditada |
 | Minimización | De fábrica, solo nombre y documento son obligatorios. Cada evento puede pedir menos —el documento puede quedar opcional u oculto— y ocultar lo que no necesite |
-| Circulación restringida | El QR no expone datos; el intercambio comparte cuatro campos y el teléfono es opcional |
+| Circulación restringida | El QR no expone datos; el intercambio comparte cuatro campos y el teléfono es opcional. La API entrega una lista cerrada de campos, nunca los sensibles, y el contacto solo con un token que lo permita |
 | Derecho de supresión | El intercambio de contactos guarda `revocado_en`. **Falta** el procedimiento para la persona completa |
 | Seguridad | Cifrado del documento, control de acceso por rol, auditoría de lecturas sensibles |
 
@@ -1027,6 +1067,16 @@ Lo que comprueban las de seguridad, concretamente:
   de Argon2 que trae PHP.
 - La contraseña del correo no vuelve al navegador, no entra en la transcripción SMTP que se
   muestra en pantalla, y no queda en la bitácora.
+- La API sin token, con uno inventado o con uno revocado responde 401; el token queda en la
+  base como hash y no aparece ni en la bitácora ni en el registro de errores.
+- Por la API no salen la identificación, su huella, la caracterización, la foto, las
+  observaciones del comité ni los requerimientos; el correo y el teléfono, solo con alcance de
+  contacto, y con el básico la búsqueda no encuentra a nadie por su correo.
+- Un filtro mal escrito o con un valor inválido responde 400, no la lista entera.
+- Pasado el tope de un token, 429 solo para ese token; tras veinte tokens inventados desde una
+  dirección, 429 para esos intentos mientras un token vigente desde la misma dirección sigue
+  respondiendo.
+- Solo un administrador ve, crea y revoca tokens.
 
 ---
 

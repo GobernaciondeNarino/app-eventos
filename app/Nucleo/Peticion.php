@@ -65,11 +65,50 @@ final class Peticion
 
     public function esPost(): bool { return $this->metodo === 'POST'; }
 
+    /** ¿Es una consulta a la API? Esas responden en JSON, también sus errores. */
+    public function esApi(): bool
+    {
+        return $this->ruta === '/api' || str_starts_with($this->ruta, '/api/');
+    }
+
+    /**
+     * Una cabecera de la petición, o '' si no vino.
+     *
+     * Authorization es especial: con PHP-FPM detrás de Apache —lo habitual en
+     * Plesk— no llega en HTTP_AUTHORIZATION salvo que se configure, y a veces
+     * aparece como REDIRECT_HTTP_AUTHORIZATION. Se miran los dos sitios.
+     */
+    public function cabecera(string $nombre): string
+    {
+        $clave = 'HTTP_' . strtoupper(str_replace('-', '_', $nombre));
+        $valor = $_SERVER[$clave] ?? ($clave === 'HTTP_AUTHORIZATION' ? ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '') : '');
+        return is_string($valor) ? trim($valor) : '';
+    }
+
     /** Valor de la cadena de consulta, siempre como texto ya recortado. */
     public function query(string $clave, string $porDefecto = ''): string
     {
         $v = $this->consulta[$clave] ?? $porDefecto;
         return is_string($v) ? trim($v) : $porDefecto;
+    }
+
+    /**
+     * Qué vino en la cadena de consulta: nombre => si llegó como texto.
+     *
+     * Para la API, que rechaza lo que no conoce en vez de ignorarlo: un filtro
+     * mal escrito —«perfiles=» por «perfil=»— no puede volverse «sin filtro».
+     * Uno que llega como arreglo (perfil[]=…) tampoco es texto, y query() lo
+     * leería como vacío.
+     *
+     * @return array<string, bool>
+     */
+    public function parametrosDeConsulta(): array
+    {
+        $salida = [];
+        foreach ($this->consulta as $clave => $valor) {
+            $salida[(string) $clave] = is_string($valor);
+        }
+        return $salida;
     }
 
     /** Campo del formulario. Nunca devuelve arreglos: eso evita sorpresas al validar. */

@@ -39,7 +39,8 @@ const enlaceDePrueba = archivo => {
 const ASISTENTE_RUTAS = ['/carnet', '/checkin', '/contactos'];
 const ADMIN_RUTAS = ['/admin', '/admin/escaner', '/admin/registros', '/admin/qr-dias',
                      '/admin/expositores', '/admin/organizadores', '/admin/eventos', '/admin/identidad', '/admin/autenticacion',
-                     '/admin/cuenta', '/admin/configuracion/registro', '/admin/configuracion/expositores'];
+                     '/admin/cuenta', '/admin/configuracion/registro', '/admin/configuracion/expositores',
+                     '/admin/configuracion/api'];
 
 let fallos = 0;
 

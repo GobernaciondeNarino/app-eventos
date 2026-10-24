@@ -53,6 +53,9 @@ final class Limite
         'recuperar_clave'    => [4, 3600, 3600],   // por correo
         'recuperar_clave_ip' => [30, 3600, 900],   // por IP; toda una sede sale por la misma
         'enlace_clave'       => [30, 300, 900],    // enlaces que no existen, por IP
+        // La API: tokens que no existen, por IP. El tope de consultas de un
+        // token válido va en su propia fila (App\Modelos\TokenApi).
+        'api_token'          => [20, 300, 900],
         // Cada prueba de correo abre una conexión y puede esperar quince
         // segundos. Sin tope, el botón es una forma cómoda de tener ocupado al
         // servidor; y probar contra Google muchas veces seguidas hace que

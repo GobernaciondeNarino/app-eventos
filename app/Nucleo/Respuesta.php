@@ -220,6 +220,13 @@ final class Respuesta
      */
     public static function error(int $codigo, string $titulo, string $mensaje = '', array $acciones = [], array $detalle = []): never
     {
+        // La API responde en JSON también cuando algo sale mal —una dirección
+        // que no existe, la base caída, un fallo inesperado—: el programa que
+        // la consulta no sabe leer una página de error.
+        if (App::peticion()->esApi()) {
+            self::json(['error' => ['codigo' => $codigo, 'titulo' => $titulo, 'mensaje' => $mensaje]], $codigo);
+        }
+
         http_response_code($codigo);
         echo self::render('error', [
             'codigo'   => $codigo,

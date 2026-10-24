@@ -63,6 +63,73 @@ final class Configuracion
             'Enlace nuevo listo. El anterior ya no abre el formulario: envía este a quienes falten por registrarse.', 'warn');
     }
 
+    /* =====================================================================
+       API: los tokens de quienes la consultan
+       ===================================================================== */
+
+    /**
+     * La pestaña de la API: los tokens que hay, y cómo se consulta.
+     *
+     * $tokenNuevo llega solo justo después de crear uno, en la misma petición:
+     * no viaja en la redirección ni en el aviso, y no se vuelve a poder ver.
+     */
+    public function api(Peticion $peticion, array $parametros = []): void
+    {
+        $this->exigirTablaApi();
+        Respuesta::vista('admin/config-api', [
+            'titulo'     => 'API',
+            'pantalla'   => 'configuracion',
+            'tokens'     => \App\Modelos\TokenApi::todos(),
+            'tokenNuevo' => (string) ($parametros['tokenNuevo'] ?? ''),
+            'nombreNuevo' => (string) ($parametros['nombreNuevo'] ?? ''),
+            'alcanceNuevo' => (string) ($parametros['alcanceNuevo'] ?? ''),
+            'base'       => Url::absoluta('/api/v1'),
+        ]);
+    }
+
+    public function crearTokenApi(Peticion $peticion): void
+    {
+        $this->exigirTablaApi();
+        $nombre = trim($peticion->campo('nombre'));
+        $alcance = $peticion->campo('alcance');
+
+        if (mb_strlen($nombre) < 3) {
+            Respuesta::redirigir('/admin/configuracion/api',
+                'Ponle un nombre que diga para qué sistema es: «Sitio web de la Secretaría».', 'warn');
+        }
+        if (!isset(\App\Modelos\TokenApi::ALCANCES[$alcance])) {
+            Respuesta::redirigir('/admin/configuracion/api', 'Elige qué datos puede consultar.', 'warn');
+        }
+
+        $token = \App\Modelos\TokenApi::crear($nombre, $alcance, (int) Guardia::usuarioActual()['id']);
+
+        // Se pinta en esta misma respuesta, una sola vez.
+        $this->api($peticion, ['tokenNuevo' => $token, 'nombreNuevo' => $nombre, 'alcanceNuevo' => $alcance]);
+    }
+
+    public function revocarTokenApi(Peticion $peticion): void
+    {
+        $this->exigirTablaApi();
+        $revocado = \App\Modelos\TokenApi::revocar($peticion->entero('token'));
+        Respuesta::redirigir('/admin/configuracion/api', $revocado
+            ? 'Token revocado: desde ahora la API lo rechaza. Los demás siguen funcionando.'
+            : 'Ese token ya estaba revocado o no existe.', $revocado ? 'ok' : 'warn');
+    }
+
+    /**
+     * Sin la tabla de los tokens —la base no se puso al día sola, por ejemplo
+     * porque su usuario no puede crear tablas— la pestaña no tiene qué mostrar.
+     * Se lleva al panel, donde el aviso de arriba trae el botón que la crea, en
+     * vez de responder con un error que no dice nada.
+     */
+    private function exigirTablaApi(): void
+    {
+        if (!Bd::existeTabla('api_token')) {
+            Respuesta::redirigir('/admin', 'La API necesita una tabla nueva en la base de datos. '
+                . 'Pulsa «Actualizar la base de datos» en el aviso de arriba y vuelve a Configuración → API.', 'warn');
+        }
+    }
+
     /**
      * Campos, listas y banner de uno de los dos formularios.
      *

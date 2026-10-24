@@ -347,6 +347,10 @@ comprobar('el diagnóstico tampoco', $r['codigo'] === 200, 'código ' . $r['codi
 $r = $conRestos->ir('/');
 comprobar('y la portada sigue redirigiendo al asistente, no a un error',
     $r['codigo'] === 303, 'código ' . $r['codigo']);
+$r = $conRestos->ir('/api/v1/personas?token=' . str_repeat('c', 64));
+comprobar('la API, que un programa consulta, responde en JSON que falta instalar',
+    $r['codigo'] === 503 && (json_decode($r['html'], true)['error']['titulo'] ?? '') === 'Plataforma sin instalar',
+    'código ' . $r['codigo']);
 
 /* ---------------------------------------------------------------------
    Un fallo antes de terminar tiene que verse

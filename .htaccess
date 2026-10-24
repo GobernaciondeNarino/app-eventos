@@ -26,6 +26,12 @@ DirectoryIndex index.php
     # RewriteCond %{HTTP:X-Forwarded-Proto} !https
     # RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 
+    # La API acepta el token en la cabecera «Authorization: Bearer …», y
+    # Apache no se la pasa a PHP-FPM si no se le pide. Sin estas dos líneas
+    # el token sigue sirviendo en la dirección y en «X-Api-Token».
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
     RewriteCond %{REQUEST_FILENAME} -f [OR]
     RewriteCond %{REQUEST_FILENAME} -d
     RewriteRule ^ - [L]

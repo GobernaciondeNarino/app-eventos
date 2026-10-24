@@ -47,6 +47,22 @@ final class Paginacion
         return new self($total, $pagina, $por);
     }
 
+    /**
+     * Para la API: cualquier tamaño entre 1 y el tope, no solo los de la
+     * pantalla —un programa sabe cuántas filas le conviene pedir—.
+     *
+     * Y una página pasada la última llega vacía, en vez de llevar a la última
+     * como en el panel: un programa que pide páginas hasta que una venga vacía
+     * recibiría la última una y otra vez, sin terminar nunca.
+     */
+    public static function conTope(Peticion $peticion, int $total, int $porPagina, int $tope): self
+    {
+        $por = min(max(1, $peticion->entero('por', $porPagina)), $tope);
+        $pagina = max(1, $peticion->entero('pagina', 1));
+
+        return new self(max(0, $total), $pagina, $por);
+    }
+
     public function paginas(): int
     {
         return max(1, (int) ceil($this->total / $this->porPagina));

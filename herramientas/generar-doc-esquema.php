@@ -64,6 +64,7 @@ $p(
     '',
     'usuario ─── sesion            equipo organizador y sus sesiones',
     'recuperacion_clave            enlaces para poner una contraseña nueva, de personas y del equipo',
+    'api_token                     quién puede consultar la API; solo el hash de cada token',
     'intento                       contador para el límite de fuerza bruta',
     'bitacora                      auditoría; solo inserciones',
     'migracion                     versión del esquema aplicada',

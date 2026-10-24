@@ -10,7 +10,7 @@
  * Quien no es administrador ve solo «Mi cuenta»: el resto cambia lo que ve todo
  * el evento.
  *
- * @var string $pestana la activa: registro, expositores, identidad, acceso o cuenta
+ * @var string $pestana la activa: registro, expositores, identidad, acceso, api o cuenta
  */
 defined('EVENTOS_TIC') || exit;
 
@@ -23,6 +23,8 @@ $pestanasConfiguracion = [
     'expositores' => ['Registro de expositores', '/admin/configuracion/expositores', 'administrador'],
     'identidad' => ['Identidad', '/admin/identidad', 'administrador'],
     'acceso'    => ['Acceso y correo', '/admin/autenticacion', 'administrador'],
+    // Los tokens con que otros sistemas consultan los registros en JSON.
+    'api'       => ['API', '/admin/configuracion/api', 'administrador'],
     'cuenta'    => ['Mi cuenta', '/admin/cuenta', 'consulta'],
 ];
 ?>

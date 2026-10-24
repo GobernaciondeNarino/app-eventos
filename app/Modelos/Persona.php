@@ -426,8 +426,11 @@ final class Persona
         return [$donde, $parametros];
     }
 
-    /** registroCompleto() en SQL, al revés: la condición de un registro a medias. */
-    private static function sqlIncompleto(int $eventoId): string
+    /**
+     * registroCompleto() en SQL, al revés: la condición de un registro a
+     * medias, sobre la tabla con el alias «p». La usa también la API.
+     */
+    public static function sqlIncompleto(int $eventoId): string
     {
         return "TRIM(p.nombre) = ''"
             . (Formulario::exigeDocumento($eventoId) ? ' OR p.documento_huella IS NULL' : '');

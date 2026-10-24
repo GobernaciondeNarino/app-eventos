@@ -151,6 +151,11 @@ final class Bitacora
             'clave_recuperada'   => (($entrada['entidad'] ?? '') === 'usuario' ? 'Una cuenta del equipo' : 'Un asistente')
                 . ' cambió su contraseña con el enlace del correo'
                 . (($detalle['origen'] ?? '') === 'panel' ? ' que le envió la administración' : ''),
+            'api_token_creado'   => "$quien creó un token de la API"
+                . (isset($detalle['nombre']) ? ' para «' . $detalle['nombre'] . '»' : '')
+                . (($detalle['alcance'] ?? '') === 'contacto' ? ', con correo y teléfono' : ''),
+            'api_token_revocado' => "$quien revocó un token de la API"
+                . (isset($detalle['nombre']) ? ': el de «' . $detalle['nombre'] . '»' : ''),
             'usuario_restablecido' => 'Se restableció el acceso de una cuenta administradora',
             'segundo_factor_retirado' => 'Se retiró el segundo factor de una cuenta',
             'segundo_factor_activado' => "$quien activó la verificación en dos pasos",

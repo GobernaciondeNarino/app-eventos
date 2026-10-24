@@ -15,7 +15,7 @@ use App\Nucleo\Bd;
  */
 final class Esquema
 {
-    public const VERSION = '1.11.0';
+    public const VERSION = '1.12.0';
 
     /**
      * Columnas que ya existen pero cambiaron de tipo.
@@ -508,6 +508,38 @@ final class Esquema
                     'UNIQUE KEY uq_recuperacion_token (token_hash)',
                     'KEY idx_recuperacion_sujeto (tipo, sujeto_id)',
                     'KEY idx_recuperacion_expira (expira_en)',
+                ],
+            ],
+
+            // 1.12.0. Tabla nueva y nada más, como la de la 1.11.0.
+            'api_token' => [
+                'nota' => 'Tokens de la API de consulta (/api/v1). Se guarda el hash de cada uno, no el token; cada sistema que consulta tiene el suyo y se revoca sin tocar los demás.',
+                'columnas' => [
+                    'id'             => 'INT UNSIGNED NOT NULL AUTO_INCREMENT',
+                    // Para qué sistema es: «Sitio web de la Secretaría».
+                    'nombre'         => 'VARCHAR(120) NOT NULL',
+                    'token_hash'     => 'CHAR(64) NOT NULL',
+                    // Los primeros ocho caracteres, para reconocerlo en la
+                    // lista sin guardar el resto.
+                    'pista'          => 'CHAR(8) NOT NULL',
+                    // 'basico': sin datos de contacto. 'contacto': además
+                    // correo y teléfono.
+                    'alcance'        => "ENUM('basico','contacto') NOT NULL DEFAULT 'basico'",
+                    'creado_por'     => 'INT UNSIGNED NULL',
+                    'creado_en'      => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
+                    'ultimo_uso_en'  => 'DATETIME NULL',
+                    'ultima_ip'      => 'VARBINARY(16) NULL',
+                    'usos'           => 'INT UNSIGNED NOT NULL DEFAULT 0',
+                    // El tope de consultas va en la misma fila: una ventana de
+                    // diez minutos y cuántas lleva. Así no se escribe una fila
+                    // por consulta en la tabla de intentos.
+                    'ventana_inicio' => 'DATETIME NULL',
+                    'ventana_usos'   => 'INT UNSIGNED NOT NULL DEFAULT 0',
+                    'revocado_en'    => 'DATETIME NULL',
+                ],
+                'llaves' => [
+                    'PRIMARY KEY (id)',
+                    'UNIQUE KEY uq_api_token (token_hash)',
                 ],
             ],
 

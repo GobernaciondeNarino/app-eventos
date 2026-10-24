@@ -24,6 +24,7 @@ defined('EVENTOS_TIC') || exit;
 
 use App\Controladores\Acceso;
 use App\Controladores\Admin;
+use App\Controladores\Api;
 use App\Controladores\Carnet;
 use App\Controladores\Configuracion;
 use App\Controladores\Contactos;
@@ -158,6 +159,10 @@ $enrutador->get('/admin/configuracion', [Configuracion::class, 'inicio'], 'admin
 $enrutador->ambos('/admin/configuracion/registro', [Configuracion::class, 'registro'], 'admin:administrador');
 $enrutador->ambos('/admin/configuracion/expositores', [Configuracion::class, 'expositores'], 'admin:administrador');
 $enrutador->post('/admin/configuracion/expositores/enlace', [Configuracion::class, 'nuevoEnlace'], 'admin:administrador');
+// Los tokens de la API: quién puede consultarla desde otro sistema.
+$enrutador->get('/admin/configuracion/api', [Configuracion::class, 'api'], 'admin:administrador');
+$enrutador->post('/admin/configuracion/api/crear', [Configuracion::class, 'crearTokenApi'], 'admin:administrador');
+$enrutador->post('/admin/configuracion/api/revocar', [Configuracion::class, 'revocarTokenApi'], 'admin:administrador');
 $enrutador->ambos('/admin/cuenta', [Cuenta::class, 'ver'], 'admin:consulta');
 
 // Aplica al esquema lo que falte para esta versión del código. Solo agrega
@@ -226,6 +231,19 @@ $enrutador->post('/admin/correo', [Admin::class, 'guardarCorreo'], 'admin:admini
 $enrutador->post('/admin/correo/probar', [Admin::class, 'probarCorreo'], 'admin:administrador');
 $enrutador->post('/admin/correo/red', [Admin::class, 'probarRedCorreo'], 'admin:administrador');
 $enrutador->post('/admin/correo/local', [Admin::class, 'usarCorreoLocal'], 'admin:administrador');
+
+/* =========================================================================
+   API de consulta, en JSON
+   -------------------------------------------------------------------------
+   Solo lectura. Sin guardia de sesión: cada consulta se identifica con un
+   token —en la dirección o en la cabecera Authorization— que se crea en
+   Configuración → API. Ver docs/API.md.
+   ========================================================================= */
+$enrutador->get('/api', [Api::class, 'indice']);
+$enrutador->get('/api/v1', [Api::class, 'indice']);
+$enrutador->get('/api/v1/perfiles', [Api::class, 'perfiles']);
+$enrutador->get('/api/v1/personas', [Api::class, 'personas']);
+$enrutador->get('/api/v1/expositores', [Api::class, 'expositores']);
 
 /* =========================================================================
    Archivos subidos

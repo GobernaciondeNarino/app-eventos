@@ -83,7 +83,9 @@ final class App
         // formulario: quien llega directo a una pantalla que envía por POST
         // —el lector de QR abre rutas sueltas— no debería toparse con un
         // «la página expiró» sin haber hecho nada raro.
-        if (!$peticion->esPost()) {
+        // La API tampoco lo necesita: no tiene formularios, y una respuesta
+        // JSON que deja cookies confunde a quien la consume.
+        if (!$peticion->esPost() && !$peticion->esApi()) {
             Csrf::token();
         }
 
@@ -108,6 +110,10 @@ final class App
         // asistente se vea con su propio diseño.
         if (str_starts_with($ruta, '/assets/')) {
             return;
+        }
+        // Un programa que consulta la API no sigue una redirección al asistente.
+        if ($peticion->esApi()) {
+            Respuesta::error(503, 'Plataforma sin instalar', 'La plataforma todavía no está instalada.');
         }
         if (!str_starts_with($ruta, '/instalar')) {
             Respuesta::redirigirAbsoluto(Url::a('/instalar'));

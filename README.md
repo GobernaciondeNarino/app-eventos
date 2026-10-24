@@ -19,11 +19,12 @@ registra gente, se sella asistencia, se aprueban exposiciones y se exportan repo
 
 | | Qué hay |
 |---|---|
-| **Interfaz** | 25 pantallas, diseño y formulario de registro configurables por evento, responsive. Los listados largos van por páginas y se ordenan desde el título de cada columna. En el celular, el menú es una barra de íconos abajo, como la de Instagram |
+| **Interfaz** | 26 pantallas, diseño y formulario de registro configurables por evento, responsive. Los listados largos van por páginas y se ordenan desde el título de cada columna. En el celular, el menú es una barra de íconos abajo, como la de Instagram |
 | **Backend** | PHP 8.1+ con PDO y MySQL/MariaDB, sin framework ni Composer |
 | **Instalación** | Asistente de seis pasos que crea, actualiza o anexa las tablas. Al subir una versión nueva, la base se pone al día sola en la primera visita |
 | **Autenticación** | Cinco formas de entrar: correo, QR personal, contraseña, WhatsApp y SMS. Se puede crear el acceso con solo correo y contraseña. El equipo, con contraseña y segundo factor. Quien olvida su contraseña la recupera con un enlace al correo, y un administrador puede enviárselo desde el panel |
 | **Códigos QR** | Generador **y lector** propios, verificados uno contra otro y contra una librería de referencia |
+| **API** | Consulta en JSON de expositores, participantes y demás perfiles, con filtros en la dirección y un token por cada sistema que consulta, que se crea y se revoca en Configuración → API. Solo lee, y nunca entrega la identificación ni la caracterización |
 | **Pruebas** | 774 comprobaciones de extremo a extremo, 160 de actualización desde la 1.0.0, 138 en navegador, y 641 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy y formulario de registro |
 
 ---
@@ -138,6 +139,15 @@ Quien olvidó su contraseña pulsa **«¿Olvidaste tu contraseña?»** en el acc
 enlace al correo para poner una nueva; un administrador también puede enviárselo, desde la
 ficha de la persona o desde **Organizadores**. El enlace sirve una vez, vence, y no salta el
 segundo factor. Ver `docs/SEGURIDAD.md` y `docs/ADMINISTRAR-EVENTOS.md` (8.5).
+
+### Otros sistemas
+
+El sitio web de la Secretaría, un tablero u otra dependencia pueden consultar en JSON quiénes se
+registraron, en **`/api/v1`**: `/personas` (todos los perfiles), `/expositores` (con su propuesta
+y su lugar en la agenda) y `/perfiles`, con filtros en la dirección
+(`/api/v1/expositores?estado=aprobada&orden=jornada`). Cada sistema usa su propio token, que un
+administrador crea y revoca en **Configuración → API**; el correo y el teléfono, solo con un token
+que lo permita. Ver [`docs/API.md`](docs/API.md).
 
 Si el código de la aplicación no entra, la pantalla dice por qué —ya se usó, el reloj del
 servidor está corrido, la configuración no se puede leer— y ofrece entrar con un código que
@@ -254,16 +264,17 @@ eventos/                        ← esto es lo que se sube al servidor
 ├── .htaccess                   reescritura, cabeceras y bloqueos
 ├── app/
 │   ├── rutas.php               toda la superficie expuesta, con su guardia
-│   ├── Esquema.php             las 19 tablas, fuente única
+│   ├── Esquema.php             las 21 tablas, fuente única
 │   ├── Datos.php               listas de fábrica del formulario de registro
 │   ├── ayudas.php              e(), u(), testigo()…
 │   ├── Nucleo/                 App, Peticion, Enrutador, Guardia, Bd, Sesion,
 │   │                           Csrf, Cripto, Limite, Bitacora, Qr, Tema, Correo, Totp,
 │   │                           Imagen y Documento (lo que sube el público)
 │   ├── Controladores/          Publico, Acceso, Carnet, Escaneo, Contactos,
-│   │                           Admin, Configuracion, Cuenta, Medios, Instalador
+│   │                           Admin, Configuracion, Cuenta, Medios, Instalador,
+│   │                           Api (la consulta en JSON)
 │   ├── Modelos/                Evento, Persona, Credencial, Asistencia, Usuario,
-│   │                           Formulario (el registro de cada evento)
+│   │                           Formulario (el registro de cada evento), TokenApi
 │   └── Vistas/                 PHP plano; parciales, publico/, admin/, instalar/
 ├── assets/                     css, js, tipografías, imágenes
 ├── config/                     config.php lo escribe el instalador
@@ -387,13 +398,15 @@ viendo fallar la prueba.
   delante, copias de seguridad, actualizaciones y problemas frecuentes.
 - [`docs/SEGURIDAD.md`](docs/SEGURIDAD.md) — revisión de seguridad: qué reduce riesgo, qué
   controles hay, hallazgos abiertos y cumplimiento de la Ley 1581 de 2012.
-- [`docs/ESQUEMA-DATOS.md`](docs/ESQUEMA-DATOS.md) — las 19 tablas con sus columnas y llaves,
+- [`docs/ESQUEMA-DATOS.md`](docs/ESQUEMA-DATOS.md) — las 21 tablas con sus columnas y llaves,
   generado desde `app/Esquema.php`.
 - [`docs/ADMINISTRAR-EVENTOS.md`](docs/ADMINISTRAR-EVENTOS.md) — crear, corregir, desactivar y
   eliminar eventos y jornadas, y qué se lleva por delante cada cosa; revisar propuestas y el
   correo al expositor; y la Configuración, con el formulario de registro.
 - [`docs/CORREO-Y-AUTENTICACION.md`](docs/CORREO-Y-AUTENTICACION.md) — las cinco formas de
   entrar, cómo se configura cada una, y el envío de correo de punta a punta.
+- [`docs/API.md`](docs/API.md) — la API de consulta: el token, cada consulta con sus filtros, la
+  respuesta, las páginas, los errores y ejemplos en PHP, Python y Apps Script.
 
 ---
 

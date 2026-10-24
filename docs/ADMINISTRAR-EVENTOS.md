@@ -3,7 +3,8 @@
 Qué se puede cambiar una vez creado, quién puede tocar qué, y qué no tiene vuelta atrás:
 eventos y jornadas, las propuestas de los expositores, el perfil Staff, la impresión de
 carnets, la acreditación en la puerta, la verificación en dos pasos del equipo, la
-recuperación de contraseñas, el formulario de registro y cómo se recorren los listados largos.
+recuperación de contraseñas, el formulario de registro, cómo se recorren los listados largos y
+los tokens de la API con que otros sistemas consultan los registros.
 
 Todo lo de aquí está en **Administración → Eventos**, **QR por día**, **Expositores**,
 **Registros** y **Configuración**, y exige el rol **administrador** salvo donde se diga otra
@@ -552,7 +553,7 @@ Cada pedido, cada envío —con quién lo hizo— y cada uso quedan en la bitác
 ## 9. Configuración
 
 Desde la versión 3.7, todo lo que se ajusta una vez y no se toca a diario está en una sola
-entrada del menú, **Administración → Configuración**, con cinco pestañas:
+entrada del menú, **Administración → Configuración**, con seis pestañas:
 
 | Pestaña | Qué se configura | Quién |
 |---|---|---|
@@ -560,6 +561,7 @@ entrada del menú, **Administración → Configuración**, con cinco pestañas:
 | **Registro de expositores** | El formulario privado de los expositores (9.8): su enlace, y sus propios campos, listas y banner | Administrador |
 | **Identidad** | Colores, tipografía y logo del evento, con la revisión de contraste | Administrador |
 | **Acceso y correo** | Las formas de entrar de los asistentes y el envío de correo | Administrador |
+| **API** | Los tokens con que otros sistemas consultan los registros en JSON (12) | Administrador |
 | **Mi cuenta** | La verificación en dos pasos y la contraseña de quien está dentro | Todo el equipo |
 
 Las direcciones de antes —`/admin/identidad`, `/admin/autenticacion`, `/admin/cuenta`— siguen
@@ -831,3 +833,53 @@ cada página.
 
 **Exportar CSV** saca todo lo que deja el filtro, en el orden de la tabla, no solo la página que
 se ve. Hasta la 3.12 se cortaba en 500 filas sin avisar.
+
+---
+
+## 12. La API: que otro sistema consulte los registros
+
+Desde la 3.14, otro sistema —el sitio web de la Secretaría, un tablero, otra dependencia— puede
+consultar en JSON quiénes se registraron: los expositores con su propuesta y su lugar en la
+agenda, los participantes y los demás perfiles, con filtros en la dirección. Solo lee. La
+referencia completa, con ejemplos, está en `docs/API.md`; aquí va lo que le toca al equipo.
+
+### 12.1 Crear un token
+
+En **Configuración → API**, escribe para qué sistema es y elige qué datos puede consultar:
+
+- **Sin datos de contacto**: nombre, perfil, entidad, municipio, carnet, días que entró y la
+  propuesta de quien expone. Es lo que necesita, por ejemplo, un sitio web que publica la lista
+  de expositores.
+- **Con correo y teléfono**: lo mismo, y además cómo contactar a cada persona. Solo para
+  sistemas de la propia organización.
+
+Al pulsar **Crear token** aparece el token, con consultas de ejemplo que ya lo llevan puesto.
+**Es la única vez que se ve**: cópialo y entrégalo por un canal seguro a quien administra ese
+sistema. En la base queda solo su huella; si se pierde, se crea otro y se revoca el viejo.
+
+Uno por sistema: así la lista dice quién consulta, cuándo fue la última vez y cuántas consultas
+lleva, y se le corta a uno sin dejar sin servicio a los demás.
+
+### 12.2 Revocar
+
+**Revocar**, junto a cada token vigente. Deja de servir en el acto; los demás siguen. Hazlo
+cuando un sistema ya no lo necesite, cuando cambie quien lo administra o si el token pudo
+haberse filtrado —se pegó en un chat, quedó en un correo reenviado, se publicó en una página—.
+Un token revocado queda en la lista, marcado, para saber que existió.
+
+### 12.3 Qué decirle a quien lo va a usar
+
+- La dirección es `https://tic.narino.gov.co/cumbreAI/api/v1`. Abierta con el token, dice todo lo
+  que se puede consultar y con qué filtros.
+- **El token no va en una página pública ni en el JavaScript de un navegador**: se usa desde un
+  servidor. Mejor en la cabecera `Authorization: Bearer …` que en la dirección.
+- Son datos personales. Quien muestre nombres en otro sitio debería respetar `en_directorio`, si
+  la persona aceptó aparecer en el directorio del evento.
+- Cada token admite 600 consultas cada diez minutos.
+
+### 12.4 Lo que nunca sale por ahí
+
+El número de identificación, la caracterización, la foto, lo que el comité le escribe al
+expositor y sus requerimientos. Ni con el alcance de contacto.
+
+Quién creó y quién revocó cada token queda en la bitácora del panel.

@@ -138,8 +138,9 @@ $consultas = [
         <div class="card__head"><span>Cómo se consulta</span></div>
         <div class="card__body stack stack--3">
           <p class="help" style="margin:0">
-            Cada consulta lleva el token en la dirección, <span class="mono">?token=…</span>. Los filtros
-            se agregan igual, todos opcionales. La respuesta es JSON, por páginas de 50 —hasta 200 con
+            Cada consulta lleva el token en la dirección, <span class="mono">?token=…</span>, o en la
+            cabecera <span class="mono">Authorization: Bearer …</span>. Los filtros se agregan en la
+            dirección, todos opcionales. La respuesta es JSON, por páginas de 50 —hasta 200 con
             <span class="mono">por=200</span>—.
           </p>
           <?php foreach ($consultas as [$que, $url]): ?>
@@ -157,8 +158,8 @@ $consultas = [
             <span class="mono">orden</span> y <span class="mono">dir</span>. De
             <span class="mono">/expositores</span>: <span class="mono">estado</span>,
             <span class="mono">categoria</span>, <span class="mono">dia</span> y los mismos de texto.
-            La lista completa, con ejemplos, está en <span class="mono">docs/API.md</span> y en la
-            propia API, en <span class="mono">/api/v1</span>.
+            La propia API los describe en <span class="mono">/api/v1</span>, y la referencia
+            completa, con ejemplos, está en <span class="mono">docs/API.md</span> del repositorio.
           </p>
         </div>
       </div>

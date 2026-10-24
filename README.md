@@ -25,7 +25,7 @@ registra gente, se sella asistencia, se aprueban exposiciones y se exportan repo
 | **Autenticación** | Cinco formas de entrar: correo, QR personal, contraseña, WhatsApp y SMS. Se puede crear el acceso con solo correo y contraseña. El equipo, con contraseña y segundo factor. Quien olvida su contraseña la recupera con un enlace al correo, y un administrador puede enviárselo desde el panel |
 | **Códigos QR** | Generador **y lector** propios, verificados uno contra otro y contra una librería de referencia |
 | **API** | Consulta en JSON de expositores, participantes y demás perfiles, con filtros en la dirección y un token por cada sistema que consulta, que se crea y se revoca en Configuración → API. Solo lee, y nunca entrega la identificación ni la caracterización |
-| **Pruebas** | 774 comprobaciones de extremo a extremo, 160 de actualización desde la 1.0.0, 138 en navegador, y 641 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy y formulario de registro |
+| **Pruebas** | 836 comprobaciones de extremo a extremo, 160 de actualización desde la 1.0.0, 138 en navegador, y 641 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy y formulario de registro |
 
 ---
 

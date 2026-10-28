@@ -36,11 +36,11 @@ const PUBLICAS = ['/', '/registro', '/entrar/crear', '/agenda', '/entrar', '/adm
 const enlaceDePrueba = archivo => {
   try { return fs.readFileSync(path.join(__dirname, 'capturas', archivo), 'utf8').trim(); } catch (e) { return ''; }
 };
-const ASISTENTE_RUTAS = ['/carnet', '/checkin', '/contactos'];
+const ASISTENTE_RUTAS = ['/carnet', '/carnet/imprimir', '/checkin', '/contactos'];
 const ADMIN_RUTAS = ['/admin', '/admin/escaner', '/admin/registros', '/admin/qr-dias',
                      '/admin/expositores', '/admin/organizadores', '/admin/eventos', '/admin/identidad', '/admin/autenticacion',
                      '/admin/cuenta', '/admin/configuracion/registro', '/admin/configuracion/expositores',
-                     '/admin/configuracion/api'];
+                     '/admin/configuracion/api', '/carnets', '/carnets/imprimir'];
 
 let fallos = 0;
 
@@ -139,6 +139,23 @@ async function revisar(page, ruta, etiqueta, alias = '') {
   const pidioCodigo = await pub.locator('#codigo').count() > 0;
   console.log('\n  (el acceso del asistente pide código por correo: ' + (pidioCodigo ? 'sí' : 'no') + ')\n');
   await ctxPublico.close();
+
+  // Con el QR de acceso de María, que deja extremo-a-extremo.php: su carnet y
+  // el carnet para imprimir o descargar.
+  const tokenAsistente = enlaceDePrueba('token-asistente.txt');
+  if (tokenAsistente) {
+    const ctxAsistente = await navegador.newContext({
+      viewport: { width: ANCHO, height: 900 },
+      isMobile: ANCHO < 700,
+      hasTouch: ANCHO < 700,
+    });
+    const asis = await ctxAsistente.newPage();
+    await asis.goto(BASE + '/entrar/qr/' + tokenAsistente, { waitUntil: 'networkidle' });
+    for (const ruta of ASISTENTE_RUTAS) await revisar(asis, ruta, 'asistente');
+    await ctxAsistente.close();
+  } else {
+    console.log('  (sin token-asistente.txt: corre antes extremo-a-extremo.php)');
+  }
 
   // ---- Equipo organizador ----
   const ctxAdmin = await navegador.newContext({

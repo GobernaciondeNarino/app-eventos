@@ -734,6 +734,22 @@ Desde la 3.14, otros sistemas consultan en JSON quiénes se registraron (`/api/v
    (`api_token_creado`), y quién lo revocó (`api_token_revocado`). Las consultas no van a la
    bitácora, que es de solo inserción y crecería sin medida: se cuentan en la fila del token.
 
+### El carnet para imprimir o descargar
+
+Desde la 3.15, **Tu carnet** (`/carnet/imprimir`) ofrece **Descargar imágenes**: el frente y el
+reverso en PNG. Las genera el navegador de la propia persona, con lo que ya ve en la página:
+
+1. **No hay ninguna dirección nueva en el servidor.** La página es la de siempre, con el mismo
+   guardia (`asistente`): cada quien solo ve y descarga su propio carnet. La foto sale de
+   `/medios/foto/{id}`, que sigue sirviéndose solo a su dueño y al equipo.
+2. **Los datos para dibujar van en un bloque JSON** (`<script type="application/json">`), que
+   no es código y no lo ejecuta nadie: la política de guiones no lo toca. Se escribe con
+   `JSON_HEX_TAG` y compañía, así que un nombre con `</script>` no puede cerrarlo —lo comprueba
+   la prueba de extremo a extremo con el registro que lleva etiquetas en el nombre—.
+3. **Lleva lo mismo que el carnet impreso**, incluida la identificación, que ya estaba en él. El
+   código QR es el de contacto, que no identifica a nadie (ver arriba); el QR de acceso, que es
+   una llave, no va en el carnet impreso ni en las imágenes.
+
 ### El formulario de registro se configura, pero no se puede desarmar
 
 Desde la 3.7 un administrador decide en **Configuración → Registro** qué campos pide el

@@ -433,6 +433,10 @@ restauró no es una copia.
    se crea en **Configuración → API**. Mientras nadie cree un token, la API no responde a nadie.
    Ver 7.6.
 
+   La 3.15 no toca la base de datos ni `config/`. Rehace el carnet impreso: sale con la foto,
+   todo dentro de su recuadro, y tiene **Descargar imágenes** —el frente y el reverso en PNG—
+   antes de **Imprimir**. La impresión en tanda del equipo usa el mismo diseño. Ver 7.7.
+
    Si el usuario de la base de datos no tiene permiso de `ALTER` —pasa en algunos
    alojamientos—, la actualización automática no puede hacerse: lo anota en el registro,
    vuelve a intentarlo cada cinco minutos y la plataforma sigue funcionando. Para hacerlo a
@@ -767,6 +771,64 @@ la copia.
 quedarse: la versión anterior no la usa ni la mira, y no estorba. Si prefieres quitarla, `DROP
 TABLE evt_api_token;` en phpMyAdmin, después de volver a los archivos anteriores. Con los
 archivos anteriores, la API deja de existir y todos los tokens dejan de servir.
+
+### 7.7 La 3.15: el carnet impreso y sus imágenes, sin tocar registros ni configuración
+
+**Qué cambia.**
+
+- **Tu carnet** (`/carnet/imprimir`, el botón *Imprimir* del carnet): ahora sale **con la foto**
+  —antes siempre ponía las iniciales— y con todo dentro de su recuadro; antes el nombre, la
+  identificación y la entidad quedaban por fuera y aparecía un marco suelto encima de las dos
+  caras. Las dos caras miden 6 × 9,5 cm y van juntas: se recorta por la línea continua y se
+  dobla por la punteada.
+- **Descargar imágenes**, antes de *Imprimir*: baja el frente y el reverso en dos PNG de
+  6 × 9,5 cm a 300 ppp, listos para una papelería o para el celular. Las genera el navegador
+  de cada persona: el servidor no hace ningún trabajo nuevo.
+- **La impresión en tanda** (`/carnets/imprimir`, para el equipo y el Staff) usa el mismo
+  diseño: una cara por persona con la foto y el código lado a lado. Ninguna tarjeta se sale de
+  la suya; antes, un nombre largo empujaba el código encima de la tarjeta siguiente.
+- **El carnet de la pantalla** (`/carnet`): un nombre o una entidad muy largos ya no se salen
+  por debajo.
+
+**Qué no cambia.** La base de datos —el esquema sigue en la 1.12.0, así que la actualización
+automática no tiene nada que hacer—, `config/`, `almacen/`, los registros, las fotos y los
+carnets. **Los códigos QR son los mismos**: un carnet impreso antes de la actualización sigue
+sirviendo en la puerta.
+
+**Qué archivos cambian:**
+
+| Archivo | Para qué |
+|---|---|
+| `assets/js/carnet-imprimir.js` | **Nuevo.** Ajusta cada texto a su caja y genera las imágenes de descarga |
+| `app/Vistas/publico/carnet-imprimir.php` | El carnet para imprimir o descargar |
+| `app/Vistas/admin/carnets-imprimir.php` | La impresión en tanda |
+| `app/Vistas/publico/carnet.php` | El carnet de la pantalla, con los textos largos dentro |
+| `app/Controladores/Carnet.php` | Los datos del código para las imágenes |
+| `app/Nucleo/Tema.php` | Los colores del evento y de cada perfil, oscurecidos para el papel |
+| `assets/css/components.css`, `assets/css/print.css` | El diseño del carnet impreso, igual en pantalla y en papel |
+| `index.php`, `herramientas/instalar.php`, `herramientas/correo.php` | El número de versión |
+
+**Cómo subirla:**
+
+1. Haz la copia de seguridad de siempre (punto 1 de arriba) y **descarga, tal como están en el
+   servidor, los archivos de la tabla que ya existen**: volver atrás es subirlos de nuevo.
+2. Sube los archivos de la tabla —o la versión completa, **sin tocar `config/` ni
+   `almacen/`**—. Si producción todavía no tiene la 3.13 o la 3.14, sube la versión completa:
+   la primera visita creará además la tabla de la API (7.6), que solo agrega. No hace falta
+   borrar cachés: el CSS y el JavaScript llevan la fecha del archivo en su dirección
+   (`?v=…`) y cada navegador baja los nuevos en su siguiente visita.
+3. Compruébalo con una cuenta de asistente que tenga foto —la tuya de prueba, no la de un
+   asistente real—: en su carnet, **Imprimir**.
+   - La página muestra las dos caras con la foto.
+   - **Descargar imágenes** baja dos archivos, `carnet-…-frente.png` y `carnet-…-reverso.png`.
+   - En la vista previa de **Imprimir** (con la escala en 100 %), todo queda dentro de cada
+     cara.
+
+   Para el equipo: **Carnets → Imprimir**, y en la vista previa ninguna tarjeta se sale de la
+   suya.
+
+**Volver atrás:** sube otra vez los archivos que descargaste en el paso 1 y borra
+`assets/js/carnet-imprimir.js`. No hay nada que deshacer en la base de datos.
 
 ---
 

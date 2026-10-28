@@ -320,12 +320,20 @@ a.paginas__num:hover, .paginas__paso:hover { border-color: var(--c-accent); colo
   content: ""; position: absolute; inset: 8px;
   border: 1px solid rgba(var(--c-accent-rgb), .18); pointer-events: none;
 }
-.carnet__face--back { transform: rotateY(180deg); gap: var(--sp-4); }
+/* 10 px entre bloques y no 16: con el nombre y la entidad en dos renglones,
+   el número del pie se salía por debajo. */
+.carnet__face--back { transform: rotateY(180deg); gap: 10px; }
 
 .carnet__head { position: relative; display: flex; align-items: center; gap: 11px; padding: 4px 4px 0; }
-.carnet__photo { position: relative; margin: 2px 6px 0; border: 1px solid var(--a-40); padding: 5px; background: var(--c-sunken); }
-.carnet__photo > div { position: relative; width: 100%; height: 218px; overflow: hidden; display: grid; place-items: center; background: rgba(var(--c-accent-rgb), .05); }
-.carnet__photo img { width: 100%; height: 100%; object-fit: cover; }
+/* La foto mide lo de siempre, pero cede alto cuando el nombre o la entidad
+   son largos: así el texto no se sale por debajo del carnet. Los textos no
+   ceden (en un flex, su mínimo es su contenido); la foto sí, hasta 140 px. */
+.carnet__photo {
+  position: relative; margin: 2px 6px 0; border: 1px solid var(--a-40); padding: 5px; background: var(--c-sunken);
+  flex: 0 1 230px; min-height: 140px; display: flex;
+}
+.carnet__photo > div { position: relative; width: 100%; flex: 1; min-height: 0; overflow: hidden; display: grid; place-items: center; background: rgba(var(--c-accent-rgb), .05); }
+.carnet__photo img { width: 100%; height: 100%; object-fit: cover; object-position: center 30%; }
 .carnet__photo-empty { font-family: var(--f-mono); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--c-muted); text-align: center; padding: 0 12px; }
 .carnet__rol {
   position: relative; text-align: center; font-family: var(--f-display);
@@ -339,7 +347,16 @@ a.paginas__num:hover, .paginas__paso:hover { border-color: var(--c-accent); colo
 .carnet__fields { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 0 8px 4px; }
 .carnet__field { display: flex; flex-direction: column; gap: 3px; border-left: 1px solid var(--a-40); padding-left: 10px; }
 .carnet__k { font-family: var(--f-mono); font-size: 8.5px; letter-spacing: .24em; text-transform: uppercase; color: var(--c-muted); }
-.carnet__v { font-family: var(--f-display); font-size: 16px; font-weight: 600; color: var(--c-title); letter-spacing: .06em; text-transform: uppercase; }
+.carnet__v { font-family: var(--f-display); font-size: 16px; font-weight: 600; color: var(--c-title); letter-spacing: .06em; text-transform: uppercase; overflow-wrap: anywhere; }
+/* Un máximo de renglones, y la letra algo menor si el texto es muy largo: la
+   talla la elige la vista por el largo. */
+.carnet__v--nombre, .carnet__v--entidad, .carnet__quien {
+  display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.3;
+}
+.carnet__v--nombre { -webkit-line-clamp: 3; }
+.carnet__v--entidad, .carnet__quien { -webkit-line-clamp: 2; }
+.carnet__v.is-largo { font-size: 14px; }
+.carnet__v.is-muy-largo { font-size: 12.5px; letter-spacing: .04em; }
 .carnet__ticks { position: absolute; right: 12px; top: 52%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 4px; }
 .carnet__ticks span { height: 1px; background: var(--a-40); align-self: flex-end; }
 
@@ -350,7 +367,7 @@ a.paginas__num:hover, .paginas__paso:hover { border-color: var(--c-accent); colo
 .carnet__foot { position: relative; margin-top: auto; display: flex; flex-direction: column; gap: 7px; padding: 0 8px 4px; }
 .carnet__code { text-align: center; font-family: var(--f-mono); font-size: 10.5px; letter-spacing: .22em; color: var(--c-text); }
 
-.barcode { display: flex; align-items: flex-end; gap: 1.5px; height: 48px; }
+.barcode { display: flex; align-items: flex-end; gap: 1.5px; height: 36px; }
 .barcode span { height: 100%; background: var(--c-title); }
 
 /* Variantes por rol */
@@ -364,72 +381,196 @@ a.paginas__num:hover, .paginas__paso:hover { border-color: var(--c-accent); colo
 .carnet[data-rol="comunicaciones"]    { --rol: var(--c-rol-comunicaciones); }
 
 /* -------------------------------------------------------------------------
-   Tanda de carnets: una cara por persona, con el código dentro.
-   El carnet individual se dobla por la mitad y por eso tiene dos caras; para
-   imprimir doscientos eso obligaría a aparear cuatrocientas hojas a mano.
+   Carnet para imprimir o descargar: las dos caras a tamaño real, una junto a
+   la otra, compartiendo el borde por donde se dobla.
+   Todo va en milímetros y puntos, igual en pantalla que en papel: lo que se ve
+   es lo que sale. Tinta sobre blanco aunque el tema sea oscuro; los colores del
+   evento llegan ya oscurecidos para el papel (Tema::delCarnetImpreso).
+   Cada texto tiene su caja con un máximo de renglones: carnet-imprimir.js baja
+   la letra hasta que quepa, y lo que aun así no cabe se corta con «…». Nada se
+   sale del recuadro.
    ------------------------------------------------------------------------- */
-.carnet-tanda {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  gap: 16px;
+.impreso {
+  --tinta: #0B5F75; --tinta-rol: var(--tinta); --tinta-suave: #CBE0E8;
+  --papel-texto: #0B1B24; --papel-gris: #56656F;
+  display: flex; flex-direction: column; align-items: center; gap: 4mm;
 }
-.carnet-uno {
-  --rol: var(--c-accent);
-  display: flex; flex-direction: column; gap: 10px;
-  padding: 14px;
-  background: var(--c-surface);
-  border: 1px solid var(--a-22);
-  border-top: 3px solid var(--rol);
+/* La sombra va en el pliego y sigue la forma de cada cara: puesta en la cara,
+   la del frente caía sobre el reverso justo en el doblez. */
+.impreso__pliego { display: flex; filter: drop-shadow(0 1.2mm 3.5mm rgba(0, 0, 0, .3)); }
+.impreso__cara {
+  position: relative; box-sizing: border-box; flex: none;
+  width: 60mm; height: 95mm; padding: 4.5mm;
+  display: flex; flex-direction: column; gap: 2.5mm;
+  background: #FFFFFF; color: var(--papel-texto);
+  border: .3mm solid #1A1A1A; overflow: hidden; text-align: left;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
 }
-.carnet-uno[data-rol="participante"] { --rol: var(--c-rol-participante); }
-.carnet-uno[data-rol="visitante"]    { --rol: var(--c-rol-visitante); }
-.carnet-uno[data-rol="expositor"]    { --rol: var(--c-rol-expositor); }
-.carnet-uno[data-rol="organizador"]  { --rol: var(--c-rol-organizador); }
-.carnet-uno[data-rol="prensa"]       { --rol: var(--c-rol-prensa); }
-.carnet-uno[data-rol="staff"]        { --rol: var(--c-rol-staff); }
-.carnet-uno[data-rol="rueda_de_negocios"] { --rol: var(--c-rol-rueda-de-negocios); }
-.carnet-uno[data-rol="comunicaciones"]    { --rol: var(--c-rol-comunicaciones); }
+.impreso__cara::before {
+  content: ""; position: absolute; inset: 1.6mm;
+  border: .2mm solid var(--tinta-suave); pointer-events: none;
+}
+/* El borde del medio es el doblez: punteado, y uno solo. */
+.impreso__cara--frente { border-right: .3mm dashed #8C8C8C; }
+.impreso__cara--reverso { border-left: 0; align-items: center; text-align: center; }
 
-.carnet-uno__head { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.carnet-uno__rol {
-  font-family: var(--f-mono); font-size: 9px; letter-spacing: .22em;
-  text-transform: uppercase; color: var(--rol);
+/* Las cajas de texto: un máximo de renglones, y «…» si no hay más remedio. */
+.impreso [data-ajustar] { overflow: hidden; overflow-wrap: anywhere; }
+.impreso__evento-nombre, .impreso__evento-sub, .impreso__rol > span,
+.impreso__v--nombre, .impreso__v--entidad, .impreso__quien-nombre, .impreso__quien-entidad {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
 }
-.carnet-uno__quien { display: flex; gap: 10px; align-items: flex-start; min-width: 0; }
-.carnet-uno__foto {
-  flex: none; width: 54px; height: 66px; overflow: hidden;
-  border: 1px solid var(--a-40); background: var(--c-sunken);
-  display: grid; place-items: center;
+.impreso__v--linea, .impreso__credencial, .impreso__pie { white-space: nowrap; text-overflow: ellipsis; }
+/* Con JavaScript no hace falta: el guion achica la letra y, si ni así cabe,
+   corta el texto él mismo. Así no queda un renglón escondido debajo cuyas
+   tildes asomen por el borde. */
+.impreso--ajustado [data-ajustar] { display: block; -webkit-line-clamp: none; }
+
+/* ---- Frente ---- */
+.impreso__cabeza { position: relative; flex: none; height: 10.5mm; display: flex; align-items: center; gap: 2.5mm; }
+.impreso__logo {
+  flex: none; width: 10mm; height: 10mm; display: grid; place-items: center; box-sizing: border-box;
+  border: .3mm solid var(--tinta); color: var(--tinta);
+  font-family: var(--f-display); font-weight: 700; font-size: 14pt; line-height: 1;
 }
-.carnet-uno__foto img { width: 100%; height: 100%; object-fit: cover; }
-.carnet-uno__foto span {
-  font-family: var(--f-mono); font-size: 15px; letter-spacing: .08em; color: var(--c-muted);
+.impreso__logo--imagen { border: 0; }
+.impreso__logo img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.impreso__evento { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .5mm; }
+.impreso__evento-nombre {
+  font-family: var(--f-display); font-weight: 700; font-size: 6.8pt; line-height: 1.2;
+  letter-spacing: .06em; text-transform: uppercase; color: var(--papel-texto); max-height: 2.4em;
 }
-.carnet-uno__datos { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.carnet-uno__nombre {
-  font-family: var(--f-display); font-size: 13.5px; font-weight: 600;
-  letter-spacing: .03em; color: var(--c-title); line-height: 1.2;
-  /* Un nombre largo sin espacios se sale de la tarjeta y se imprime encima de
-     la de al lado. Pasa de verdad con los apellidos compuestos. */
-  overflow-wrap: anywhere;
+.impreso__evento-sub {
+  font-family: var(--f-mono); font-weight: 400; font-size: 4.5pt; line-height: 1.2;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--papel-gris); max-height: 2.4em;
 }
-.carnet-uno__dato {
-  font-family: var(--f-mono); font-size: 9.5px; color: var(--c-text);
-  overflow-wrap: anywhere;
+.impreso__foto {
+  position: relative; flex: none; align-self: center; box-sizing: border-box;
+  width: 32mm; height: 32mm; padding: .8mm; border: .3mm solid var(--tinta); background: #FFFFFF;
 }
-.carnet-uno__pie {
-  margin-top: auto; display: flex; gap: 10px; align-items: center;
-  border-top: 1px solid var(--a-22); padding-top: 10px;
+.impreso__foto img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.impreso__iniciales {
+  width: 100%; height: 100%; display: grid; place-items: center; background: var(--tinta-suave);
+  font-family: var(--f-display); font-weight: 700; font-size: 22pt; letter-spacing: .08em; color: var(--tinta);
 }
-.carnet-uno__qr { flex: none; width: 64px; background: #FFFFFF; padding: 4px; }
-.carnet-uno__qr svg { display: block; width: 100%; height: auto; }
-.carnet-uno__codigo { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.carnet-uno__codigo > span:first-child {
-  font-family: var(--f-mono); font-size: 11px; letter-spacing: .14em; color: var(--c-title);
+.impreso__rol {
+  position: relative; flex: none; height: 6.5mm; padding: 0 2mm; box-sizing: border-box;
+  display: grid; place-items: center; background: var(--tinta-rol); color: #FFFFFF; text-align: center;
 }
-.carnet-uno__cap {
-  font-family: var(--f-mono); font-size: 8px; letter-spacing: .12em;
-  text-transform: uppercase; color: var(--c-muted);
+.impreso__rol > span {
+  font-family: var(--f-display); font-weight: 700; font-size: 10.5pt; line-height: 1.2;
+  letter-spacing: .14em; text-transform: uppercase;
+  /* La altura de la banda, no la de dos renglones: a la talla grande, dos
+     renglones no caben en ella. */
+  max-height: 6.5mm;
+}
+.impreso__rol > span.is-largo { font-size: 8pt; letter-spacing: .1em; }
+.impreso__rol > span.is-muy-largo { font-size: 6.5pt; letter-spacing: .06em; }
+.impreso__datos { position: relative; flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 1.5mm; }
+.impreso__dato {
+  display: flex; flex-direction: column; gap: .4mm; min-width: 0;
+  border-left: .3mm solid var(--tinta); padding-left: 2mm;
+}
+.impreso__k {
+  font-family: var(--f-mono); font-weight: 400; font-size: 4.6pt; line-height: 1.2;
+  letter-spacing: .2em; text-transform: uppercase; color: var(--papel-gris);
+}
+.impreso__v {
+  /* 1,2 y no menos: con un interlineado más apretado la caja recorta la tilde
+     de las mayúsculas —la de «Á», la de «Ñ»— del primer renglón. */
+  font-family: var(--f-display); font-weight: 700; line-height: 1.2;
+  letter-spacing: .03em; text-transform: uppercase; color: var(--papel-texto);
+}
+.impreso__v--nombre { font-size: 10pt; max-height: 2.4em; }
+.impreso__v--nombre.is-largo { font-size: 8.5pt; }
+.impreso__v--nombre.is-muy-largo { font-size: 7.2pt; }
+.impreso__v--linea { font-size: 9pt; max-height: 1.2em; }
+.impreso__v--entidad { font-size: 8pt; max-height: 2.4em; }
+.impreso__v--entidad.is-largo { font-size: 7pt; }
+.impreso__v--entidad.is-muy-largo { font-size: 6pt; }
+
+/* ---- Reverso ---- */
+.impreso__cabeza-reverso {
+  position: relative; flex: none; height: 10.5mm; width: 100%;
+  display: flex; flex-direction: column; justify-content: center; align-items: center; gap: .8mm;
+}
+.impreso__credencial {
+  max-width: 100%; font-family: var(--f-mono); font-weight: 400; font-size: 4.6pt; line-height: 1.2;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--papel-gris);
+}
+.impreso__qr {
+  position: relative; flex: none; box-sizing: border-box; width: 40mm; height: 40mm;
+  padding: 1mm; border: .3mm solid var(--tinta); background: #FFFFFF;
+}
+.impreso__qr svg { display: block; width: 100%; height: 100%; }
+.impreso__qr-pie {
+  position: relative; flex: none; margin-top: -1mm;
+  font-family: var(--f-mono); font-weight: 400; font-size: 4.8pt; line-height: 1.2;
+  letter-spacing: .18em; text-transform: uppercase; color: var(--papel-gris);
+}
+.impreso__quien { position: relative; flex: none; width: 100%; display: flex; flex-direction: column; gap: .8mm; }
+.impreso__quien-nombre {
+  font-family: var(--f-display); font-weight: 700; font-size: 8.5pt; line-height: 1.2;
+  letter-spacing: .03em; text-transform: uppercase; color: var(--papel-texto); max-height: 2.4em;
+}
+.impreso__quien-nombre.is-largo { font-size: 7.4pt; }
+.impreso__quien-nombre.is-muy-largo { font-size: 6.4pt; }
+.impreso__quien-entidad {
+  font-family: var(--f-display); font-weight: 700; font-size: 6.5pt; line-height: 1.2;
+  letter-spacing: .03em; text-transform: uppercase; color: var(--papel-gris); max-height: 2.4em;
+}
+.impreso__pie {
+  position: relative; flex: none; margin-top: auto; width: 100%; box-sizing: border-box;
+  border-top: .2mm solid var(--tinta-suave); padding-top: 1.5mm;
+  font-family: var(--f-mono); font-weight: 400; font-size: 7pt; line-height: 1.2;
+  letter-spacing: .2em; color: var(--papel-texto);
+}
+
+.impreso__guia {
+  margin: 0; max-width: 120mm; text-align: center; text-wrap: balance;
+  font-family: var(--f-mono); font-size: 6pt; letter-spacing: .02em; color: var(--c-muted);
+}
+
+/* En un teléfono no caben las dos caras de lado: una debajo de la otra, cada
+   una con su borde. Al imprimir siempre van juntas. */
+@media screen and (max-width: 560px) {
+  .impreso__pliego { flex-direction: column; gap: 5mm; }
+  .impreso__cara--frente { border-right-style: solid; border-right-color: #1A1A1A; }
+  .impreso__cara--reverso { border-left: .3mm solid #1A1A1A; }
+  .impreso__guia { display: none; }
+}
+
+/* Las imágenes para descargar, cuando ya están hechas. */
+.impreso-descarga { display: flex; flex-wrap: wrap; gap: var(--sp-5); justify-content: center; }
+.impreso-descarga figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); }
+.impreso-descarga img { display: block; width: 190px; height: auto; border: 1px solid var(--hair); background: #FFFFFF; }
+.impreso-descarga figcaption { font-family: var(--f-mono); font-size: var(--fs-mono-xs); letter-spacing: .14em; text-transform: uppercase; color: var(--c-muted); }
+
+/* -------------------------------------------------------------------------
+   Tanda de carnets (/carnets/imprimir): una cara por persona, con el código
+   dentro. El carnet individual se dobla por la mitad y por eso tiene dos
+   caras; para imprimir doscientos eso obligaría a aparear cuatrocientas hojas
+   a mano. Son las mismas piezas del carnet impreso, con la foto y el código
+   lado a lado.
+   ------------------------------------------------------------------------- */
+.impreso-tanda {
+  display: grid; grid-template-columns: repeat(auto-fill, 60mm); gap: 4mm;
+  justify-content: center; align-items: start;
+}
+.impreso-tanda .impreso__cara { box-shadow: 0 1mm 3.5mm rgba(0, 0, 0, .3); }
+.impreso__fila { position: relative; flex: none; height: 24mm; display: flex; justify-content: space-between; }
+.impreso__foto--chica { width: 24mm; height: 24mm; padding: .6mm; align-self: auto; }
+.impreso__foto--chica .impreso__iniciales { font-size: 16pt; }
+.impreso__qr--chico { width: 24mm; height: 24mm; padding: .6mm; }
+/* La leyenda arriba y el número del carnet entero debajo: en un mismo renglón
+   no cabían los dos, y el que se cortaba era el número. */
+.impreso__pie--tanda {
+  display: flex; flex-direction: column; align-items: center; gap: .5mm;
+  font-size: 6.5pt; letter-spacing: .18em; text-align: center;
+}
+.impreso__pie--tanda > span { max-width: 100%; white-space: nowrap; text-overflow: ellipsis; }
+.impreso__pie-leyenda {
+  font-size: 4.4pt; letter-spacing: .14em; text-transform: uppercase; color: var(--papel-gris);
 }
 
 /* =========================================================================

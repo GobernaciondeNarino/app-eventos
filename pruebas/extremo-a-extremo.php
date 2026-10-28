@@ -1204,6 +1204,15 @@ comprobar('el nombre con etiquetas se escapa', !str_contains($html, '<script>ale
 comprobar('la etiqueta inyectada no se forma', !str_contains($html, '<img src=x'));
 comprobar('el valor se muestra escapado', str_contains($html, '&lt;img') || str_contains($html, '&quot;&gt;'));
 
+// El carnet para imprimir lleva sus datos en un bloque JSON para dibujar las
+// imágenes de descarga: un nombre con «</script>» no puede cerrarlo.
+$html = $xss->get('/carnet/imprimir');
+preg_match('#<script type="application/json" id="carnet-datos">(.*?)</script>#s', $html, $m);
+comprobar('en el carnet para imprimir, un nombre con etiquetas no cierra el bloque de datos',
+    $xss->codigo === 200 && isset($m[1]) && !str_contains($m[1], '<')
+    && (json_decode($m[1], true)['nombre'] ?? '') === '<script>alert(1)</script>Nombre', $xss->codigo . ' ' . substr($m[1] ?? '', 0, 120));
+comprobar('y en la página va escapado', !str_contains($html, '<script>alert(1)') && str_contains($html, '&lt;script&gt;alert(1)'));
+
 // Redirección abierta
 $c = new Cliente($BASE);
 $c->get('/entrar?destino=https://sitio-falso.example/roba', false);
@@ -2669,7 +2678,7 @@ if ($aMedias > 0) {
 }
 
 $html = $admin->get('/carnets/imprimir');
-$cuantas = substr_count($html, 'class="carnet-uno"');
+$cuantas = substr_count($html, 'data-carnet-tanda');
 comprobar('la impresión trae una tarjeta por persona', $cuantas > 1, (string) $cuantas);
 comprobar('cada una con su código QR', substr_count($html, '<svg') >= $cuantas);
 comprobar('en una sola cara: no hay reverso que aparear',
@@ -2679,8 +2688,8 @@ comprobar('y dice cuántas son', str_contains($html, (string) $cuantas . ' carne
 // El filtro es lo que de verdad se usa: «los expositores», «los de tal entidad».
 $html = $admin->get('/carnets/imprimir?rol=staff');
 comprobar('el filtro por perfil llega hasta la impresión',
-    substr_count($html, 'class="carnet-uno"') === 1,
-    (string) substr_count($html, 'class="carnet-uno"'));
+    substr_count($html, 'data-carnet-tanda') === 1,
+    (string) substr_count($html, 'data-carnet-tanda'));
 
 /* =========================================================================
    Acreditar por número de identificación
@@ -3449,6 +3458,34 @@ comprobar('con una foto que sirve, se registra con ella', str_contains($html, 'R
     substr(strip_tags($html), 0, 160));
 comprobar('y no se ofrece quitarla, porque el evento la pide',
     !str_contains($conFoto->get('/registro'), 'name="quitar_foto"'));
+
+// ---- El carnet para imprimir o descargar ---------------------------------------
+// Hasta la 3.14 salía sin la foto —siempre con las iniciales— y con el nombre y
+// la entidad por fuera del recuadro. Que todo quepa lo comprueba el navegador
+// (interacciones.js); aquí, que la página lleve lo que tiene que llevar.
+require_once $RAIZ . '/app/Nucleo/Tema.php';
+$idConFoto = (int) $pdo->query("SELECT id FROM {$P}persona WHERE correo = 'confoto@narino.gov.co'")->fetchColumn();
+$html = $conFoto->get('/carnet/imprimir');
+comprobar('el carnet para imprimir trae la foto, no las iniciales', $conFoto->codigo === 200
+    && preg_match('#class="impreso__foto">\s*<img src="[^"]*/medios/foto/' . $idConFoto . '"#', $html) === 1);
+comprobar('con «Descargar imágenes» antes de «Imprimir»',
+    ($descargar = strpos($html, 'data-descargar-carnet')) !== false
+    && ($imprimir = strpos($html, 'data-imprimir')) !== false && $descargar < $imprimir);
+comprobar('las dos caras en la misma hoja, para recortar y doblar',
+    substr_count($html, 'class="impreso__cara ') === 2 && str_contains($html, 'impreso__cara--reverso')
+    && str_contains($html, 'dobla por la punteada'));
+preg_match('#<script type="application/json" id="carnet-datos">(.*?)</script>#s', $html, $m);
+$datosCarnet = json_decode($m[1] ?? '', true) ?: [];
+comprobar('y los datos para dibujar las imágenes: la foto, el código y el nombre del archivo',
+    ($datosCarnet['foto'] ?? '') !== '' && count($datosCarnet['qr'] ?? []) >= 21
+    && preg_match('/^[01]+$/', (string) ($datosCarnet['qr'][0] ?? '')) === 1
+    && str_starts_with((string) ($datosCarnet['archivo'] ?? ''), 'carnet-STIC-'), json_encode(array_keys($datosCarnet)));
+comprobar('con colores que se leen sobre papel blanco, aunque el tema sea oscuro',
+    App\Nucleo\Tema::contraste((string) ($datosCarnet['colores']['tinta'] ?? '#FFFFFF'), '#FFFFFF') >= 4.5
+    && App\Nucleo\Tema::contraste((string) ($datosCarnet['colores']['rol'] ?? '#FFFFFF'), '#FFFFFF') >= 4.5,
+    json_encode($datosCarnet['colores'] ?? null));
+comprobar('sin identificación, lo dice en vez de dejar el hueco',
+    ($datosCarnet['identificacion'] ?? '') === 'No registrada' && str_contains($html, 'No registrada'));
 
 // ---- Volver al de fábrica -----------------------------------------------------
 $jefa->get('/admin/configuracion/registro');
@@ -4432,8 +4469,8 @@ comprobar('y con más de 300 se imprime por tandas, con un botón para cada una'
     str_contains($html, 'Imprimir por tandas de 300') && str_contains($html, 'tanda=2') && str_contains($html, '1–300'));
 $html = $jefa->get('/carnets/imprimir?tanda=2');
 comprobar('la segunda tanda trae el resto, y dice cuáles son',
-    substr_count($html, 'class="carnet-uno"') === $conCarnet - 300 && str_contains($html, 'Tanda 2 de 2'),
-    (string) substr_count($html, 'class="carnet-uno"'));
+    substr_count($html, 'data-carnet-tanda') === $conCarnet - 300 && str_contains($html, 'Tanda 2 de 2'),
+    (string) substr_count($html, 'data-carnet-tanda'));
 $html = $jefa->get('/carnets?orden=perfil&dir=desc');
 comprobar('Carnets se ordena igual, desde sus títulos', $jefa->codigo === 200 && str_contains($html, 'class="orden is-desc"'));
 

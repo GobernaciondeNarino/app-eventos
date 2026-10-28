@@ -159,6 +159,70 @@ final class Tema
         return [hexdec(substr($h, 0, 2)), hexdec(substr($h, 2, 2)), hexdec(substr($h, 4, 2))];
     }
 
+    /* =====================================================================
+       Colores para el papel
+       ===================================================================== */
+
+    /**
+     * El color de cada perfil: los mismos de assets/css/tokens.css. Hacen falta
+     * aquí para el carnet impreso. El participante y los perfiles que agregue
+     * cada evento llevan el acento del evento.
+     */
+    public const COLORES_DE_ROL = [
+        'visitante'         => '#9BE7FF',
+        'expositor'         => '#FFB84D',
+        'organizador'       => '#7CF7C8',
+        'prensa'            => '#FF5FD1',
+        'staff'             => '#C8B5FF',
+        'rueda_de_negocios' => '#FFE066',
+        'comunicaciones'    => '#FF8A80',
+    ];
+
+    /**
+     * Un color oscurecido lo justo para leerse sobre papel blanco.
+     *
+     * La paleta se pensó para la pantalla, casi siempre sobre fondo oscuro: el
+     * cian del acento o el amarillo de un perfil, impresos en blanco, no se
+     * leen. Se mezcla con negro hasta alcanzar el contraste pedido; un color que
+     * ya lo tiene queda igual.
+     */
+    public static function paraPapel(string $hex, float $minimo = 4.5): string
+    {
+        [$r, $g, $b] = self::aRgb(self::hexValido($hex) ? $hex : '#0284C7');
+        for ($paso = 0; $paso < 20; $paso++) {
+            $factor = 1 - $paso * 0.05;
+            $color = sprintf('#%02X%02X%02X', (int) round($r * $factor), (int) round($g * $factor), (int) round($b * $factor));
+            if (self::contraste($color, '#FFFFFF') >= $minimo) {
+                return $color;
+            }
+        }
+        return '#000000';
+    }
+
+    /** Mezcla con blanco: 0 deja el color, 1 lo vuelve blanco. Para fondos y filetes suaves en papel. */
+    public static function aclarar(string $hex, float $cuanto): string
+    {
+        [$r, $g, $b] = self::aRgb(self::hexValido($hex) ? $hex : '#000000');
+        $mezcla = static fn(int $c): int => (int) round($c + (255 - $c) * max(0.0, min(1.0, $cuanto)));
+        return sprintf('#%02X%02X%02X', $mezcla($r), $mezcla($g), $mezcla($b));
+    }
+
+    /**
+     * Los tres colores del carnet impreso: el del evento y el del perfil, ya
+     * aptos para papel, y uno suave para fondos y filetes.
+     *
+     * @return array{tinta: string, rol: string, suave: string}
+     */
+    public static function delCarnetImpreso(array $tema, string $rol): array
+    {
+        $tinta = self::paraPapel((string) ($tema['colores']['accent'] ?? '#0284C7'));
+        return [
+            'tinta' => $tinta,
+            'rol'   => isset(self::COLORES_DE_ROL[$rol]) ? self::paraPapel(self::COLORES_DE_ROL[$rol]) : $tinta,
+            'suave' => self::aclarar($tinta, 0.78),
+        ];
+    }
+
     /**
      * Bloque <style> con las variables del evento.
      *

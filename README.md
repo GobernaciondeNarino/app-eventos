@@ -118,7 +118,9 @@ Hay tres puertas, y las tres llevan al mismo sitio:
    decisión, los cambios que se le hicieron a la propuesta y las observaciones. Después, en
    **Mi exposición** (`/exposicion`), la envía si se registró sin ella, la corrige y cambia sus
    documentos sin volver a escribirla.
-2. **Carnet** — se emite al instante y llega por correo. No hace falta imprimirlo.
+2. **Carnet** — se emite al instante y llega por correo. No hace falta imprimirlo; quien lo
+   prefiera en papel lo descarga en dos imágenes, frente y reverso, o lo imprime a tamaño real
+   (6 × 9,5 cm por cara, con su foto).
 3. **Cada mañana** — apunta la cámara al pliego de la entrada. El código abre la plataforma,
    sella la hora y muestra su historial.
 4. **Contactos** — al escanear el carnet de otra persona intercambian nombre, entidad, correo

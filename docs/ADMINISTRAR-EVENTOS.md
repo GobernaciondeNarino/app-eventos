@@ -407,9 +407,19 @@ Una cara y no dos es lo que hace que la función sirva: el carnet individual tie
 reverso porque su dueño lo dobla por la mitad, pero para doscientos eso significa imprimir
 cuatrocientas caras y aparearlas a mano.
 
-Cada tarjeta lleva el perfil en grande, la foto, el nombre, la identificación, la entidad y el
-código. El perfil y la foto van grandes a propósito: son lo que se mira a un metro de distancia
-en una fila; el nombre se comprueba ya de cerca.
+Cada tarjeta mide **6 × 9,5 cm** y lleva, de arriba abajo: el logo y el nombre del evento, el
+perfil en una banda de su color, la foto y el código QR lado a lado, el nombre, la
+identificación y la entidad, y al pie el número del carnet. El perfil y la foto van grandes a
+propósito: son lo que se mira a un metro de distancia en una fila; el nombre se comprueba ya de
+cerca.
+
+**Nada se sale de la tarjeta.** Cada texto tiene su caja: si un nombre o una entidad son
+largos, la letra se achica hasta que quepan, y solo si ni así caben se cortan con «…». Hasta la
+3.14, un nombre largo empujaba el código por debajo de la tarjeta y se imprimía encima de la
+siguiente.
+
+Los colores van sobre papel blanco aunque el tema del evento sea oscuro, y cada perfil conserva
+su color, oscurecido lo justo para que se lea impreso.
 
 ### 6.2 Imprimir solo una parte
 
@@ -424,6 +434,30 @@ cartulina en blanco que nadie ve hasta que la reparte.
 
 La lista de carnets va por páginas y se ordena desde los títulos de sus columnas, igual que
 Registros (ver 11). La impresión respeta el filtro y el orden.
+
+### 6.4 El carnet de cada persona: imprimirlo o descargarlo
+
+Cada asistente tiene en su carnet el botón **Imprimir**, que lleva a **Tu carnet**
+(`/carnet/imprimir`): las dos caras a tamaño real, 6 × 9,5 cm cada una, juntas. Ahí hay dos
+caminos:
+
+- **Descargar imágenes** —el primero, y el recomendado—: baja dos imágenes PNG, el frente y el
+  reverso, de 6 × 9,5 cm a 300 ppp. Es lo que pide una papelería o una imprenta para un carnet,
+  incluido uno en plástico, y evita los tropiezos de imprimir desde el navegador. En el celular
+  quedan en las descargas y se pueden enviar por WhatsApp. Si el navegador solo deja bajar una,
+  la pantalla muestra las dos con un enlace para cada una.
+- **Imprimir**: en cartulina, se recorta por la línea continua y se dobla por la punteada del
+  medio. Queda un carnet con la foto de un lado y el código del otro. En la ventana de
+  impresión, la escala tiene que quedar en 100 % (la predeterminada); con «Ajustar a la
+  página», la tarjeta sale de otro tamaño.
+
+El frente lleva el logo y el nombre del evento, la **foto**, el perfil en una banda de su color,
+el nombre, la identificación y la entidad. El reverso, el código QR, el nombre y la entidad otra
+vez —para que se lea aunque el carnet quede del revés en la funda— y la identificación.
+
+Hasta la 3.14 esta página no ponía la foto —siempre salían las iniciales—, y al imprimir el
+nombre, la identificación y la entidad quedaban por fuera del recuadro. Ahora lo que se ve en la
+pantalla es exactamente lo que sale en el papel y en las imágenes.
 
 ---
 

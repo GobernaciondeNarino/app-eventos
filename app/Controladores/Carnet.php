@@ -77,20 +77,28 @@ final class Carnet
         ]);
     }
 
-    /** Versión para imprimir: las dos caras, sin navegación. */
+    /**
+     * Versión para imprimir o descargar: las dos caras a tamaño real, sin
+     * navegación.
+     *
+     * La matriz del código va además aparte, para que el navegador dibuje las
+     * imágenes de descarga con los mismos módulos que el SVG de la página.
+     */
     public function imprimir(Peticion $peticion): void
     {
         $persona = Guardia::personaActual();
         $credencial = Credencial::asegurar((int) $persona['id']);
+        $contenido = Credencial::urlQr($credencial);
 
         Respuesta::vista('publico/carnet-imprimir', [
             'titulo'       => 'Carnet para imprimir',
             'credencial'   => $credencial,
             'documento'    => Persona::documento($persona),
-            'qr'           => Qr::svg(Credencial::urlQr($credencial), [
+            'qr'           => Qr::svg($contenido, [
                 'nivel' => 'Q', 'silencio' => 2, 'clase' => 'qr',
                 'titulo' => 'Código de la credencial',
             ]),
+            'qrMatriz'     => Qr::matriz($contenido, 'Q'),
             'sinPlantilla' => true,
         ]);
     }

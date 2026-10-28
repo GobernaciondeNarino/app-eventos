@@ -13,6 +13,13 @@ $rol = (string) $persona['rol'];
 // El nombre del perfil, como lo configuró el evento de esta persona.
 $nombreRol = etiquetaRol($rol, (int) $persona['evento_id']);
 $foto = (string) ($persona['foto'] ?? '') !== '' ? u('/medios/foto/' . (int) $persona['id']) : '';
+$entidad = (string) $persona['entidad'] !== '' ? (string) $persona['entidad'] : 'Independiente';
+// Letra algo menor para los textos muy largos; el resto lo hace el máximo de
+// renglones del CSS. Sin esto, la entidad se salía por debajo del carnet.
+$talla = static function (string $texto, int $corto, int $largo): string {
+    $n = mb_strlen($texto);
+    return $n <= $corto ? '' : ($n <= $largo ? ' is-largo' : ' is-muy-largo');
+};
 guiones('carnet.js');
 ?>
 <div class="view view--medium split--reverse">
@@ -48,13 +55,13 @@ guiones('carnet.js');
 
           <div class="carnet__fields">
             <?php foreach ([
-              ['Nombre', $persona['nombre']],
-              ['Identificación', documento($documento)],
-              ['Entidad', $persona['entidad'] ?: 'Independiente'],
-            ] as [$k, $valor]): ?>
+              ['Nombre', $persona['nombre'], ' carnet__v--nombre' . $talla((string) $persona['nombre'], 26, 40)],
+              ['Identificación', documento($documento), ''],
+              ['Entidad', $entidad, ' carnet__v--entidad' . $talla($entidad, 30, 48)],
+            ] as [$k, $valor, $clase]): ?>
               <div class="carnet__field">
                 <span class="carnet__k"><?= e($k) ?></span>
-                <span class="carnet__v"><?= e($valor) ?></span>
+                <span class="carnet__v<?= $clase ?>"><?= e($valor) ?></span>
               </div>
             <?php endforeach; ?>
           </div>
@@ -79,9 +86,9 @@ guiones('carnet.js');
           </div>
 
           <div class="row row--between" style="padding:0 8px">
-            <span class="stack" style="gap:3px">
-              <span class="carnet__v" style="font-size:14px"><?= e($persona['nombre']) ?></span>
-              <span class="brandtext__sub"><?= e($persona['entidad'] ?: 'Independiente') ?></span>
+            <span class="stack" style="gap:3px;min-width:0">
+              <span class="carnet__v carnet__quien" style="font-size:14px"><?= e($persona['nombre']) ?></span>
+              <span class="brandtext__sub carnet__quien"><?= e($entidad) ?></span>
             </span>
             <span class="carnet__chip" aria-hidden="true"></span>
           </div>

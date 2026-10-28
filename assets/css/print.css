@@ -18,9 +18,17 @@
 
   .app, .main, .view { display: block; padding: 0; margin: 0; max-width: none; }
 
-  /* ---- Carnet ------------------------------------------------------------ */
-  /* Se imprimen las dos caras, una junto a la otra, a tamaño real (54×86 mm
-     es el estándar CR80 vertical; aquí se usa 60×95 mm con sangrado). */
+  /* ---- Carnet para imprimir (/carnet/imprimir) ---------------------------- */
+  /* Las medidas son las de la pantalla (components.css, «.impreso»): lo que se
+     ve es lo que sale. Aquí solo se quita lo que es de la pantalla. */
+  .impreso { align-items: flex-start; gap: 3mm; }
+  .impreso, .impreso__pliego { page-break-inside: avoid; break-inside: avoid; }
+  .impreso__pliego { filter: none !important; }
+  .impreso__guia { color: #555555 !important; }
+
+  /* ---- El carnet de la pantalla, si alguien lo imprime con Ctrl+P ---------- */
+  /* No es el camino: el botón Imprimir lleva a /carnet/imprimir. Pero si se
+     imprime, que cada cara se quede dentro de su recuadro. */
   .carnet-wrap { display: block; }
   .carnet-clip { display: none; }
 
@@ -32,7 +40,9 @@
   .carnet.is-flipped .carnet__inner { transform: none !important; }
 
   .carnet__face {
-    position: static; transform: none !important;
+    /* Relativa, para que su marco interior (::before) se quede en ella y no
+       salte a envolver las dos caras. */
+    position: relative; overflow: hidden; transform: none !important;
     backface-visibility: visible; -webkit-backface-visibility: visible;
     width: 60mm; height: 95mm;
     background: #FFFFFF !important;
@@ -49,42 +59,16 @@
   .barcode span { background: #000000 !important; }
   .brandmark { border-color: #000000 !important; color: #000000 !important; background: none !important; }
 
-  /* ---- Tanda de carnets --------------------------------------------------- */
-  /* Una cara por persona, seis por hoja tamaño carta. El reparto lo hace el
+  /* ---- Tanda de carnets (/carnets/imprimir) -------------------------------- */
+  /* Tres por fila: seis por hoja tamaño carta. El reparto lo hace el
      navegador: «break-inside: avoid» es lo que impide que una tarjeta quede
      partida entre dos páginas, que es el único defecto que hace inservible una
      tanda impresa. */
-  .carnet-tanda {
-    display: grid !important;
-    grid-template-columns: repeat(3, 60mm);
-    gap: 4mm;
-    justify-content: start;
-  }
-  .carnet-uno {
-    width: 60mm; height: 95mm;
+  .impreso-tanda { grid-template-columns: repeat(3, 60mm); justify-content: start; }
+  .impreso-tanda .impreso__cara {
+    box-shadow: none !important;
     page-break-inside: avoid; break-inside: avoid;
-    background: #FFFFFF !important;
-    border: .3mm solid #000000 !important;
-    border-top: 1mm solid #000000 !important;
-    padding: 4mm;
-    gap: 2.5mm;
   }
-  .carnet-uno__rol, .carnet-uno__nombre, .carnet-uno__codigo > span:first-child {
-    color: #000000 !important;
-  }
-  /* El perfil y la cara son lo que se lee a un metro en una fila: el nombre se
-     comprueba ya de cerca. Por eso van más grandes que en pantalla. */
-  .carnet-uno__rol { font-size: 10pt; letter-spacing: .18em; }
-  .carnet-uno__nombre { font-size: 11pt; }
-  .carnet-uno__dato { color: #222222 !important; }
-  .carnet-uno__cap, .carnet-uno__foto span { color: #555555 !important; }
-  .carnet-uno__quien { gap: 3mm; }
-  .carnet-uno__foto {
-    width: 24mm; height: 30mm;
-    border-color: #000000 !important; background: #FFFFFF !important;
-  }
-  .carnet-uno__pie { border-top-color: #999999 !important; }
-  .carnet-uno__qr { width: 22mm; background: #FFFFFF !important; padding: 0; }
 
   /* ---- Pliego del QR del día --------------------------------------------- */
   .print-sheet { display: block !important; page-break-after: always; text-align: center; }

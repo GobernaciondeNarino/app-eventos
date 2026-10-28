@@ -271,6 +271,114 @@ function titulo(t) {
   }
 
   /* =====================================================================
+     El carnet para imprimir o descargar
+     ---------------------------------------------------------------------
+     Hasta la 3.14 salía sin la foto y con el nombre, la identificación y la
+     entidad por fuera del recuadro. Ahora: la foto —la de la esquina roja que
+     María acaba de guardar—, todo dentro de cada cara al imprimir, y
+     «Descargar imágenes» deja dos PNG de 6 × 9,5 cm a 300 ppp.
+     ===================================================================== */
+  titulo('Carnet para imprimir o descargar');
+
+  if (TOKEN) {
+    const imprenta = await navegador.newContext({ viewport: { width: 1280, height: 900 }, acceptDownloads: true });
+    const pi = await imprenta.newPage();
+    const erroresImpresion = [];
+    pi.on('console', m => { if (m.type() === 'error') erroresImpresion.push(m.text()); });
+    pi.on('pageerror', e => erroresImpresion.push(e.message));
+
+    await pi.goto(BASE + '/entrar/qr/' + TOKEN, { waitUntil: 'networkidle' });
+    await pi.goto(BASE + '/carnet/imprimir', { waitUntil: 'networkidle' });
+    await pi.waitForSelector('[data-carnet-impreso][data-imagenes="listas"]', { timeout: 15000 }).catch(() => null);
+
+    comprobar('la foto sale en el carnet para imprimir', await pi.evaluate(() => {
+      const img = document.querySelector('.impreso__foto img');
+      return !!img && img.complete && img.naturalWidth > 0;
+    }));
+    comprobar('«Descargar imágenes» va antes de «Imprimir»', await pi.evaluate(() => {
+      const d = document.querySelector('[data-descargar-carnet]');
+      const i = document.querySelector('[data-imprimir]');
+      return !!d && !!i && !!(d.compareDocumentPosition(i) & Node.DOCUMENT_POSITION_FOLLOWING);
+    }));
+
+    await pi.emulateMedia({ media: 'print' });
+    const medidas = await pi.evaluate(() => {
+      const mm = 96 / 25.4;
+      const caras = Array.from(document.querySelectorAll('.impreso__cara'));
+      const fuera = [];
+      caras.forEach(cara => {
+        const caja = cara.getBoundingClientRect();
+        cara.querySelectorAll('*').forEach(h => {
+          const r = h.getBoundingClientRect();
+          if (r.width > 0 && (r.left < caja.left - 0.5 || r.right > caja.right + 0.5
+              || r.top < caja.top - 0.5 || r.bottom > caja.bottom + 0.5)) fuera.push(h.className);
+        });
+        cara.querySelectorAll('[data-ajustar]').forEach(t => {
+          if (t.scrollHeight > t.clientHeight + 1 || t.scrollWidth > t.clientWidth + 1) fuera.push('texto: ' + t.className);
+        });
+      });
+      const [a, b] = caras.map(c => c.getBoundingClientRect());
+      return {
+        caras: caras.length, fuera,
+        medida: caras.every(c => Math.abs(c.offsetWidth - 60 * mm) < 1 && Math.abs(c.offsetHeight - 95 * mm) < 1),
+        juntas: !!a && !!b && Math.abs(a.right - b.left) < 1 && Math.abs(a.top - b.top) < 1,
+        ocultos: Array.from(document.querySelectorAll('.no-print')).every(n => getComputedStyle(n).display === 'none'),
+      };
+    });
+    comprobar('al imprimir, las dos caras de 6 × 9,5 cm, juntas para doblar',
+      medidas.caras === 2 && medidas.medida && medidas.juntas, JSON.stringify(medidas));
+    comprobar('y todo queda dentro de su recuadro', medidas.fuera.length === 0, medidas.fuera.slice(0, 4).join(' | '));
+    comprobar('sin los botones ni el panel de la pantalla', medidas.ocultos);
+    await pi.emulateMedia({ media: 'screen' });
+
+    const bajadas = [];
+    pi.on('download', d => bajadas.push(d));
+    await pi.click('[data-descargar-carnet]');
+    await pi.waitForTimeout(1800);
+    const archivos = [];
+    for (const d of bajadas) {
+      const ruta = 'pruebas/capturas/' + d.suggestedFilename();
+      await d.saveAs(ruta);
+      const png = fs.readFileSync(ruta);
+      const phys = png.indexOf('pHYs');
+      archivos.push({
+        nombre: d.suggestedFilename(),
+        png: png.slice(1, 4).toString() === 'PNG',
+        ancho: png.readUInt32BE(16), alto: png.readUInt32BE(20),
+        ppm: phys > 0 ? png.readUInt32BE(phys + 4) : 0,
+      });
+      fs.unlinkSync(ruta);
+    }
+    comprobar('«Descargar imágenes» baja dos archivos: el frente y el reverso',
+      archivos.length === 2 && /-frente\.png$/.test(archivos[0].nombre) && /-reverso\.png$/.test(archivos[1].nombre),
+      archivos.map(a => a.nombre).join(', '));
+    comprobar('PNG de 709 × 1122 píxeles a 300 ppp: 6 × 9,5 cm al imprimirlos',
+      archivos.length === 2 && archivos.every(a => a.png && a.ancho === 709 && a.alto === 1122 && a.ppm === 11811),
+      JSON.stringify(archivos));
+    const panel = await pi.evaluate(async () => {
+      const imgs = Array.from(document.querySelectorAll('[data-imagenes-lista] img'));
+      const enlaces = Array.from(document.querySelectorAll('[data-imagenes-lista] a[download]')).map(a => a.getAttribute('download'));
+      if (!imgs[0]) return { imgs: 0, enlaces };
+      await imgs[0].decode();
+      // El centro de la foto en la imagen del frente: x = 30 mm, y = 4,5 + 10,5 + 2,5 + 16 mm.
+      const l = document.createElement('canvas');
+      l.width = imgs[0].naturalWidth; l.height = imgs[0].naturalHeight;
+      const c = l.getContext('2d');
+      c.drawImage(imgs[0], 0, 0);
+      const k = 300 / 25.4;
+      const d = c.getImageData(Math.round(30 * k), Math.round(33.5 * k), 1, 1).data;
+      return { imgs: imgs.length, enlaces, color: [d[0], d[1], d[2]] };
+    });
+    comprobar('y deja a la vista las dos imágenes, con un enlace para cada una',
+      panel.imgs === 2 && panel.enlaces.length === 2, JSON.stringify(panel));
+    comprobar('la imagen del frente lleva la foto de la persona',
+      panel.color && panel.color[0] > 150 && panel.color[1] < 110 && panel.color[2] < 110, JSON.stringify(panel.color));
+    comprobar('sin errores de consola en el carnet para imprimir', erroresImpresion.length === 0,
+      erroresImpresion.slice(0, 2).join(' | '));
+    await imprenta.close();
+  }
+
+  /* =====================================================================
      El formulario de registro
      ===================================================================== */
   titulo('Formulario de registro');
@@ -676,17 +784,29 @@ function titulo(t) {
     (await p3.locator('a[href*="/carnets/imprimir"]').count()) === 1);
 
   await p3.goto(BASE + '/carnets/imprimir', { waitUntil: 'networkidle' });
-  const tarjetas = await p3.locator('.carnet-uno').count();
+  const tarjetas = await p3.locator('[data-carnet-tanda]').count();
   comprobar('la impresión trae una tarjeta por persona', tarjetas > 1, String(tarjetas));
   comprobar('cada una con su QR dentro, en la misma cara',
-    (await p3.locator('.carnet-uno .carnet-uno__qr svg').count()) === tarjetas);
+    (await p3.locator('[data-carnet-tanda] .impreso__qr svg').count()) === tarjetas);
 
   // Lo que de verdad arruina una tanda impresa: una tarjeta que se sale de su
-  // caja y se imprime encima de la de al lado.
-  const seSalen = await p3.locator('.carnet-uno').evaluateAll(
-    nodos => nodos.filter(n => n.scrollWidth > n.clientWidth + 1).length
-  );
-  comprobar('ninguna tarjeta se desborda de su caja', seSalen === 0, String(seSalen));
+  // caja y se imprime encima de la de al lado. Se mide como sale en el papel,
+  // hacia abajo también: hasta la 3.14, un nombre largo empujaba el código por
+  // debajo de la tarjeta.
+  await p3.emulateMedia({ media: 'print' });
+  const seSalen = await p3.locator('[data-carnet-tanda]').evaluateAll(nodos => nodos.filter(n => {
+    const caja = n.getBoundingClientRect();
+    return Array.from(n.querySelectorAll('*')).some(h => {
+      const r = h.getBoundingClientRect();
+      return r.width > 0 && (r.left < caja.left - 0.5 || r.right > caja.right + 0.5
+        || r.top < caja.top - 0.5 || r.bottom > caja.bottom + 0.5);
+    }) || Array.from(n.querySelectorAll('[data-ajustar]')).some(t =>
+      t.scrollHeight > t.clientHeight + 1 || t.scrollWidth > t.clientWidth + 1);
+  }).map(n => n.getAttribute('aria-label')));
+  comprobar('ninguna tarjeta se desborda de su caja, al imprimir', seSalen.length === 0, seSalen.join(' | '));
+  comprobar('cada tarjeta mide 6 × 9,5 cm', await p3.locator('[data-carnet-tanda]').evaluateAll(nodos =>
+    nodos.every(n => Math.abs(n.offsetWidth - 60 * 96 / 25.4) < 1 && Math.abs(n.offsetHeight - 95 * 96 / 25.4) < 1)));
+  await p3.emulateMedia({ media: 'screen' });
 
   /* =====================================================================
      Staff: entra por la puerta del asistente y acredita

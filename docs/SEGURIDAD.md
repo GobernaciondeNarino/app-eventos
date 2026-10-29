@@ -708,11 +708,12 @@ Desde la 3.14, otros sistemas consultan en JSON quiénes se registraron (`/api/v
    primeros ocho caracteres, para reconocerlo en la lista. Se ve una sola vez, al crearlo.
    Adivinarlo no es viable, y quien copie la tabla no obtiene tokens que sirvan.
 4. **Lo que entrega está en una lista cerrada** (`Api::persona()`): lo que no está ahí no sale.
-   Nunca la identificación —ni cifrada ni su huella—, la caracterización, la foto, lo que el
-   comité le escribe al expositor, sus requerimientos, ningún token o código ni ninguna
-   contraseña. El correo y el teléfono, solo con un token de alcance **contacto**; con el básico,
-   la búsqueda tampoco mira el correo, para que no sirva para averiguar si alguien está
-   registrado. La agenda que entrega es la pública: solo lo publicado.
+   Nunca la identificación —ni cifrada ni su huella—, la caracterización, lo que el comité le
+   escribe al expositor, sus requerimientos, ningún token o código ni ninguna contraseña. El
+   correo y el teléfono, solo con un token de alcance **contacto**; con el básico, la búsqueda
+   tampoco mira el correo, para que no sirva para averiguar si alguien está registrado. La
+   agenda que entrega es la pública: solo lo publicado. La fotografía, solo como enlace y solo
+   a un token con ese permiso (punto 10).
 5. **Filtros en parámetros, orden de una lista fija.** Los textos van a `LIKE` como parámetros,
    con los comodines escapados; el orden se elige por clave contra una lista de expresiones
    (`App\Nucleo\Orden`), como en el panel. Un filtro desconocido o con un valor que no se
@@ -730,9 +731,29 @@ Desde la 3.14, otros sistemas consultan en JSON quiénes se registraron (`/api/v
    cabecera `Authorization: Bearer`, que el `.htaccess` le pasa a PHP.
 8. **Errores en JSON**, también los generales —una ruta que no existe, la base caída, un fallo
    inesperado—, sin trazas ni rutas del servidor.
-9. **Queda en la bitácora** quién creó cada token, para qué sistema y con qué alcance
-   (`api_token_creado`), y quién lo revocó (`api_token_revocado`). Las consultas no van a la
+9. **Queda en la bitácora** quién creó cada token, para qué sistema, con qué alcance y si con
+   la fotografía (`api_token_creado`), quién se la incluyó o se la quitó después
+   (`api_token_foto`) y quién lo revocó (`api_token_revocado`). Las consultas no van a la
    bitácora, que es de solo inserción y crecería sin medida: se cuentan en la fila del token.
+10. **La fotografía, con permiso y por enlace firmado** (desde la 3.16). Es un permiso aparte del
+    alcance —`evt_api_token.foto_desde`, que un administrador da o quita sin cambiar el token—,
+    y los tokens de antes no lo tienen. Con él, cada persona trae
+    `/api/v1/fotos/{persona}/{token}/{firma}`, que se abre **sin el token**: así un sitio web lo
+    pone en un `<img>` sin dejar el token a la vista. La firma es un HMAC-SHA256 con la llave de
+    la instalación, truncado a 128 bits y con su propio prefijo (`TokenApi::firmaFoto()`), sobre
+    el número del token, la fecha de su permiso —con microsegundos—, la persona y el nombre del
+    archivo de la foto, y se compara en tiempo constante. Por eso el enlace no se adivina ni se
+    reutiliza para otra persona o desde otro token, y deja de servir al revocar el token, al
+    quitarle el permiso —dárselo otra vez produce enlaces nuevos; los viejos no reviven— o
+    cuando la persona cambia de foto. Uno que no sirve responde 404 sin decir por qué. No se
+    cuenta en el tope del token ni se corta por IP: 128 bits no se adivinan, y un tope por IP
+    dejaría sin fotos a toda una oficina por una página con enlaces viejos. La imagen sale con
+    `Cache-Control: private` —ninguna caché compartida la guarda—, `X-Robots-Tag: noindex,
+    noimageindex` para que no termine en un buscador de imágenes, `Cross-Origin-Resource-Policy:
+    cross-origin` porque está hecha para mostrarse en otro sitio, la misma CSP con `sandbox` de
+    las demás fotos, y el nombre `foto-ID.jpg` en vez del del archivo. Que un sitio público
+    muestre la foto de alguien sigue requiriendo su autorización: la API entrega
+    `en_directorio` para respetarla.
 
 ### El carnet para imprimir o descargar
 
@@ -1019,7 +1040,7 @@ conviene decirlo con claridad en la pantalla de privacidad.
 | Finalidad determinada | Acreditación, control de asistencia y reportes de cobertura del evento |
 | Datos sensibles con tratamiento reforzado | Tabla aparte, nunca obligatorios —ni siquiera por configuración—, exportación con rol administrador y auditada |
 | Minimización | De fábrica, solo nombre y documento son obligatorios. Cada evento puede pedir menos —el documento puede quedar opcional u oculto— y ocultar lo que no necesite |
-| Circulación restringida | El QR no expone datos; el intercambio comparte cuatro campos y el teléfono es opcional. La API entrega una lista cerrada de campos, nunca los sensibles, y el contacto solo con un token que lo permita |
+| Circulación restringida | El QR no expone datos; el intercambio comparte cuatro campos y el teléfono es opcional. La API entrega una lista cerrada de campos, nunca los sensibles, y el contacto y la fotografía solo con un token que lo permita |
 | Derecho de supresión | El intercambio de contactos guarda `revocado_en`. **Falta** el procedimiento para la persona completa |
 | Seguridad | Cifrado del documento, control de acceso por rol, auditoría de lecturas sensibles |
 
@@ -1085,9 +1106,14 @@ Lo que comprueban las de seguridad, concretamente:
   muestra en pantalla, y no queda en la bitácora.
 - La API sin token, con uno inventado o con uno revocado responde 401; el token queda en la
   base como hash y no aparece ni en la bitácora ni en el registro de errores.
-- Por la API no salen la identificación, su huella, la caracterización, la foto, las
-  observaciones del comité ni los requerimientos; el correo y el teléfono, solo con alcance de
-  contacto, y con el básico la búsqueda no encuentra a nadie por su correo.
+- Por la API no salen la identificación, su huella, la caracterización, las observaciones del
+  comité ni los requerimientos; el correo y el teléfono, solo con alcance de contacto, y con el
+  básico la búsqueda no encuentra a nadie por su correo.
+- La fotografía solo sale a un token con ese permiso, como enlace firmado que se abre sin el
+  token y entrega el archivo tal cual. Con la firma, la persona o el token cambiados responde
+  404 en JSON; deja de servir al quitar el permiso —y al volver a darlo hay enlaces nuevos, los
+  viejos no reviven—, al revocar el token y cuando la persona cambia de foto. Ver la foto no
+  cuenta como consulta del token.
 - Un filtro mal escrito o con un valor inválido responde 400, no la lista entera.
 - Pasado el tope de un token, 429 solo para ese token; tras veinte tokens inventados desde una
   dirección, 429 para esos intentos mientras un token vigente desde la misma dirección sigue

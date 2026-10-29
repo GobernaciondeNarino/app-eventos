@@ -437,6 +437,12 @@ restauró no es una copia.
    todo dentro de su recuadro, y tiene **Descargar imágenes** —el frente y el reverso en PNG—
    antes de **Imprimir**. La impresión en tanda del equipo usa el mismo diseño. Ver 7.7.
 
+   La 3.16 agrega **una columna**, `foto_desde`, a la tabla de los tokens de la API
+   (`evt_api_token`), y nada más en la base: ningún registro cambia. La agrega sola la primera
+   visita. Con ella, a un token se le puede dar el enlace de la fotografía de cada persona. Los
+   tokens que ya existen responden exactamente lo mismo —sin la foto— hasta que un
+   administrador se la incluya. Ver 7.8.
+
    Si el usuario de la base de datos no tiene permiso de `ALTER` —pasa en algunos
    alojamientos—, la actualización automática no puede hacerse: lo anota en el registro,
    vuelve a intentarlo cada cinco minutos y la plataforma sigue funcionando. Para hacerlo a
@@ -829,6 +835,67 @@ sirviendo en la puerta.
 
 **Volver atrás:** sube otra vez los archivos que descargaste en el paso 1 y borra
 `assets/js/carnet-imprimir.js`. No hay nada que deshacer en la base de datos.
+
+### 7.8 La 3.16: la fotografía en la API, sin tocar registros ni configuración
+
+**Qué agrega.** A un token de la API se le puede dar, aparte de su alcance, el **enlace de la
+fotografía** de cada persona: al crearlo, con la casilla **Incluir el enlace de la
+fotografía**, o después, con **Incluir la fotografía** junto a cada token vigente, sin cambiar
+el token. Con el permiso, cada persona trae `foto`: una dirección `…/api/v1/fotos/…` que **se
+abre sin el token**, para que el sitio web la ponga tal cual en un `<img>`. Deja de servir al
+quitar el permiso, al revocar el token o cuando la persona cambia de foto. El detalle está en
+`docs/API.md` (2.6).
+
+**Qué cambia en la base de datos.** Solo se **agrega** la columna `foto_desde` a
+`evt_api_token` (esquema 1.13.0), vacía en todos los tokens que ya existen. La agrega la
+actualización automática en la primera visita. A diferencia de la 3.12 y la 3.14, que crearon
+tablas nuevas, esta agrega una columna a una tabla que ya existe: necesita el permiso `ALTER`
+del usuario de la base, el mismo que usaron la 3.7 y la 3.8. Si no lo tiene, el panel muestra
+el aviso de «base de datos atrasada» con el botón **Actualizar la base de datos**. Mientras
+tanto la API y los tokens funcionan igual que en la 3.15, y **Configuración → API** no ofrece la
+fotografía hasta que la columna exista.
+
+**Qué no cambia.** `config/config.php` —no hay que agregar nada—, `almacen/` —las fotos se
+sirven desde donde ya están—, los registros, las fotos, los carnets y **los tokens que ya
+existen**: responden lo mismo que antes, sin el campo `foto`, hasta que un administrador les
+incluya la fotografía. Subir la versión no publica ninguna foto.
+
+**Qué archivos cambian:**
+
+| Archivo | Para qué |
+|---|---|
+| `app/Controladores/Api.php` | El campo `foto`, `fotografia` en `/api/v1` y la dirección que entrega la imagen |
+| `app/Modelos/TokenApi.php` | El permiso de cada token y la firma de los enlaces |
+| `app/Controladores/Configuracion.php`, `app/Vistas/admin/config-api.php` | La casilla al crear un token, la etiqueta **Con fotografía** y el botón para incluirla o quitarla |
+| `app/Esquema.php` | La columna nueva, y la versión del esquema 1.13.0 |
+| `app/rutas.php` | La dirección de las fotos y la del botón |
+| `app/Nucleo/Bitacora.php` | Cómo se lee en la bitácora quién incluyó o quitó la fotografía |
+| `index.php`, `herramientas/instalar.php`, `herramientas/correo.php` | El número de versión |
+
+**Cómo subirla:**
+
+1. Haz la copia de seguridad de siempre (punto 1 de arriba): **la base de datos y `config/`**.
+   Descarga además, tal como están en el servidor, los archivos de la tabla.
+2. Sube los archivos de la tabla —o la versión completa, **sin tocar `config/` ni
+   `almacen/`**—. Si producción todavía no tiene la 3.14 o la 3.15, sube la versión completa:
+   la primera visita crea la tabla de la API y su columna.
+3. Abre cualquier página de la plataforma. En `/admin` no debe quedar ningún aviso de «base de
+   datos atrasada»; si queda, pulsa **Actualizar la base de datos** en ese aviso.
+4. Compruébalo:
+   - un token que ya usa otro sistema responde igual que antes: `…/api/v1?token=…` dice
+     `"fotografia": false` y las personas no traen `foto`;
+   - en **Configuración → API**, crea un token de prueba **con la casilla de la fotografía** y
+     abre `…/api/v1/personas?q=TU_NOMBRE&token=…` con una cuenta de prueba que tenga foto —la
+     tuya, no la de un asistente real—: trae `"foto": "https://…/api/v1/fotos/…"`;
+   - abre ese enlace en una ventana privada, sin sesión: se ve la foto;
+   - **revoca** el token de prueba: el mismo enlace responde `{"error": {"codigo": 404, …}}`.
+
+**Volver atrás:** sube otra vez los archivos que descargaste en el paso 1. La columna
+`foto_desde` puede quedarse: la 3.15 no la usa ni la mira, y una base más nueva que el código no
+dispara ninguna actualización. Con los archivos anteriores, los enlaces de la fotografía dejan
+de servir y la API deja de dar la foto; los tokens siguen funcionando. Si prefieres quitarla,
+`ALTER TABLE evt_api_token DROP COLUMN foto_desde;` en phpMyAdmin, después de volver a los
+archivos anteriores.
 
 ---
 

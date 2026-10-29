@@ -4785,6 +4785,144 @@ comprobar('la bitácora dice quién creó cada token y para qué sistema',
     str_contains($html, 'creó un token de la API para «Sitio web de la Secretaría TIC»')
     && str_contains($html, 'creó un token de la API para «Tablero de la Secretaría», con correo y teléfono'));
 
+// ---- La fotografía ------------------------------------------------------------------------
+// Solo a un token con ese permiso. El enlace va firmado para ese token y se abre
+// sin él, para ponerlo tal cual en una página; deja de servir al quitar el
+// permiso, al revocar el token o cuando la persona cambia de foto.
+$idDeToken = static fn(string $t): int => $cuenta("SELECT id FROM {$P}api_token WHERE token_hash = '" . hash('sha256', $t) . "'");
+$hacia = static fn(int $persona, int $token, string $firma): string => $BASE . '/api/v1/fotos/' . $persona . '/' . $token . '/' . $firma;
+$fotoPorApi = static function (string $token) use ($pedirApi, $api): string {
+    $r = $pedirApi($api, '/api/v1/personas?q=' . rawurlencode('Asistente Con Foto') . '&token=' . $token);
+    return (string) ($r['datos'][0]['foto'] ?? '');
+};
+$html = $jefa->get('/admin/configuracion/api');
+comprobar('al crear un token se puede pedir el enlace de la fotografía', str_contains($html, 'name="foto" value="1"'));
+$html = $jefa->post('/admin/configuracion/api/crear', ['nombre' => 'Sitio con fotografías', 'alcance' => 'basico', 'foto' => '1']);
+$tokenFotos = $tokenDeLaPantalla($html);
+$idTokenFotos = $idDeToken($tokenFotos);
+$idTokenTablero = $idDeToken($tokenTablero);
+comprobar('queda con ese permiso, y la pantalla lo dice', strlen($tokenFotos) === 64
+    && $cuenta("SELECT COUNT(*) FROM {$P}api_token WHERE id = $idTokenFotos AND foto_desde IS NOT NULL") === 1
+    && str_contains($html, 'Sin datos de contacto · con la fotografía') && str_contains($html, 'data-con-foto'));
+comprobar('los tokens creados sin marcarlo no lo tienen',
+    $cuenta("SELECT COUNT(*) FROM {$P}api_token WHERE foto_desde IS NOT NULL") === 1);
+$r = $pedirApi($api, '/api/v1?token=' . $tokenFotos);
+$sinPermiso = $pedirApi($api, '/api/v1?token=' . $tokenSitio);
+comprobar('/api/v1 dice si el token recibe la fotografía', ($r['fotografia'] ?? null) === true
+    && ($sinPermiso['fotografia'] ?? null) === false);
+
+$fotosEnBase = $pdo->query("SELECT id, foto FROM {$P}persona WHERE evento_id = $eventoActivo AND foto <> ''")
+    ->fetchAll(PDO::FETCH_KEY_PAIR);
+$r = $pedirApi($api, '/api/v1/personas?por=200&token=' . $tokenFotos);
+$enlaces = [];
+$bienFormados = ($r['datos'] ?? []) !== [];
+foreach ($r['datos'] ?? [] as $d) {
+    if (!array_key_exists('foto', $d)) {
+        $bienFormados = false;
+    } elseif (isset($fotosEnBase[$d['id']])) {
+        $enlaces[$d['id']] = (string) $d['foto'];
+        $bienFormados = $bienFormados && preg_match('#^' . preg_quote($hacia($d['id'], $idTokenFotos, ''), '#') . '[a-f0-9]{32}$#',
+            (string) $d['foto']) === 1;
+    } else {
+        $bienFormados = $bienFormados && $d['foto'] === null;
+    }
+}
+comprobar('cada persona trae «foto»: el enlace a la suya, o null si no tiene', $bienFormados && isset($enlaces[$idConFoto]),
+    json_encode($enlaces));
+$enlace = $enlaces[$idConFoto] ?? '';
+$firma = substr($enlace, -32);
+
+$visitante = new Cliente($BASE);
+$visitante->get($enlace);
+comprobar('el enlace se abre sin el token ni sesión, y es la foto tal cual', $visitante->codigo === 200
+    && $visitante->cabecera('Content-Type') === 'image/jpeg'
+    && $visitante->cuerpo === (string) file_get_contents($RAIZ . '/almacen/fotos/' . $fotoDe()),
+    $visitante->codigo . ' · ' . $visitante->cabecera('Content-Type'));
+comprobar('sin cookies, para otros sitios y no para los buscadores', !preg_grep('/^Set-Cookie:/i', $visitante->cabeceras)
+    && $visitante->cabecera('Cross-Origin-Resource-Policy') === 'cross-origin'
+    && str_contains($visitante->cabecera('X-Robots-Tag'), 'noindex')
+    && str_contains($visitante->cabecera('Cache-Control'), 'private'));
+comprobar('y con un nombre que no es el del archivo', str_contains($visitante->cabecera('Content-Disposition'),
+    'filename="foto-' . $idConFoto . '.jpg"') && !str_contains($visitante->cabecera('Content-Disposition'), $fotoDe()));
+$usos = $cuenta("SELECT usos FROM {$P}api_token WHERE id = $idTokenFotos");
+$visitante->get($enlace);
+comprobar('ver la foto no cuenta como consulta del token', $cuenta("SELECT usos FROM {$P}api_token WHERE id = $idTokenFotos") === $usos);
+
+$otraPersona = $cuenta("SELECT MIN(id) FROM {$P}persona WHERE evento_id = $eventoActivo AND id <> $idConFoto");
+$alterados = [
+    'la firma'          => $hacia($idConFoto, $idTokenFotos, strtr($firma, '0123456789abcdef', '123456789abcdef0')),
+    'la firma, cortada' => $hacia($idConFoto, $idTokenFotos, substr($firma, 0, 24)),
+    'la persona'        => $hacia($otraPersona, $idTokenFotos, $firma),
+    'el token'          => $hacia($idConFoto, $idTokenTablero, $firma),
+    'un token que no existe' => $hacia($idConFoto, 999999, $firma),
+];
+$noCierran = [];
+foreach ($alterados as $que => $url) {
+    $visitante->get($url);
+    $j = json_decode($visitante->cuerpo, true) ?: [];
+    if ($visitante->codigo !== 404 || ($j['error']['titulo'] ?? '') !== 'Sin fotografía') {
+        $noCierran[] = $que . ' → ' . $visitante->codigo;
+    }
+}
+comprobar('con la firma, la persona o el token cambiados, 404 en JSON', $noCierran === [], implode(' · ', $noCierran));
+$pedirApi($api, '/api/v1/personas?por=200&token=' . $tokenSitio);
+comprobar('sin el permiso, la API no da ni la clave «foto»', $api->codigo === 200 && !str_contains($api->cuerpo, '"foto"')
+    && !str_contains($api->cuerpo, '/api/v1/fotos/'));
+
+// El permiso, desde la pantalla, sin cambiar de token.
+$html = $jefa->get('/admin/configuracion/api');
+comprobar('cada token vigente tiene su botón para incluir o quitar la fotografía',
+    str_contains($html, '>Quitar la fotografía</button>') && str_contains($html, '>Incluir la fotografía</button>'));
+$jefa->post('/admin/configuracion/api/foto', ['token' => (string) $idTokenTablero, 'permitir' => '1']);
+$enlaceTablero = $fotoPorApi($tokenTablero);
+$visitante->get($hacia($idConFoto, $idTokenTablero, $firma));
+$ajeno = $visitante->codigo;
+$visitante->get($enlaceTablero);
+comprobar('al incluírsela a otro token, recibe sus propios enlaces: los de otro token no le sirven',
+    $enlaceTablero !== '' && $enlaceTablero !== $enlace && $visitante->codigo === 200 && $ajeno === 404);
+
+$jefa->post('/admin/configuracion/api/foto', ['token' => (string) $idTokenFotos, 'permitir' => '0']);
+$pedirApi($api, '/api/v1/personas?por=200&token=' . $tokenFotos);
+$visitante->get($enlace);
+comprobar('al quitarle el permiso, la API deja de dar «foto» y los enlaces que entregó dejan de servir',
+    $api->codigo === 200 && !str_contains($api->cuerpo, '"foto"') && $visitante->codigo === 404);
+$html = $jefa->post('/admin/configuracion/api/foto', ['token' => (string) $idTokenFotos, 'permitir' => '0']);
+comprobar('quitarlo dos veces solo avisa', str_contains($html, 'toast--warn') && str_contains($html, 'ya estaba así'));
+$jefa->post('/admin/configuracion/api/foto', ['token' => (string) $idTokenFotos, 'permitir' => '1']);
+$enlaceNuevo = $fotoPorApi($tokenFotos);
+$visitante->get($enlace);
+$viejo = $visitante->codigo;
+$visitante->get($enlaceNuevo);
+comprobar('si se le vuelve a dar, recibe enlaces nuevos: los de antes no reviven',
+    $enlaceNuevo !== '' && $enlaceNuevo !== $enlace && $viejo === 404 && $visitante->codigo === 200);
+
+$archivoFoto = $fotoDe();
+$otraFoto = 'p' . $idConFoto . '-' . bin2hex(random_bytes(8)) . '.jpg';
+copy($RAIZ . '/almacen/fotos/' . $archivoFoto, $RAIZ . '/almacen/fotos/' . $otraFoto);
+$pdo->prepare("UPDATE {$P}persona SET foto = ? WHERE id = ?")->execute([$otraFoto, $idConFoto]);
+$visitante->get($enlaceNuevo);
+$tras = $visitante->codigo;
+$visitante->get($fotoPorApi($tokenFotos));
+comprobar('cuando la persona cambia de foto, el enlace viejo deja de servir y la API da el de la nueva',
+    $tras === 404 && $visitante->codigo === 200);
+$pdo->prepare("UPDATE {$P}persona SET foto = ? WHERE id = ?")->execute([$archivoFoto, $idConFoto]);
+@unlink($RAIZ . '/almacen/fotos/' . $otraFoto);
+
+$jefa->post('/admin/configuracion/api/revocar', ['token' => (string) $idTokenFotos]);
+$visitante->get($enlaceNuevo);
+comprobar('y al revocar el token, sus enlaces dejan de servir', $visitante->codigo === 404);
+$permisoAlRevocar = $pdo->query("SELECT foto_desde FROM {$P}api_token WHERE id = $idTokenFotos")->fetchColumn();
+$html = $jefa->post('/admin/configuracion/api/foto', ['token' => (string) $idTokenFotos, 'permitir' => '0']);
+comprobar('a un token revocado ya no se le cambia el permiso, ni tiene el botón', str_contains($html, 'toast--warn')
+    && $pdo->query("SELECT foto_desde FROM {$P}api_token WHERE id = $idTokenFotos")->fetchColumn() === $permisoAlRevocar
+    && substr_count($html, '>Quitar la fotografía</button>') === 1 && substr_count($html, '>Incluir la fotografía</button>') === 1);
+$jefa->post('/admin/configuracion/api/foto', ['token' => (string) $idTokenTablero, 'permitir' => '0']);
+$html = $jefa->get('/admin');
+comprobar('la bitácora dice quién incluyó o quitó la fotografía, y en qué token',
+    str_contains($html, 'creó un token de la API para «Sitio con fotografías», con la fotografía')
+    && str_contains($html, 'quitó la fotografía del token de la API de «Sitio con fotografías»')
+    && str_contains($html, 'incluyó la fotografía en el token de la API de «Tablero de la Secretaría»'));
+
 // ---- Cabeceras, cookies y uso ----------------------------------------------------------
 $programa = new Cliente($BASE);
 $programa->extra = ['Authorization' => 'Bearer ' . $tokenSitio];
@@ -4854,6 +4992,9 @@ $tokensAntes = $cuenta("SELECT COUNT(*) FROM {$P}api_token");
 $operadorApi->post('/admin/configuracion/api/crear', ['nombre' => 'Colado', 'alcance' => 'contacto'], false);
 comprobar('solo un administrador ve y crea tokens', $adentro && $noLaVe && $operadorApi->codigo === 403
     && $cuenta("SELECT COUNT(*) FROM {$P}api_token") === $tokensAntes, $operadorApi->codigo . ' · ' . ($adentro ? 'adentro' : 'sin entrar'));
+$operadorApi->post('/admin/configuracion/api/foto', ['token' => (string) $idTokenTablero, 'permitir' => '1'], false);
+comprobar('ni les incluye la fotografía', $operadorApi->codigo === 403
+    && $cuenta("SELECT COUNT(*) FROM {$P}api_token WHERE id = $idTokenTablero AND foto_desde IS NOT NULL") === 0);
 
 // ---- Sin la tabla de los tokens ---------------------------------------------------------
 // Lo que pasa si la base no se pudo poner al día sola. La marca de «al día» se
@@ -4872,6 +5013,34 @@ comprobar('y la API responde 503 en JSON, explicando por qué', $apiSinTabla, $a
 $pedirApi($api, '/api/v1/perfiles?token=' . $tokenTablero);
 comprobar('con la tabla de vuelta, todo sigue como estaba', $api->codigo === 200);
 
+// ---- Sin la columna de la fotografía --------------------------------------------------
+// Si la base no pudo agregarla sola —su usuario no puede alterar tablas—, los
+// tokens se siguen creando y usando sin la foto, y la pantalla dice qué falta.
+@touch($RAIZ . '/almacen/registro/esquema-al-dia.php');
+$pdo->exec("ALTER TABLE {$P}api_token DROP COLUMN foto_desde");
+$html = $jefa->get('/admin/configuracion/api');
+$pantallaSinColumna = $jefa->codigo === 200 && !str_contains($html, 'name="foto"')
+    && !str_contains($html, 'la fotografía</button>') && str_contains($html, 'la base de datos tiene que ponerse al día');
+$tokensAntes = $cuenta("SELECT COUNT(*) FROM {$P}api_token");
+$jefa->post('/admin/configuracion/api/crear', ['nombre' => 'Con foto y sin la columna', 'alcance' => 'basico', 'foto' => '1'], false);
+$conFotoSinColumna = $jefa->codigo === 303 && str_ends_with($jefa->cabecera('Location'), '/admin')
+    && $cuenta("SELECT COUNT(*) FROM {$P}api_token") === $tokensAntes;
+$jefa->get('/admin/configuracion/api');
+$tokenSinColumna = $tokenDeLaPantalla($jefa->post('/admin/configuracion/api/crear',
+    ['nombre' => 'Sin la columna', 'alcance' => 'basico']));
+$pedirApi($api, '/api/v1/personas?por=5&token=' . $tokenSinColumna);
+$apiSinColumna = $api->codigo === 200 && !str_contains($api->cuerpo, '"foto"');
+$r = $pedirApi($visitante, $enlaceTablero);
+$fotoSinColumna = $visitante->codigo === 503 && ($r['error']['titulo'] ?? '') === 'API no disponible';
+$pdo->exec("ALTER TABLE {$P}api_token ADD COLUMN foto_desde DATETIME(6) NULL AFTER alcance");
+comprobar('sin la columna de la fotografía, la pantalla no la ofrece y dice qué falta', $pantallaSinColumna);
+comprobar('pedirla lleva al panel, donde está el botón, sin crear el token', $conFotoSinColumna,
+    $jefa->codigo . ' → ' . $jefa->cabecera('Location'));
+comprobar('y los tokens sin la foto se crean y consultan como siempre', strlen($tokenSinColumna) === 64 && $apiSinColumna);
+comprobar('un enlace de fotografía responde 503 en JSON, explicando por qué', $fotoSinColumna, (string) $visitante->codigo);
+$jefa->get('/admin/configuracion/api');
+$jefa->post('/admin/configuracion/api/revocar', ['token' => (string) $idDeToken($tokenSinColumna)]);
+
 // ---- Rastro ---------------------------------------------------------------------------------
 // Ni siquiera su comienzo: la traza de un error lleva los argumentos de cada
 // llamada, y con el fallo de arriba el token podía quedar escrito a medias.
@@ -4879,7 +5048,7 @@ $registros = implode('', array_map('file_get_contents', glob($RAIZ . '/almacen/r
 $bitacoraEntera = implode("\n", $pdo->query("SELECT CONCAT(accion, ' ', COALESCE(detalle, '')) FROM {$P}bitacora")
     ->fetchAll(PDO::FETCH_COLUMN));
 $rastro = false;
-foreach ([$tokenSitio, $tokenTablero] as $t) {
+foreach ([$tokenSitio, $tokenTablero, $tokenFotos, $tokenSinColumna] as $t) {
     $rastro = $rastro || str_contains($registros, substr($t, 0, 12)) || str_contains($bitacoraEntera, substr($t, 0, 12));
 }
 comprobar('los tokens no quedan escritos, ni a medias, en los registros de la aplicación ni en la bitácora',

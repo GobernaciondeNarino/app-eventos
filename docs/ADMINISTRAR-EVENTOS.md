@@ -887,6 +887,9 @@ En **Configuración → API**, escribe para qué sistema es y elige qué datos p
 - **Con correo y teléfono**: lo mismo, y además cómo contactar a cada persona. Solo para
   sistemas de la propia organización.
 
+Aparte, la casilla **Incluir el enlace de la fotografía** (desde la 3.16) hace que cada persona
+traiga la dirección de su foto. Ver 12.3.
+
 Al pulsar **Crear token** aparece el token, con consultas de ejemplo que ya lo llevan puesto.
 **Es la única vez que se ve**: cópialo y entrégalo por un canal seguro a quien administra ese
 sistema. En la base queda solo su huella; si se pierde, se crea otro y se revoca el viejo.
@@ -901,7 +904,27 @@ cuando un sistema ya no lo necesite, cuando cambie quien lo administra o si el t
 haberse filtrado —se pegó en un chat, quedó en un correo reenviado, se publicó en una página—.
 Un token revocado queda en la lista, marcado, para saber que existió.
 
-### 12.3 Qué decirle a quien lo va a usar
+### 12.3 La fotografía
+
+Desde la 3.16, a un token se le puede dar el **enlace de la fotografía** de cada persona: al
+crearlo, con la casilla, o después, con **Incluir la fotografía** junto a cada token vigente. No
+cambia el token: desde la consulta siguiente, cada persona trae su enlace. Los tokens que ya
+existían siguen sin la foto hasta que alguien se la incluya. En la lista, los que la tienen
+llevan la etiqueta **Con fotografía**.
+
+Ese enlace **se abre sin el token**, así que el sitio web lo puede poner tal cual en su página.
+Deja de servir cuando:
+
+- pulsas **Quitar la fotografía** en ese token —si se la vuelves a incluir, recibe enlaces
+  nuevos; los de antes ya no sirven—,
+- revocas el token, o
+- la persona cambia de foto.
+
+Dáselo solo al sistema que de verdad va a mostrar fotos. La foto es un dato personal: quien la
+publique debería mostrar solo la de quien aceptó aparecer en el directorio del evento
+(`en_directorio`), o la de los expositores que lo autorizaron.
+
+### 12.4 Qué decirle a quien lo va a usar
 
 - La dirección es `https://tic.narino.gov.co/cumbreAI/api/v1`. Abierta con el token, dice todo lo
   que se puede consultar y con qué filtros.
@@ -909,11 +932,14 @@ Un token revocado queda en la lista, marcado, para saber que existió.
   servidor. Mejor en la cabecera `Authorization: Bearer …` que en la dirección.
 - Son datos personales. Quien muestre nombres en otro sitio debería respetar `en_directorio`, si
   la persona aceptó aparecer en el directorio del evento.
-- Cada token admite 600 consultas cada diez minutos.
+- Cada token admite 600 consultas cada diez minutos. Ver una foto no cuenta.
+- Si tiene la fotografía: el enlace de cada foto cambia cuando la persona cambia de foto, así que
+  hay que tomarlo de la API cada vez que se actualicen los datos, no guardarlo para siempre.
 
-### 12.4 Lo que nunca sale por ahí
+### 12.5 Lo que nunca sale por ahí
 
-El número de identificación, la caracterización, la foto, lo que el comité le escribe al
-expositor y sus requerimientos. Ni con el alcance de contacto.
+El número de identificación, la caracterización, lo que el comité le escribe al expositor y sus
+requerimientos. Ni con el alcance de contacto. La fotografía, solo a un token con ese permiso.
 
-Quién creó y quién revocó cada token queda en la bitácora del panel.
+Quién creó y quién revocó cada token, y quién le incluyó o le quitó la fotografía, queda en la
+bitácora del panel.

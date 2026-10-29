@@ -1,6 +1,7 @@
 # API de consulta
 
-Plataforma de Eventos TIC · versión 1 de la API, desde la 3.14
+Plataforma de Eventos TIC · versión 1 de la API, desde la 3.14; el enlace de la fotografía, desde
+la 3.16
 
 Para que otro sistema —el sitio web de la Secretaría, un tablero, otra dependencia— consulte en
 JSON quiénes se registraron al evento: expositores, participantes y los demás perfiles, con
@@ -84,6 +85,7 @@ Quien tenga el token puede consultar los registros. Por eso:
   lea sus respuestas.
 - Entrégalo por un canal seguro a quien administra ese sistema, no por un grupo de chat.
 - Si se filtró, **revócalo** en Configuración → API y crea otro. Deja de servir en el acto.
+- Los enlaces de la fotografía (2.6) sí pueden ir en una página pública: no llevan el token.
 
 En la base de datos queda solo la huella SHA-256 de cada token, no el token: quien lea la base
 no puede usarlo. Por eso no se puede volver a mostrar; si se pierde, se crea otro.
@@ -95,6 +97,55 @@ no puede usarlo. Por eso no se puede volver a mostrar; si se pierde, se crea otr
 - **20 intentos con un token que no sirve, en 5 minutos, desde la misma dirección IP**, bloquean
   esos intentos 15 minutos (`429`). Un sistema con un token vigente, desde esa misma dirección,
   sigue funcionando.
+- Abrir el enlace de una fotografía (2.6) **no cuenta** como consulta: una página con cincuenta
+  expositores pide cincuenta imágenes cada vez que alguien la abre.
+
+### 2.6 La fotografía
+
+Aparte del alcance, a un token se le puede dar **el enlace de la fotografía** de cada persona:
+al crearlo, con la casilla **Incluir el enlace de la fotografía**, o después, con el botón
+**Incluir la fotografía** de la lista de tokens, sin cambiar el token. El botón **Quitar la
+fotografía** lo deshace. Los tokens creados antes de la 3.16 no lo tienen.
+
+Con el permiso, cada persona trae el campo `foto`: el enlace a la suya, o `null` si no tiene.
+Sin el permiso, el campo no aparece. `/api/v1` dice en `"fotografia": true` o `false` si el token
+lo tiene.
+
+```json
+"foto": "https://tic.narino.gov.co/cumbreAI/api/v1/fotos/128/3/9f2c41d07b5e8a63c1f0e27d4b98a5e1"
+```
+
+El enlace:
+
+- **Se abre sin el token.** Va firmado para ese token —la firma es la llave—, así que se pone tal
+  cual en una página pública, `<img src="…">`, y el token sigue sin salir del servidor (2.4).
+- Responde la imagen —JPEG, cuadrada— con `Cache-Control: private, max-age=86400`: el navegador
+  de quien visita la guarda un día; los proxies y las CDN, no.
+- Pide a los buscadores que no la indexen (`X-Robots-Tag: noindex, noimageindex`).
+- **Deja de servir** —responde `404`— si se revoca el token, si se le quita el permiso o si la
+  persona cambia de foto. Si se le vuelve a dar el permiso, el token recibe **enlaces nuevos**:
+  los de antes no reviven. Por eso no conviene guardarlo para siempre: cada vez que el sistema
+  actualice sus datos desde la API, toma el enlace que venga.
+- Con la firma, la persona o el token cambiados responde `404`, igual que una persona sin foto.
+  No se arma a mano: la firma solo la calcula la plataforma.
+
+En la página del sitio web, por ejemplo con PHP —los datos ya traídos de la API desde el
+servidor, como en 5—:
+
+```php
+<?php foreach ($expositores as $p): if (!$p['en_directorio']) continue; ?>
+  <figure>
+    <?php if ($p['foto'] !== null): ?>
+      <img src="<?= htmlspecialchars($p['foto']) ?>" alt="" width="160" height="160" loading="lazy">
+    <?php endif; ?>
+    <figcaption><?= htmlspecialchars($p['nombre']) ?></figcaption>
+  </figure>
+<?php endforeach; ?>
+```
+
+**La foto es un dato personal.** Publica solo la de quien lo autorizó: `en_directorio` dice quién
+aceptó aparecer en el directorio del evento. Quien quiera guardar copia de las fotos en su propio
+sistema las baja con el mismo enlace; cada una llega como `foto-ID.jpg`.
 
 ---
 
@@ -175,6 +226,11 @@ enviado. Cada uno con su propuesta y, si ya está en la agenda, su día, hora y 
 | `dir`, `pagina`, `por`, `evento` | Como en `/personas` | |
 
 La agenda que entrega es la misma que la pública: solo lo publicado.
+
+### 3.5 `GET /api/v1/fotos/{persona}/{token}/{firma}` — la fotografía
+
+El enlace que llega en `foto` con el permiso de la fotografía (2.6). No lleva el token ni
+filtros, y responde la imagen, no JSON; cuando no sirve, el error sí llega en JSON (6).
 
 ---
 
@@ -257,6 +313,7 @@ Colombia (`2026-10-21T14:49:29-05:00`).
 | `correo` | Solo con alcance de contacto |
 | `telefono` | Solo con alcance de contacto; `null` si no lo dio |
 | `comparte_telefono` | Solo con alcance de contacto: si autorizó compartir el teléfono con otros asistentes |
+| `foto` | Solo si el token tiene el permiso de la fotografía (2.6): el enlace a la suya, o `null` si no tiene |
 | `propuesta` | La más reciente, o `null` si no ha enviado ninguna |
 | `propuesta.estado` | `pendiente`, `observada` (devuelta para corregir), `aprobada` o `rechazada` |
 | `propuesta.dia_preferido` | El día que pidió, o `null` |
@@ -351,7 +408,7 @@ Siempre con la misma forma, y con un mensaje en español que dice qué hacer:
 |---|---|
 | `400` | Un filtro que no existe o con un valor que no se entiende. El mensaje dice los valores válidos |
 | `401` | Falta el token, no existe o fue revocado |
-| `404` | La consulta no existe, o el evento pedido con `evento=` |
+| `404` | La consulta no existe, el evento pedido con `evento=`, o un enlace de fotografía que no sirve (2.6) |
 | `405` | Se usó otro método que no es `GET` |
 | `429` | Pasó el tope de consultas del token, o demasiados intentos con tokens que no sirven. Esperar lo que diga `Retry-After` (segundos) |
 | `500` | Un fallo inesperado. Queda anotado en el registro de errores de la plataforma |
@@ -366,11 +423,12 @@ Con ningún alcance:
 - El **número de identificación**. En la base va cifrado, y la API no lo descifra.
 - La **caracterización**: etnia, género, discapacidad y demás. Son datos sensibles (Ley 1581 de
   2012, art. 5).
-- La **foto** del carnet.
 - Lo que el **comité** le escribe al expositor al devolver una propuesta, y los **requerimientos**
   técnicos de la exposición.
 - Ningún **token** ni **código**: ni el del QR del carnet, ni los de acceso, ni el de los días.
 - Ninguna **contraseña**, ni su huella.
+
+La **fotografía** sale solo como enlace, y solo a un token con ese permiso (2.6).
 
 Lo que sí sale son datos personales. El sistema que los recibe pasa a tratarlos en nombre de la
 Gobernación: solo para lo que se pidió el token, y con el mismo cuidado que aquí.

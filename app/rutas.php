@@ -163,6 +163,7 @@ $enrutador->post('/admin/configuracion/expositores/enlace', [Configuracion::clas
 $enrutador->get('/admin/configuracion/api', [Configuracion::class, 'api'], 'admin:administrador');
 $enrutador->post('/admin/configuracion/api/crear', [Configuracion::class, 'crearTokenApi'], 'admin:administrador');
 $enrutador->post('/admin/configuracion/api/revocar', [Configuracion::class, 'revocarTokenApi'], 'admin:administrador');
+$enrutador->post('/admin/configuracion/api/foto', [Configuracion::class, 'fotoTokenApi'], 'admin:administrador');
 $enrutador->ambos('/admin/cuenta', [Cuenta::class, 'ver'], 'admin:consulta');
 
 // Aplica al esquema lo que falte para esta versión del código. Solo agrega
@@ -244,6 +245,9 @@ $enrutador->get('/api/v1', [Api::class, 'indice']);
 $enrutador->get('/api/v1/perfiles', [Api::class, 'perfiles']);
 $enrutador->get('/api/v1/personas', [Api::class, 'personas']);
 $enrutador->get('/api/v1/expositores', [Api::class, 'expositores']);
+// La fotografía de una persona, con el enlace firmado que entrega la API: se
+// puede poner en una página sin el token. Ver Api::foto().
+$enrutador->get('/api/v1/fotos/{persona:num}/{clave:num}/{firma:token}', [Api::class, 'foto']);
 
 /* =========================================================================
    Archivos subidos

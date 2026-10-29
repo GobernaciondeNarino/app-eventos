@@ -16,6 +16,7 @@ use App\Nucleo\Orden;
 use App\Nucleo\Paginacion;
 use App\Nucleo\Peticion;
 use App\Nucleo\Registro;
+use App\Nucleo\Respuesta;
 use App\Nucleo\Url;
 
 /**
@@ -27,9 +28,10 @@ use App\Nucleo\Url;
  * la dirección queda escrita en los registros del servidor web.
  *
  * Lo que nunca sale por aquí: el número de identificación, la caracterización
- * —datos sensibles, Ley 1581 art. 5—, la foto, las observaciones del comité ni
- * ningún token de acceso. El correo y el teléfono, solo con un token creado
- * con alcance «contacto».
+ * —datos sensibles, Ley 1581 art. 5—, las observaciones del comité ni ningún
+ * token de acceso. El correo y el teléfono, solo con un token creado con
+ * alcance «contacto»; el enlace de la fotografía, solo con un token que tenga
+ * ese permiso (ver foto()).
  *
  * Los filtros van en la dirección y son todos opcionales. Uno que no se
  * entiende —un nombre mal escrito, un valor que no existe— responde 400
@@ -59,7 +61,8 @@ final class Api
     /** GET /api/v1 — qué se puede consultar y con qué filtros. */
     public function indice(Peticion $peticion): void
     {
-        $conContacto = $this->autenticar($peticion)['alcance'] === 'contacto';
+        $token = $this->autenticar($peticion);
+        $conContacto = $token['alcance'] === 'contacto';
         $this->admitir($peticion, $this->filtros('indice', $conContacto));
         $evento = $this->evento($peticion);
 
@@ -67,6 +70,8 @@ final class Api
             'api'      => 'Plataforma de Eventos TIC · API de consulta',
             'version'  => 1,
             'alcance'  => $conContacto ? 'contacto' : 'basico',
+            // Si cada persona trae el enlace de su fotografía.
+            'fotografia' => TokenApi::daFoto($token),
             'evento'   => $this->datosEvento($evento),
             'eventos'  => array_map(static fn(array $e): array => [
                 'id' => (int) $e['id'], 'nombre' => (string) $e['nombre'], 'fecha_inicio' => (string) $e['fecha_inicio'],
@@ -116,7 +121,8 @@ final class Api
     /** GET /api/v1/personas */
     public function personas(Peticion $peticion): void
     {
-        $conContacto = $this->autenticar($peticion)['alcance'] === 'contacto';
+        $token = $this->autenticar($peticion);
+        $conContacto = $token['alcance'] === 'contacto';
         $this->admitir($peticion, $this->filtros('personas', $conContacto));
         $evento = $this->evento($peticion);
         $eventoId = (int) $evento['id'];
@@ -183,13 +189,14 @@ final class Api
 
         $orden = $this->orden($peticion, Persona::columnasDeOrden($eventoId) + ['registro' => ['p.creado_en']]);
 
-        $this->listar($peticion, $evento, $donde, $parametros, $aplicados, $orden, '', $conContacto);
+        $this->listar($peticion, $evento, $donde, $parametros, $aplicados, $orden, '', $token);
     }
 
     /** GET /api/v1/expositores */
     public function expositores(Peticion $peticion): void
     {
-        $conContacto = $this->autenticar($peticion)['alcance'] === 'contacto';
+        $token = $this->autenticar($peticion);
+        $conContacto = $token['alcance'] === 'contacto';
         $this->admitir($peticion, $this->filtros('expositores', $conContacto));
         $evento = $this->evento($peticion);
         $eventoId = (int) $evento['id'];
@@ -236,7 +243,65 @@ final class Api
             'jornada'  => [['dc.numero', 'c.hora_inicio'], 'dc.numero IS NULL'],
         ]);
 
-        $this->listar($peticion, $evento, $donde, $parametros, $aplicados, $orden, self::UNION_PROPUESTA, $conContacto);
+        $this->listar($peticion, $evento, $donde, $parametros, $aplicados, $orden, self::UNION_PROPUESTA, $token);
+    }
+
+    /**
+     * GET /api/v1/fotos/{persona}/{clave}/{firma} — la fotografía de una persona.
+     *
+     * Es el enlace que entrega la API en «foto». No lleva el token: la firma es
+     * la llave. Así se puede poner tal cual en una página —un <img> del sitio
+     * web— sin que el token quede a la vista de quien la visita.
+     *
+     * La firma sale del token —su número y la fecha de su permiso— y del
+     * archivo de la foto (TokenApi::firmaFoto): el enlace deja de servir al
+     * revocar el token, al quitarle el permiso de la fotografía —y no revive si
+     * se le vuelve a dar— o cuando la persona cambia de foto.
+     * Uno que no cuadra responde 404, igual que una persona sin foto: no se dice
+     * por qué.
+     *
+     * No se corta por IP a quien pide enlaces que no sirven, como con los
+     * tokens: una firma de 128 bits no se adivina, y quien pide enlaces viejos
+     * suele ser el visitante de una página que todavía no se ha puesto al día.
+     * Con tope, toda una oficina detrás de la misma IP se quedaría sin las
+     * fotos que sí sirven.
+     *
+     * Ver una foto no cuenta como consulta del token: una página con cincuenta
+     * expositores pediría cincuenta imágenes cada vez que alguien la abre.
+     */
+    public function foto(Peticion $peticion, array $parametros): void
+    {
+        $personaId = (int) $parametros['persona'];
+        $tokenId = (int) $parametros['clave'];
+        try {
+            $token = TokenApi::vigenteConFoto($tokenId);
+            $persona = $token !== null
+                ? Bd::fila('SELECT id, foto, foto_tipo FROM {persona} WHERE id = ?', [$personaId])
+                : null;
+        } catch (\Throwable $e) {
+            Registro::excepcion($e);
+            $this->error(503, 'API no disponible', 'La base de datos de la plataforma todavía no se ha actualizado '
+                . 'para la API. Quien la administra lo resuelve desde el panel.');
+        }
+
+        $archivo = (string) ($persona['foto'] ?? '');
+        if ($token === null || $archivo === ''
+            || !hash_equals(TokenApi::firmaFoto($token, $personaId, $archivo), (string) $parametros['firma'])) {
+            $this->error(404, 'Sin fotografía', 'El enlace no existe o ya no sirve. Pide los datos otra vez a la API.');
+        }
+
+        // Se puede mostrar en otro sitio —para eso es—, pero los buscadores no
+        // la guardan: la cara de quien asistió no tiene por qué salir en una
+        // búsqueda de imágenes.
+        header('Cross-Origin-Resource-Policy: cross-origin');
+        header('X-Robots-Tag: noindex, nofollow, noimageindex');
+
+        // basename() aunque el nombre lo ponga el servidor, como en Medios::foto().
+        // Quien guarde la imagen la recibe como foto-14.jpg, no con el nombre
+        // interno del archivo.
+        Respuesta::archivo(RAIZ . '/almacen/fotos/' . basename($archivo),
+            (string) ($persona['foto_tipo'] ?? '') ?: 'image/jpeg', true,
+            'foto-' . $personaId . '.' . (pathinfo($archivo, PATHINFO_EXTENSION) ?: 'jpg'));
     }
 
     /* =====================================================================
@@ -381,7 +446,7 @@ final class Api
         array $aplicados,
         Orden $orden,
         string $uniones,
-        bool $conContacto
+        array $token
     ): never {
         $eventoId = (int) $evento['id'];
         // La propuesta entra en la consulta solo donde se filtra u ordena por
@@ -395,7 +460,7 @@ final class Api
 
         $filas = Bd::filas(
             'SELECT p.id, p.evento_id, p.nombre, p.correo, p.telefono, p.comparte_telefono, p.entidad,
-                    p.municipio, p.departamento, p.rol, p.documento_huella, p.en_directorio, p.creado_en,
+                    p.municipio, p.departamento, p.rol, p.documento_huella, p.en_directorio, p.creado_en, p.foto,
                     (SELECT cr.codigo FROM {credencial} cr
                       WHERE cr.persona_id = p.id AND cr.revocada_en IS NULL ORDER BY cr.id DESC LIMIT 1) AS carnet,
                     (SELECT GROUP_CONCAT(d.numero ORDER BY d.numero) FROM {asistencia} a
@@ -424,7 +489,7 @@ final class Api
                 'anterior'   => $paginacion->pagina > 1 ? min($paginacion->pagina - 1, $paginas) : null,
             ],
             'datos'      => array_map(
-                fn(array $f): array => $this->persona($f, $propuestas[(int) $f['id']] ?? null, $conContacto, $exigeDocumento),
+                fn(array $f): array => $this->persona($f, $propuestas[(int) $f['id']] ?? null, $token, $exigeDocumento),
                 $filas
             ),
         ]);
@@ -458,8 +523,9 @@ final class Api
     }
 
     /** Una persona como sale por la API. Lo que no está aquí, no sale. */
-    private function persona(array $p, ?array $propuesta, bool $conContacto, bool $exigeDocumento): array
+    private function persona(array $p, ?array $propuesta, array $token, bool $exigeDocumento): array
     {
+        $conContacto = $token['alcance'] === 'contacto';
         $item = [
             'id'                => (int) $p['id'],
             'nombre'            => (string) $p['nombre'],
@@ -475,6 +541,14 @@ final class Api
             'en_directorio'     => (int) $p['en_directorio'] === 1,
             'registrado_en'     => $this->fechaIso((string) $p['creado_en']),
         ];
+
+        // El enlace de la fotografía, firmado para este token: sirve sin el
+        // token y se puede poner tal cual en una página. null si no tiene foto.
+        if (TokenApi::daFoto($token)) {
+            $archivo = (string) ($p['foto'] ?? '');
+            $item['foto'] = $archivo === '' ? null : Url::absoluta('/api/v1/fotos/' . (int) $p['id'] . '/'
+                . (int) $token['id'] . '/' . TokenApi::firmaFoto($token, (int) $p['id'], $archivo));
+        }
 
         if ($conContacto) {
             $item['correo'] = (string) $p['correo'];

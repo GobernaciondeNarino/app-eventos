@@ -24,7 +24,7 @@ registra gente, se sella asistencia, se aprueban exposiciones y se exportan repo
 | **Instalación** | Asistente de seis pasos que crea, actualiza o anexa las tablas. Al subir una versión nueva, la base se pone al día sola en la primera visita |
 | **Autenticación** | Cinco formas de entrar: correo, QR personal, contraseña, WhatsApp y SMS. Se puede crear el acceso con solo correo y contraseña. El equipo, con contraseña y segundo factor. Quien olvida su contraseña la recupera con un enlace al correo, y un administrador puede enviárselo desde el panel |
 | **Códigos QR** | Generador **y lector** propios, verificados uno contra otro y contra una librería de referencia |
-| **API** | Consulta en JSON de expositores, participantes y demás perfiles, con filtros en la dirección y un token por cada sistema que consulta, que se crea y se revoca en Configuración → API. Solo lee, y nunca entrega la identificación ni la caracterización |
+| **API** | Consulta en JSON de expositores, participantes y demás perfiles, con filtros en la dirección y un token por cada sistema que consulta, que se crea y se revoca en Configuración → API. Solo lee, y nunca entrega la identificación ni la caracterización; la fotografía, como enlace, solo a un token con ese permiso |
 | **Pruebas** | 844 comprobaciones de extremo a extremo, 160 de actualización desde la 1.0.0, 149 en navegador, y 641 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy y formulario de registro |
 
 ---
@@ -149,7 +149,9 @@ registraron, en **`/api/v1`**: `/personas` (todos los perfiles), `/expositores` 
 y su lugar en la agenda) y `/perfiles`, con filtros en la dirección
 (`/api/v1/expositores?estado=aprobada&orden=jornada`). Cada sistema usa su propio token, que un
 administrador crea y revoca en **Configuración → API**; el correo y el teléfono, solo con un token
-que lo permita. Ver [`docs/API.md`](docs/API.md).
+que lo permita. También el enlace de la fotografía de cada persona, para ponerlo tal cual en una
+página: se abre sin el token y solo lo recibe un token con ese permiso. Ver
+[`docs/API.md`](docs/API.md).
 
 Si el código de la aplicación no entra, la pantalla dice por qué —ya se usó, el reloj del
 servidor está corrido, la configuración no se puede leer— y ofrece entrar con un código que

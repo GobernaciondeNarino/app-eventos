@@ -15,7 +15,7 @@ use App\Nucleo\Bd;
  */
 final class Esquema
 {
-    public const VERSION = '1.12.0';
+    public const VERSION = '1.13.0';
 
     /**
      * Columnas que ya existen pero cambiaron de tipo.
@@ -525,6 +525,14 @@ final class Esquema
                     // 'basico': sin datos de contacto. 'contacto': además
                     // correo y teléfono.
                     'alcance'        => "ENUM('basico','contacto') NOT NULL DEFAULT 'basico'",
+                    // 1.13.0. Desde cuándo la API le da a este token el enlace
+                    // de la fotografía de cada persona; NULL si no se lo da.
+                    // Aparte del alcance: un sitio web puede querer las fotos y
+                    // no el correo de nadie. La fecha entra en la firma de los
+                    // enlaces: los que se entregaron antes de quitar el permiso
+                    // no vuelven a servir aunque se dé otra vez. Con
+                    // microsegundos, para que eso valga aun en el mismo segundo.
+                    'foto_desde'     => 'DATETIME(6) NULL',
                     'creado_por'     => 'INT UNSIGNED NULL',
                     'creado_en'      => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
                     'ultimo_uso_en'  => 'DATETIME NULL',

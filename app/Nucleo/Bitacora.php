@@ -153,7 +153,11 @@ final class Bitacora
                 . (($detalle['origen'] ?? '') === 'panel' ? ' que le envió la administración' : ''),
             'api_token_creado'   => "$quien creó un token de la API"
                 . (isset($detalle['nombre']) ? ' para «' . $detalle['nombre'] . '»' : '')
-                . (($detalle['alcance'] ?? '') === 'contacto' ? ', con correo y teléfono' : ''),
+                . (($detalle['alcance'] ?? '') === 'contacto' ? ', con correo y teléfono' : '')
+                . (!empty($detalle['foto']) ? ', con la fotografía' : ''),
+            'api_token_foto'     => "$quien " . (!empty($detalle['permitida'])
+                    ? 'incluyó la fotografía en el token de la API' : 'quitó la fotografía del token de la API')
+                . (isset($detalle['nombre']) ? ' de «' . $detalle['nombre'] . '»' : ''),
             'api_token_revocado' => "$quien revocó un token de la API"
                 . (isset($detalle['nombre']) ? ': el de «' . $detalle['nombre'] . '»' : ''),
             'usuario_restablecido' => 'Se restableció el acceso de una cuenta administradora',

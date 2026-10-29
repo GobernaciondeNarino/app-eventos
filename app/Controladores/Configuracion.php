@@ -83,6 +83,8 @@ final class Configuracion
             'tokenNuevo' => (string) ($parametros['tokenNuevo'] ?? ''),
             'nombreNuevo' => (string) ($parametros['nombreNuevo'] ?? ''),
             'alcanceNuevo' => (string) ($parametros['alcanceNuevo'] ?? ''),
+            'fotoNuevo'  => (bool) ($parametros['fotoNuevo'] ?? false),
+            'fotoDisponible' => $this->fotoDisponible(),
             'base'       => Url::absoluta('/api/v1'),
         ]);
     }
@@ -101,10 +103,15 @@ final class Configuracion
             Respuesta::redirigir('/admin/configuracion/api', 'Elige qué datos puede consultar.', 'warn');
         }
 
-        $token = \App\Modelos\TokenApi::crear($nombre, $alcance, (int) Guardia::usuarioActual()['id']);
+        $conFoto = $peticion->campo('foto') === '1';
+        if ($conFoto) {
+            $this->exigirColumnaFoto();
+        }
+        $token = \App\Modelos\TokenApi::crear($nombre, $alcance, $conFoto, (int) Guardia::usuarioActual()['id']);
 
         // Se pinta en esta misma respuesta, una sola vez.
-        $this->api($peticion, ['tokenNuevo' => $token, 'nombreNuevo' => $nombre, 'alcanceNuevo' => $alcance]);
+        $this->api($peticion, ['tokenNuevo' => $token, 'nombreNuevo' => $nombre, 'alcanceNuevo' => $alcance,
+            'fotoNuevo' => $conFoto]);
     }
 
     public function revocarTokenApi(Peticion $peticion): void
@@ -114,6 +121,21 @@ final class Configuracion
         Respuesta::redirigir('/admin/configuracion/api', $revocado
             ? 'Token revocado: desde ahora la API lo rechaza. Los demás siguen funcionando.'
             : 'Ese token ya estaba revocado o no existe.', $revocado ? 'ok' : 'warn');
+    }
+
+    /** Da o quita a un token el enlace de la fotografía, sin cambiar el token. */
+    public function fotoTokenApi(Peticion $peticion): void
+    {
+        $this->exigirTablaApi();
+        $this->exigirColumnaFoto();
+        $permitir = $peticion->campo('permitir') === '1';
+        $hecho = \App\Modelos\TokenApi::permitirFoto($peticion->entero('token'), $permitir);
+        Respuesta::redirigir('/admin/configuracion/api', !$hecho
+            ? 'Ese token no existe, ya estaba revocado o ya estaba así.'
+            : ($permitir
+                ? 'Listo: desde la próxima consulta, cada persona trae el enlace de su fotografía.'
+                : 'Listo: la API ya no da la fotografía con ese token, y los enlaces que había entregado dejan de servir.'),
+            $hecho ? 'ok' : 'warn');
     }
 
     /**
@@ -126,6 +148,25 @@ final class Configuracion
     {
         if (!Bd::existeTabla('api_token')) {
             Respuesta::redirigir('/admin', 'La API necesita una tabla nueva en la base de datos. '
+                . 'Pulsa «Actualizar la base de datos» en el aviso de arriba y vuelve a Configuración → API.', 'warn');
+        }
+    }
+
+    /**
+     * El permiso de la fotografía es una columna de la 1.13.0. Si la base no
+     * se pudo poner al día sola —su usuario no puede alterar tablas—, los
+     * tokens se siguen creando y usando sin la foto; para dársela, primero el
+     * botón del panel.
+     */
+    private function fotoDisponible(): bool
+    {
+        return Bd::existeColumna('api_token', 'foto_desde');
+    }
+
+    private function exigirColumnaFoto(): void
+    {
+        if (!$this->fotoDisponible()) {
+            Respuesta::redirigir('/admin', 'Para el enlace de la fotografía, la base de datos tiene que ponerse al día. '
                 . 'Pulsa «Actualizar la base de datos» en el aviso de arriba y vuelve a Configuración → API.', 'warn');
         }
     }

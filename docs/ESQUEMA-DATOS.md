@@ -1,6 +1,6 @@
 # Esquema de datos
 
-Plataforma de Eventos TIC · versión del esquema **1.13.0**
+Plataforma de Eventos TIC · versión del esquema **1.14.0**
 
 > Documento generado con `php herramientas/generar-doc-esquema.php` a partir de
 > `app/Esquema.php`, la misma definición que el instalador usa para crear y actualizar
@@ -15,7 +15,7 @@ poder compartir la base con otras aplicaciones del alojamiento.
 |---|---:|---|
 | `evt_evento` | 9 | Un registro por evento. La plataforma es multievento desde el día uno. |
 | `evt_evento_tema` | 7 | Identidad visual: paleta, tipografía y logo. Es lo que se convierte en variables CSS. |
-| `evt_evento_formulario` | 11 | Cómo es el formulario de registro de cada evento: qué campos pide, las opciones de cada lista y el banner. Lo que no está guardado —campos o listas en NULL, una lista que no aparece— es el de fábrica. |
+| `evt_evento_formulario` | 13 | Cómo es el formulario de registro de cada evento: qué campos pide, las opciones de cada lista, el banner y si recibe registros nuevos. Lo que no está guardado —campos o listas en NULL, una lista que no aparece— es el de fábrica. |
 | `evt_evento_formulario_expositores` | 13 | El formulario de registro privado de los expositores: el mismo formulario, con su propia configuración, al que se llega solo por un enlace con token que se envía aparte. Los perfiles de asistencia son los del formulario público. |
 | `evt_evento_dia` | 9 | Las jornadas. El código QR de acceso cuelga de aquí, no del evento: por eso cambia cada día. |
 | `evt_persona` | 21 | Quien se preregistra. El documento va cifrado, con una huella aparte para detectar duplicados sin descifrar. |
@@ -113,7 +113,7 @@ Llaves e índices:
 
 ### `evt_evento_formulario`
 
-Cómo es el formulario de registro de cada evento: qué campos pide, las opciones de cada lista y el banner. Lo que no está guardado —campos o listas en NULL, una lista que no aparece— es el de fábrica.
+Cómo es el formulario de registro de cada evento: qué campos pide, las opciones de cada lista, el banner y si recibe registros nuevos. Lo que no está guardado —campos o listas en NULL, una lista que no aparece— es el de fábrica.
 
 | Columna | Tipo |
 |---|---|
@@ -126,6 +126,8 @@ Cómo es el formulario de registro de cada evento: qué campos pide, las opcione
 | `banner_titulo` | `VARCHAR(160) NOT NULL DEFAULT ''` |
 | `banner_texto` | `VARCHAR(600) NOT NULL DEFAULT ''` |
 | `banner_alt` | `VARCHAR(200) NOT NULL DEFAULT ''` |
+| `registro_estado` | `VARCHAR(12) NOT NULL DEFAULT 'abierto'` |
+| `registro_mensaje` | `VARCHAR(600) NOT NULL DEFAULT ''` |
 | `actualizado_en` | `DATETIME NULL` |
 | `actualizado_por` | `INT UNSIGNED NULL` |
 

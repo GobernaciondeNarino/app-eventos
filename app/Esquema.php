@@ -15,7 +15,7 @@ use App\Nucleo\Bd;
  */
 final class Esquema
 {
-    public const VERSION = '1.13.0';
+    public const VERSION = '1.14.0';
 
     /**
      * Columnas que ya existen pero cambiaron de tipo.
@@ -147,7 +147,7 @@ final class Esquema
             ],
 
             'evento_formulario' => [
-                'nota' => 'Cómo es el formulario de registro de cada evento: qué campos pide, las opciones de cada lista y el banner. Lo que no está guardado —campos o listas en NULL, una lista que no aparece— es el de fábrica.',
+                'nota' => 'Cómo es el formulario de registro de cada evento: qué campos pide, las opciones de cada lista, el banner y si recibe registros nuevos. Lo que no está guardado —campos o listas en NULL, una lista que no aparece— es el de fábrica.',
                 'columnas' => [
                     'evento_id'       => 'INT UNSIGNED NOT NULL',
                     // JSON: estado de cada campo —oculto, opcional, obligatorio—.
@@ -160,6 +160,16 @@ final class Esquema
                     'banner_titulo'   => "VARCHAR(160) NOT NULL DEFAULT ''",
                     'banner_texto'    => "VARCHAR(600) NOT NULL DEFAULT ''",
                     'banner_alt'      => "VARCHAR(200) NOT NULL DEFAULT ''",
+                    // 1.14.0. Si el registro público recibe a gente nueva:
+                    // 'abierto', 'oculto' —no se anuncia en la portada ni en el
+                    // menú, pero el enlace sigue sirviendo— o 'cerrado'. Texto y
+                    // no ENUM, como el perfil desde la 1.9.0: un estado nuevo no
+                    // tiene que alterar la tabla. Quien ya se registró entra y
+                    // completa sus datos con cualquiera de los tres.
+                    'registro_estado'  => "VARCHAR(12) NOT NULL DEFAULT 'abierto'",
+                    // Lo que se le dice al público mientras no está abierto,
+                    // además del texto de siempre. Vacío, solo ese texto.
+                    'registro_mensaje' => "VARCHAR(600) NOT NULL DEFAULT ''",
                     'actualizado_en'  => 'DATETIME NULL',
                     'actualizado_por' => 'INT UNSIGNED NULL',
                 ],

@@ -5,6 +5,7 @@
  * @var string $contenidoQr @var string $qrAcceso @var string $urlAcceso
  * @var array $historial @var array $persona @var array $tema @var array $dispositivos
  * @var array|null $exposicion  la propuesta de quien expone ([] si no la ha enviado); null si no expone
+ * @var array $faltantes  lo que le falta a su perfil para estar completo
  */
 defined('EVENTOS_TIC') || exit;
 
@@ -127,6 +128,31 @@ guiones('carnet.js');
       ingreso si no alcanzas a escanear el de la puerta, y para intercambiar contacto con
       otros asistentes.
     </p>
+
+    <!-- Lo que más se pregunta en la fila: cómo se entra. -->
+    <div class="notice no-print" data-llevar-carnet>
+      <span class="notice__icon" aria-hidden="true">◆</span>
+      <span class="stack" style="gap:4px">
+        <strong>Lleva tu carnet el día del evento</strong>
+        <span class="help" style="margin:0">
+          Impreso o en el celular: con él ingresas. Si lo quieres en papel o en imagen,
+          <a href="<?= e(u('/carnet/imprimir')) ?>" target="_blank" rel="noopener">imprímelo o descárgalo ›</a>
+        </span>
+      </span>
+    </div>
+
+    <?php if ($faltantes): ?>
+      <a class="notice notice--warn no-print" href="<?= e(u('/registro')) ?>" style="text-decoration:none;color:inherit" data-faltantes>
+        <span class="notice__icon" aria-hidden="true">▲</span>
+        <span class="stack" style="gap:4px">
+          <strong>Completa tu perfil</strong>
+          <span class="help" style="margin:0">
+            Te falta <?= e(enumerar($faltantes)) ?>.<?= in_array('tu foto', $faltantes, true)
+                ? ' Con tu foto en el carnet te reconocen en la entrada.' : '' ?> Completar mi perfil ›
+          </span>
+        </span>
+      </a>
+    <?php endif; ?>
 
     <?php if ($exposicion !== null):
       // Quien expone llega aquí al entrar: aquí ve cómo va su propuesta y el

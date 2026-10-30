@@ -57,7 +57,8 @@ aparte desde *QR por día*.
 | **Cerrado** | Terminó |
 
 El estado es informativo: lo que de verdad decide qué ven los asistentes es cuál está
-**activo**.
+**activo**. Tampoco cierra el registro: para dejar de recibir inscripciones nuevas está
+*Configuración → Registro* (9.9).
 
 ### 2.3 Activar y desactivar
 
@@ -591,7 +592,7 @@ entrada del menú, **Administración → Configuración**, con seis pestañas:
 
 | Pestaña | Qué se configura | Quién |
 |---|---|---|
-| **Registro** | El formulario de registro del evento activo: campos, listas y banner | Administrador |
+| **Registro** | El formulario de registro del evento activo: campos, listas y banner, y si el registro está abierto, oculto o cerrado (9.9) | Administrador |
 | **Registro de expositores** | El formulario privado de los expositores (9.8): su enlace, y sus propios campos, listas y banner | Administrador |
 | **Identidad** | Colores, tipografía y logo del evento, con la revisión de contraste | Administrador |
 | **Acceso y correo** | Las formas de entrar de los asistentes y el envío de correo | Administrador |
@@ -795,6 +796,44 @@ Al revisar una propuesta, el comité puede elegir entre **las categorías y dura
 formularios**: la propuesta pudo llegar por cualquiera. Y el correo de una propuesta **devuelta**
 lleva a «Mi exposición» (4.9), que funciona igual llegue por donde llegue: ahí se corrige y se
 vuelve a enviar, tenga o no el formulario público la sección «Voy a exponer».
+
+### 9.9 Abrir, ocultar o cerrar el registro público
+
+Desde la 3.17, arriba de *Configuración → Registro* está **Registro público**, con tres estados
+y su propio botón, **Guardar el estado del registro**, que no toca los campos ni el banner:
+
+| Estado | Qué ve el público | ¿Se registra alguien nuevo? |
+|---|---|---|
+| **Abierto** (de fábrica) | La portada ofrece registrarse y el menú tiene *Registro*, como siempre | Sí: desde la portada, el menú o el enlace |
+| **Oculto** | La portada, el menú y la pantalla de entrada ya no lo ofrecen | Solo quien tenga el enlace `…/registro` |
+| **Cerrado** | La portada dice que el registro está cerrado, y `…/registro` también | Nadie: ni con el formulario, ni con el enlace, ni creando un acceso |
+
+**Quien ya se registró no pierde nada** con ninguno de los tres: entra con su correo, ve su
+carnet, corrige sus datos y, si solo había creado su acceso, termina su registro.
+
+**Los textos cambian solos.** Con el registro oculto o cerrado, la portada deja de invitar a
+registrarse y le habla a quien ya lo hizo: que entre, **complete su perfil** —sus datos y su
+foto— y **lleve su carnet, impreso o en el celular: con él ingresa al evento**. En los tres
+estados, la portada y el carnet de cada persona le recuerdan llevarlo y le dicen qué le falta
+para tener el perfil completo: su foto, su entidad, su teléfono o su municipio, solo los que el
+formulario pide. La caracterización no se le pide: es opcional por ley.
+
+**El mensaje para el público** es opcional. Lo que escribas —«Cupo completo: el registro cerró el
+25 de octubre»— sale en la portada y en el registro mientras no esté abierto, junto a esos
+textos. Al volver a abrirlo deja de mostrarse, y queda guardado para la próxima vez.
+
+**Cerrado no es solo esconder el botón.** El servidor lo comprueba en cada puerta: el formulario,
+`…/preregistro` —la dirección de los correos viejos—, «Crear mi acceso» y cualquier envío hecho a
+mano. Nadie nuevo queda registrado.
+
+**El formulario de expositores (9.8) no cambia**: su enlace privado sigue funcionando aunque el
+público esté cerrado. Para cerrarlo a él, genera un enlace nuevo y no lo envíes.
+
+Mientras no esté abierto, el **panel** lo recuerda en *Pendientes*, y cada cambio queda en la
+bitácora: quién abrió, ocultó o cerró el registro.
+
+**Para registrar a alguien con el registro cerrado**, pásalo a *Oculto*, envíale el enlace del
+formulario y vuelve a cerrarlo cuando se haya registrado.
 
 ---
 

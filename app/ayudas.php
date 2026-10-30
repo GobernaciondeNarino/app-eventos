@@ -163,6 +163,31 @@ function perfilesDelEvento(?int $eventoId = null): array
 }
 
 /**
+ * Cómo está el registro público de un evento: abierto, oculto o cerrado
+ * (Configuración → Registro, desde la 3.17). Lo leen el menú y las pantallas
+ * públicas. Sin evento, o sin base, abierto: lo que había.
+ */
+function registroPublico(?array $evento): string
+{
+    if ($evento === null) {
+        return 'abierto';
+    }
+    try {
+        return \App\Modelos\Formulario::delEvento((int) $evento['id'])->estadoRegistro();
+    } catch (\Throwable) {
+        return 'abierto';
+    }
+}
+
+/** Una lista en palabras: «tu foto, tu entidad y tu teléfono». */
+function enumerar(array $partes): string
+{
+    $partes = array_values($partes);
+    $ultima = array_pop($partes);
+    return $partes === [] ? (string) $ultima : implode(', ', $partes) . ' y ' . $ultima;
+}
+
+/**
  * La talla del rótulo del perfil en el carnet.
  *
  * Va grande para leerlo a un metro en la fila, y a ese tamaño caben unas doce

@@ -5,12 +5,14 @@
  * @var string $correo @var string $destino @var array $errores
  * @var string $metodo @var array $metodos @var array $catalogo
  * @var bool $puedeCrearCuenta
+ * @var string $registro  abierto, oculto o cerrado: si se ofrece registrarse
  */
 defined('EVENTOS_TIC') || exit;
 
 $metodos = $metodos ?? ['correo'];
 $catalogo = $catalogo ?? [];
 $metodo = $metodo ?? 'correo';
+$registro = $registro ?? 'abierto';
 $varios = count($metodos) > 1;
 
 // Qué dice el botón y la explicación, según por dónde va a llegar.
@@ -102,12 +104,20 @@ $rotuloBoton = match ($metodo) {
 
         <button class="btn btn--primary btn--block btn--lg" type="submit"><?= e($rotuloBoton) ?></button>
 
+        <?php if ($registro === 'cerrado'): ?>
+          <hr class="divider">
+          <p class="help" style="margin:0" data-registro-cerrado>
+            El registro de asistentes nuevos está cerrado. Si ya te registraste, entra aquí,
+            completa tu perfil y lleva tu carnet el día del evento: con él ingresas.
+          </p>
+        <?php elseif ($registro === 'abierto'): ?>
         <hr class="divider">
 
         <?php /* La salida de quien todavía no está inscrito. Va como botón y no
                  como enlace en un párrafo: es la mitad de la gente que llega a
                  esta pantalla, y antes se topaba con un formulario de tres
-                 secciones como única puerta. */ ?>
+                 secciones como única puerta. Oculto o cerrado el registro, no se
+                 ofrece. */ ?>
         <div class="stack stack--2">
           <p class="help" style="margin:0">¿Todavía no te has registrado?</p>
           <?php if ($puedeCrearCuenta): ?>
@@ -122,6 +132,7 @@ $rotuloBoton = match ($metodo) {
             <a class="btn btn--block" href="<?= e(u('/registro')) ?>">Abrir el formulario de registro</a>
           <?php endif; ?>
         </div>
+        <?php endif; ?>
       </div>
     </form>
 

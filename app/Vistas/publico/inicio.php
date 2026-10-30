@@ -3,28 +3,71 @@
  * Portada.
  * @var array $jornadas @var array|null $evento @var array|null $persona
  * @var bool $empezado @var bool $esHoy
+ * @var string $registro         abierto, oculto o cerrado (Configuración → Registro)
+ * @var string $mensajeRegistro  lo que la organización dice mientras no está abierto
+ * @var array  $faltantes        lo que le falta al perfil de quien tiene sesión
  */
 defined('EVENTOS_TIC') || exit;
 
 $total = count($jornadas);
+$abierto = $registro === 'abierto';
+$cuandoEntra = $total > 1 ? 'los ' . e((string) $total) . ' días' : 'el día del evento';
 
 // El texto del botón principal depende de si el evento ya llegó. Mientras
 // faltan días la acción es preregistrarse; el día de la jornada, registrarse.
 $rotuloAlta = $empezado ? 'REGISTRARME' : 'Preregistrarme';
+
+// Con el registro abierto, la portada lo ofrece. Oculto o cerrado, ya no: le
+// habla a quien se registró, para que complete su perfil y lleve el carnet.
+$kicker = match (true) {
+    $registro === 'cerrado' && $persona === null => 'Registro cerrado',
+    $empezado               => 'Evento en curso',
+    $abierto                => 'Fase 01 · Registro',
+    default                 => 'Ingreso al evento',
+};
+$entrada = 'lleva tu carnet ' . ($total > 1 ? 'cada día del evento' : 'el día del evento')
+    . ' —impreso o en el celular—: con él ingresas';
+$lead = match (true) {
+    $abierto && $empezado => 'Si aún no te has registrado, hazlo aquí mismo y en un minuto tienes tu carnet '
+        . 'con el código QR. Si ya lo hiciste, entra y tenlo a mano: con él ingresas.',
+    $abierto => 'Diligencia tu perfil completo antes del evento, con tu foto, y ' . $entrada
+        . ', sin filas ni digitación manual.',
+    // Quien ya entró no necesita que le digan que entre.
+    $persona !== null => 'Completa tu perfil —tus datos y tu foto— y ' . $entrada . '.',
+    default => ($registro === 'cerrado' ? 'El registro ya no recibe inscripciones nuevas. ' : '')
+        . 'Si te registraste, entra con tu correo, completa tu perfil —tus datos y tu foto— y ' . $entrada . '.',
+};
+$pasos = $abierto ? [
+    ['01', 'Regístrate y completa tu perfil', 'Tus datos y tu foto: así sale tu carnet. La caracterización es opcional.'],
+    ['02', 'Recibe tu carnet', 'Llega por correo con un QR personal. Puedes imprimirlo o llevarlo en el celular.'],
+    ['03', 'Llévalo al evento, cada día', 'Es tu entrada: con su código se registra tu ingreso con fecha y hora.'],
+    ['04', 'Intercambia contactos', 'El QR de tu carnet comparte nombre, entidad, correo y teléfono con quien lo escanee.'],
+] : [
+    ['01', 'Entra con tu correo', 'El mismo con el que te registraste: ahí está tu carnet.'],
+    ['02', 'Completa tu perfil', 'Revisa tus datos y sube tu foto: así sale tu carnet y así te reconocen en la entrada.'],
+    ['03', 'Lleva tu carnet, cada día', 'Impreso o en el celular. Es tu entrada: con su código se registra tu ingreso.'],
+    ['04', 'Intercambia contactos', 'El QR de tu carnet comparte nombre, entidad, correo y teléfono con quien lo escanee.'],
+];
 ?>
 <div class="view view--medium stack stack--6">
 
   <div class="split--balanced" style="align-items:center">
-    <div class="stack stack--5">
-      <span class="kicker"><?= $empezado ? 'Evento en curso' : 'Fase 01 · Registro' ?></span>
-      <h1 class="hero-title">Regístrate una vez.<br><em>Entra <?= $total > 1 ? 'los ' . e((string) $total) . ' días' : 'el día del evento' ?>.</em></h1>
-      <p class="lead">
-        <?= $empezado
-          ? 'Si aún no te has registrado, hazlo aquí mismo y en un minuto tienes tu carnet '
-            . 'con el código QR. Si ya lo hiciste, entra y recupéralo.'
-          : 'Diligencia tus datos antes del evento y el día de la jornada solo escaneas el '
-            . 'código de la entrada. Sin filas, sin digitación manual.' ?>
-      </p>
+    <div class="stack stack--5" data-registro="<?= e($registro) ?>">
+      <span class="kicker"><?= e($kicker) ?></span>
+      <?php if ($abierto): ?>
+        <h1 class="hero-title">Regístrate una vez.<br><em>Entra <?= $cuandoEntra ?>.</em></h1>
+      <?php else: ?>
+        <h1 class="hero-title">Lleva tu carnet.<br><em>Con él entras <?= $total > 1 ? $cuandoEntra : 'al evento' ?>.</em></h1>
+      <?php endif; ?>
+      <p class="lead"><?= e($lead) ?></p>
+
+      <?php if ($mensajeRegistro !== ''): ?>
+        <!-- Lo que escribió la organización en Configuración → Registro. -->
+        <div class="notice notice--warn" data-mensaje-registro>
+          <span class="notice__icon" aria-hidden="true">▲</span>
+          <span><?= nl2br(e($mensajeRegistro)) ?></span>
+        </div>
+      <?php endif; ?>
 
       <?php if ($persona !== null && !\App\Modelos\Persona::registroCompleto($persona)): ?>
         <?php /* Creó su acceso y todavía no llenó nada: no tiene carnet que
@@ -33,11 +76,11 @@ $rotuloAlta = $empezado ? 'REGISTRARME' : 'Preregistrarme';
           <div class="card__head"><span>Te falta un paso</span></div>
           <div class="card__body stack stack--3">
             <p class="help" style="margin:0">
-              Tu acceso ya está creado. Con tu nombre y tu identificación te emitimos el
-              carnet con el código QR.
+              Tu acceso ya está creado. Completa tu perfil y te emitimos el carnet con el código
+              QR: lo necesitas para ingresar al evento.
             </p>
             <a class="btn btn--primary btn--block btn--lg" href="<?= e(u('/registro')) ?>">
-              Completar mi registro
+              Completar mi perfil
             </a>
           </div>
         </div>
@@ -45,13 +88,39 @@ $rotuloAlta = $empezado ? 'REGISTRARME' : 'Preregistrarme';
         <div class="card" style="max-width:440px">
           <div class="card__head"><span>Ya estás registrado</span></div>
           <div class="card__body stack stack--3">
-            <p class="help">Tu carnet está listo, <?= e($persona['nombre']) ?>.</p>
+            <p class="help" style="margin:0">
+              Tu carnet está listo, <?= e($persona['nombre']) ?>. Llévalo el día del evento
+              —impreso o en el celular—: con él ingresas.
+            </p>
+            <?php if ($faltantes): ?>
+              <a class="notice" href="<?= e(u('/registro')) ?>" style="text-decoration:none;color:inherit" data-faltantes>
+                <span class="notice__icon" aria-hidden="true">◆</span>
+                <span>Para tener tu perfil completo te falta <?= e(enumerar($faltantes)) ?>. Completar mi perfil ›</span>
+              </a>
+            <?php endif; ?>
             <div class="stack stack--2">
               <a class="btn btn--primary btn--block btn--lg" href="<?= e(u('/carnet')) ?>">Ver mi carnet</a>
               <a class="btn btn--block<?= $esHoy ? ' btn--lg' : '' ?>" href="<?= e(u('/checkin')) ?>">
                 <?= $esHoy ? 'Registrar mi ingreso de hoy' : 'Registrar ingreso' ?>
               </a>
             </div>
+          </div>
+        </div>
+      <?php elseif (!$abierto): ?>
+        <?php /* Sin sesión, con el registro oculto o cerrado: ya no se ofrece
+                 inscribirse. Lo que queda es entrar, completar y llevar el carnet. */ ?>
+        <div class="card" style="max-width:440px">
+          <div class="card__head"><span>¿Ya te registraste?</span></div>
+          <div class="card__body stack stack--4">
+            <p class="help" style="margin:0">
+              Entra con tu correo para ver tu carnet y completar tu perfil.
+              <?= $registro === 'cerrado' ? 'El registro de asistentes nuevos está cerrado.' : '' ?>
+            </p>
+            <a class="btn btn--primary btn--block btn--lg" href="<?= e(u('/entrar')) ?>">Entrar y ver mi carnet</a>
+            <p class="help" style="margin:0">
+              <a href="<?= e(u('/admin/entrar')) ?>" class="mono"
+                 style="font-size:11px;letter-spacing:.12em;text-transform:uppercase">Soy del equipo organizador ›</a>
+            </p>
           </div>
         </div>
       <?php else: ?>
@@ -98,12 +167,7 @@ $rotuloAlta = $empezado ? 'REGISTRARME' : 'Preregistrarme';
       <div class="card__head"><span>Secuencia de acceso</span></div>
       <div class="card__body--tight">
         <div class="steps">
-          <?php foreach ([
-            ['01', 'Regístrate en línea', 'Nombre e identificación son los únicos campos obligatorios; la caracterización es opcional.'],
-            ['02', 'Recibe tu carnet', 'Llega por correo con un QR personal. No hace falta imprimirlo.'],
-            ['03', 'Escanea al entrar, cada día', 'El código de la entrada cambia por jornada y sella tu ingreso con fecha y hora.'],
-            ['04', 'Intercambia contactos', 'El QR de tu carnet comparte nombre, entidad, correo y teléfono con quien lo escanee.'],
-          ] as [$n, $t, $d]): ?>
+          <?php foreach ($pasos as [$n, $t, $d]): ?>
             <div class="steps__item">
               <span class="steps__n"><?= e($n) ?></span>
               <div class="stack" style="gap:5px">

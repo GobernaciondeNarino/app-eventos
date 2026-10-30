@@ -59,6 +59,21 @@ final class Formulario
     public const EXPOSITORES = 'expositores';
     private const TABLAS = [self::PUBLICO => 'evento_formulario', self::EXPOSITORES => 'evento_formulario_expositores'];
 
+    /**
+     * Si el registro público recibe a gente nueva, desde la 3.17. Solo el
+     * público: el de expositores se abre y se cierra con su enlace privado.
+     *
+     *   abierto  como siempre: en la portada, en el menú y en /registro.
+     *   oculto   no se anuncia —ni en la portada ni en el menú ni al entrar—,
+     *            pero /registro sigue recibiendo a quien tenga el enlace.
+     *   cerrado  nadie nuevo: ni con el formulario ni creando un acceso.
+     *
+     * Con los tres, quien ya se registró entra, completa sus datos y ve su
+     * carnet. Cerrado no es solo esconder el botón: lo comprueba el servidor
+     * en cada puerta (Publico::registro(), Acceso::crearCuenta()).
+     */
+    public const ESTADOS_REGISTRO = ['abierto' => 'Abierto', 'oculto' => 'Oculto', 'cerrado' => 'Cerrado'];
+
     /** Lo que el de expositores trae distinto de fábrica: el perfil no se pregunta, es Expositor. */
     private const DEFECTOS_EXPOSITORES = ['rol' => self::OCULTO];
 
@@ -179,7 +194,9 @@ final class Formulario
         private array $listas,
         private array $banner,
         private bool $personalizado,
-        private string $tipo = self::PUBLICO
+        private string $tipo = self::PUBLICO,
+        private string $registro = 'abierto',
+        private string $mensajeRegistro = ''
     ) {
     }
 
@@ -240,6 +257,13 @@ final class Formulario
             'alt'    => (string) ($fila['banner_alt'] ?? ''),
         ];
 
+        // Sin la columna —una base que todavía no llega a la 1.14.0—, abierto:
+        // lo que había.
+        $registro = (string) ($fila['registro_estado'] ?? 'abierto');
+        if ($tipo !== self::PUBLICO || !isset(self::ESTADOS_REGISTRO[$registro])) {
+            $registro = 'abierto';
+        }
+
         // «Propio» es que algo difiera del de fábrica, no que exista la fila: la
         // fila queda también cuando solo hay banner, o después de restablecer.
         $personalizado = $campos !== self::camposPorDefecto($tipo);
@@ -250,7 +274,8 @@ final class Formulario
             $personalizado = $personalizado || $lista != self::listaPorDefecto($clave);
         }
 
-        return self::$cache[$llave] = new self($eventoId, $campos, $listas, $banner, $personalizado, $tipo);
+        return self::$cache[$llave] = new self($eventoId, $campos, $listas, $banner, $personalizado, $tipo,
+            $registro, (string) ($fila['registro_mensaje'] ?? ''));
     }
 
     /**
@@ -602,7 +627,55 @@ final class Formulario
     /** Todo, tal cual, para la pantalla de configuración. */
     public function paraEditar(): array
     {
-        return ['campos' => $this->campos, 'listas' => $this->listas, 'banner' => $this->banner];
+        return ['campos' => $this->campos, 'listas' => $this->listas, 'banner' => $this->banner,
+                'registro' => ['estado' => $this->registro, 'mensaje' => $this->mensajeRegistro]];
+    }
+
+    /* =====================================================================
+       Abierto, oculto o cerrado
+       ===================================================================== */
+
+    /** abierto, oculto o cerrado. El de expositores, siempre abierto: lo cierra su enlace. */
+    public function estadoRegistro(): string
+    {
+        return $this->registro;
+    }
+
+    /** Si recibe a gente nueva: abierto u oculto. */
+    public function recibeRegistros(): bool
+    {
+        return $this->registro !== 'cerrado';
+    }
+
+    /** Si se ofrece en la portada, en el menú y al entrar. */
+    public function seAnuncia(): bool
+    {
+        return $this->registro === 'abierto';
+    }
+
+    /** Lo que la organización le dice al público mientras no está abierto. */
+    public function mensajeRegistro(): string
+    {
+        return $this->registro === 'abierto' ? '' : trim($this->mensajeRegistro);
+    }
+
+    /**
+     * ¿La base ya tiene dónde guardarlo? Son columnas de la 1.14.0: sin
+     * ellas —su usuario no puede alterar tablas—, el registro sigue abierto,
+     * como estaba, y para cambiarlo primero hay que actualizar la base.
+     */
+    public static function admiteEstadoRegistro(): bool
+    {
+        return Bd::existeColumna(self::TABLAS[self::PUBLICO], 'registro_estado');
+    }
+
+    /** Abre, oculta o cierra el registro público, con el mensaje para el público. */
+    public static function guardarEstadoRegistro(int $eventoId, string $estado, string $mensaje, ?int $usuarioId): void
+    {
+        self::escribir($eventoId, [
+            'registro_estado'  => isset(self::ESTADOS_REGISTRO[$estado]) ? $estado : 'abierto',
+            'registro_mensaje' => mb_substr(trim($mensaje), 0, 600),
+        ], $usuarioId);
     }
 
     /**

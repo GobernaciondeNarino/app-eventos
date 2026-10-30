@@ -210,6 +210,42 @@ final class Persona
     }
 
     /**
+     * Lo que le falta a su perfil, en palabras: «tu foto», «tu entidad»…
+     *
+     * Para invitarla a completarlo y que el carnet con el que va a entrar al
+     * evento salga entero (3.17). Cuenta solo lo que el formulario pide y que
+     * sale en el carnet o sirve para ubicarla: el nombre, la identificación,
+     * la foto, la entidad, el teléfono y el municipio. La caracterización no:
+     * es opcional por ley, y no se insiste en ella.
+     *
+     * @return array<int, string>
+     */
+    public static function faltantes(array $persona, Formulario $f): array
+    {
+        $vacio = static fn(string $columna): bool => trim((string) ($persona[$columna] ?? '')) === '';
+        $faltan = [];
+        if ($vacio('nombre')) {
+            $faltan[] = 'tu nombre';
+        }
+        if ($f->visible('documento') && ($persona['documento_huella'] ?? null) === null) {
+            $faltan[] = 'tu identificación';
+        }
+        if ($f->visible('foto') && !self::tieneFoto($persona)) {
+            $faltan[] = 'tu foto';
+        }
+        if ($f->visible('entidad') && $vacio('entidad')) {
+            $faltan[] = 'tu entidad';
+        }
+        if ($f->visible('telefono') && $vacio('telefono')) {
+            $faltan[] = 'tu teléfono';
+        }
+        if ($f->visible('ubicacion') && $vacio('municipio')) {
+            $faltan[] = 'tu municipio';
+        }
+        return $faltan;
+    }
+
+    /**
      * Crea el acceso de alguien que todavía no se ha registrado.
      *
      * Correo y contraseña, y nada más. Es la puerta que faltaba: quien llega a

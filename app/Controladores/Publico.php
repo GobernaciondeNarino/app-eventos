@@ -48,19 +48,28 @@ final class Publico
             }
         }
 
+        // Abierto, la portada ofrece el registro; oculto o cerrado, invita a
+        // quien ya se registró a completar su perfil y a llevar el carnet.
+        $formulario = Formulario::delEvento((int) $evento['id']);
+        $persona = Guardia::personaActual();
+
         Respuesta::vista('publico/inicio', [
             'titulo'    => 'Ingreso',
             'pantalla'  => 'ingreso',
             'jornadas'  => $jornadas,
             'empezado'  => $empezado,
             'esHoy'     => Evento::jornadaDeHoy((int) $evento['id']) !== null,
+            'registro'  => $formulario->estadoRegistro(),
+            'mensajeRegistro' => $formulario->mensajeRegistro(),
+            'faltantes' => $persona !== null ? Persona::faltantes($persona, $formulario) : [],
         ]);
     }
 
     /* =====================================================================
        Registro
        -------------------------------------------------------------------------
-       El formulario completo, siempre abierto al público. Se llamaba
+       El formulario completo, abierto al público salvo que la organización lo
+       cierre (Configuración → Registro, desde la 3.17). Se llamaba
        «preregistro» y sigue respondiendo en esa dirección, pero en pantalla es
        «Registro»: la palabra describe lo mismo antes y durante el evento, y
        «preregistro» dejaba de tener sentido justo el día que más gente llega.
@@ -247,6 +256,18 @@ final class Publico
         $yo = Guardia::personaActual();
         $errores = [];
 
+        // Con el registro público cerrado, quien no tiene sesión no crea un
+        // registro: ni con el formulario a la vista ni con un envío hecho a
+        // mano. Quien ya se registró sí entra: viene a completar sus datos. El
+        // de expositores no se cierra aquí: lo cierra su enlace.
+        if (!$deExpositores && $yo === null && !$formulario->recibeRegistros()) {
+            Respuesta::vista('publico/registro-cerrado', [
+                'titulo'   => 'Registro cerrado',
+                'pantalla' => 'registro',
+                'mensajeRegistro' => $formulario->mensajeRegistro(),
+            ]);
+        }
+
         // Lo que ya tiene subido. Se mira antes de validar porque los dos
         // adjuntos son obligatorios para quien expone, y a quien ya los tiene
         // no se le pueden volver a pedir cada vez que corrige un teléfono.
@@ -424,6 +445,9 @@ final class Publico
             // etiqueta de Staff como si ya lo fuera.
             'perfilFijo'    => $yo !== null && isset(Persona::PERFILES_DE_ADMIN[(string) $yo['rol']])
                 ? (string) $yo['rol'] : '',
+            // Lo que le falta para tener el perfil completo, para invitarla a
+            // llenarlo: con eso sale entero el carnet con el que entra.
+            'faltantes'     => $yo !== null && $completo ? Persona::faltantes($yo, $formulario) : [],
         ]);
     }
 

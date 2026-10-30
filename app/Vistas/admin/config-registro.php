@@ -13,6 +13,7 @@
  * @var array $escrito  lo enviado, para no perder lo que no se pudo guardar
  * @var array $perfilesEnUso cuántas personas tienen cada perfil
  * @var array $evento
+ * @var bool  $estadoDisponible si la base ya tiene dónde guardar si el registro está abierto (1.14.0)
  */
 defined('EVENTOS_TIC') || exit;
 
@@ -42,6 +43,16 @@ $textoDe = static function (string $clave, string $guardado) use ($escrito, $err
 };
 
 $deExpositores = $tipo === Formulario::EXPOSITORES;
+
+// Abierto, oculto o cerrado, con lo que pasa en cada caso.
+$registro = $edicion['registro'];
+$opcionesRegistro = [
+    'abierto' => 'Cualquiera se registra desde la portada, el menú o el enlace del formulario. Es como ha funcionado siempre.',
+    'oculto'  => 'No aparece en la portada, en el menú ni en la pantalla de entrada, pero el formulario sigue recibiendo '
+        . 'a quien tenga el enlace. Para registrar solo a quienes se lo envíes.',
+    'cerrado' => 'Nadie nuevo se puede registrar: ni con el formulario, ni con el enlace, ni creando un acceso. '
+        . 'Quien ya se registró sigue entrando, completa su perfil y ve su carnet.',
+];
 ?>
 <div class="view view--wide stack stack--4">
 
@@ -73,6 +84,64 @@ $deExpositores = $tipo === Formulario::EXPOSITORES;
         demás ya está aplicado.
       </span>
     </div>
+  <?php endif; ?>
+
+  <?php if (!$deExpositores): ?>
+    <!-- Abrir, ocultar o cerrar el registro. Va fuera del formulario de abajo:
+         tiene su propio botón y no toca los campos ni el banner. -->
+    <section class="card" id="estado-registro">
+      <div class="card__head">
+        <span>Registro público</span>
+        <span class="tag <?= ['abierto' => 'tag--ok', 'oculto' => 'tag--warn', 'cerrado' => 'tag--danger'][$registro['estado']] ?? '' ?>"
+              data-estado-registro="<?= e($registro['estado']) ?>"><?= e(Formulario::ESTADOS_REGISTRO[$registro['estado']] ?? '') ?></span>
+      </div>
+      <?php if (!$estadoDisponible): ?>
+        <div class="card__body">
+          <p class="help" style="margin:0">
+            Para abrir, ocultar o cerrar el registro, la base de datos tiene que ponerse al día: pulsa
+            «Actualizar la base de datos» en el aviso del panel. Mientras tanto, el registro sigue abierto.
+          </p>
+        </div>
+      <?php else: ?>
+        <form method="post" action="<?= e(u('/admin/configuracion/registro/estado')) ?>" class="card__body stack stack--4"
+              data-confirmar="Esto cambia lo que ve el público en la portada y en el registro. ¿Continuar?">
+          <?= testigo() ?>
+          <fieldset class="stack stack--3" style="border:0;padding:0;margin:0">
+            <legend class="label">¿Se pueden registrar personas nuevas?</legend>
+            <?php foreach ($opcionesRegistro as $valor => $explicacion): ?>
+              <label class="row" style="gap:10px;align-items:flex-start;flex-wrap:nowrap;cursor:pointer">
+                <input type="radio" name="registro_estado" value="<?= e($valor) ?>"
+                       <?= $registro['estado'] === $valor ? 'checked' : '' ?>
+                       style="margin-top:3px;flex:none;accent-color:var(--c-accent)">
+                <span class="stack" style="gap:2px">
+                  <span><?= e(Formulario::ESTADOS_REGISTRO[$valor]) ?></span>
+                  <span class="help" style="margin:0"><?= e($explicacion) ?></span>
+                </span>
+              </label>
+            <?php endforeach; ?>
+          </fieldset>
+
+          <div class="field">
+            <label class="label" for="registro_mensaje">Mensaje para el público (opcional)</label>
+            <textarea class="textarea" id="registro_mensaje" name="registro_mensaje" rows="3" maxlength="600"
+                      placeholder="Ej. Cupo completo: el registro cerró el 25 de octubre."><?= e((string) $registro['mensaje']) ?></textarea>
+            <span class="help">
+              Sale en la portada y en el registro mientras no esté abierto, junto al texto que invita a
+              quien ya se registró a completar su perfil y a llevar su carnet para ingresar al evento.
+            </span>
+          </div>
+
+          <p class="help" style="margin:0">
+            Esto es solo para el registro público. El de expositores tiene su propio enlace, que sigue
+            funcionando aunque cierres este.
+          </p>
+
+          <div class="row row--end">
+            <button class="btn btn--primary" type="submit">Guardar el estado del registro</button>
+          </div>
+        </form>
+      <?php endif; ?>
+    </section>
   <?php endif; ?>
 
   <?php if ($deExpositores): ?>

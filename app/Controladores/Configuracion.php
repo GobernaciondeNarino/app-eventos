@@ -53,6 +53,41 @@ final class Configuracion
         $this->editar($peticion, Formulario::EXPOSITORES);
     }
 
+    /**
+     * Abre, oculta o cierra el registro público, con lo que se le dice al
+     * público mientras no está abierto. Quien ya se registró sigue entrando y
+     * completando sus datos con cualquiera de los tres.
+     */
+    public function estadoRegistro(Peticion $peticion): void
+    {
+        $evento = App::eventoExigido();
+        $eventoId = (int) $evento['id'];
+        $volver = self::RUTAS[Formulario::PUBLICO] . '#estado-registro';
+
+        if (!Formulario::admiteEstadoRegistro()) {
+            Respuesta::redirigir('/admin', 'Para abrir, ocultar o cerrar el registro, la base de datos tiene que ponerse '
+                . 'al día. Pulsa «Actualizar la base de datos» en el aviso de arriba y vuelve a Configuración → Registro.', 'warn');
+        }
+        $estado = $peticion->campo('registro_estado');
+        if (!isset(Formulario::ESTADOS_REGISTRO[$estado])) {
+            Respuesta::redirigir($volver, 'Elige si el registro queda abierto, oculto o cerrado.', 'warn');
+        }
+        $mensaje = mb_substr($peticion->campo('registro_mensaje'), 0, 600);
+
+        $antes = Formulario::delEvento($eventoId)->paraEditar()['registro'];
+        Formulario::guardarEstadoRegistro($eventoId, $estado, $mensaje, (int) (Guardia::usuarioActual()['id'] ?? 0) ?: null);
+        if ($antes['estado'] !== $estado || trim((string) $antes['mensaje']) !== $mensaje) {
+            Bitacora::registrar('registro_publico', 'evento', $eventoId,
+                ['estado' => $estado, 'antes' => $antes['estado'], 'con_mensaje' => $mensaje !== '']);
+        }
+
+        Respuesta::redirigir($volver, match ($estado) {
+            'abierto' => 'Registro abierto: la portada y el menú lo vuelven a ofrecer.',
+            'oculto'  => 'Registro oculto: ya no aparece en la portada ni en el menú, pero quien tenga el enlace se sigue registrando.',
+            default   => 'Registro cerrado: nadie nuevo se puede registrar. Quien ya lo hizo entra, completa su perfil y ve su carnet.',
+        });
+    }
+
     /** Un enlace nuevo para el de expositores. El anterior deja de servir en el acto. */
     public function nuevoEnlace(Peticion $peticion): void
     {
@@ -280,6 +315,8 @@ final class Configuracion
                 ? Url::absoluta('/registro/expositores/' . Formulario::tokenExpositores($eventoId)) : '',
             'formulario' => $formulario,
             'edicion'    => $formulario->paraEditar(),
+            // Abrir, ocultar o cerrar el registro necesita columnas de la 1.14.0.
+            'estadoDisponible' => !$deExpositores && Formulario::admiteEstadoRegistro(),
             'perfilesEnUso' => $perfilesEnUso,
             'errores'    => $errores,
             // Lo que se escribió en una lista que no se pudo guardar, para

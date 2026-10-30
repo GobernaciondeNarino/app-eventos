@@ -443,6 +443,11 @@ restauró no es una copia.
    tokens que ya existen responden exactamente lo mismo —sin la foto— hasta que un
    administrador se la incluya. Ver 7.8.
 
+   La 3.17 agrega **dos columnas** a la tabla del formulario de registro
+   (`evt_evento_formulario`): si el registro público está abierto, oculto o cerrado, y el
+   mensaje para el público. Ningún registro cambia, y el registro queda **abierto**, como
+   estaba, hasta que un administrador lo cambie en **Configuración → Registro**. Ver 7.9.
+
    Si el usuario de la base de datos no tiene permiso de `ALTER` —pasa en algunos
    alojamientos—, la actualización automática no puede hacerse: lo anota en el registro,
    vuelve a intentarlo cada cinco minutos y la plataforma sigue funcionando. Para hacerlo a
@@ -896,6 +901,86 @@ dispara ninguna actualización. Con los archivos anteriores, los enlaces de la f
 de servir y la API deja de dar la foto; los tokens siguen funcionando. Si prefieres quitarla,
 `ALTER TABLE evt_api_token DROP COLUMN foto_desde;` en phpMyAdmin, después de volver a los
 archivos anteriores.
+
+### 7.9 La 3.17: abrir, ocultar o cerrar el registro, sin tocar registros ni configuración
+
+**Qué agrega.** Arriba de **Configuración → Registro**, el **Registro público** con tres estados:
+
+- **Abierto**, como hasta ahora.
+- **Oculto**: la portada, el menú y la pantalla de entrada ya no lo ofrecen, pero el formulario
+  sigue recibiendo a quien tenga el enlace.
+- **Cerrado**: nadie nuevo se registra, ni con el formulario, ni con el enlace, ni creando un
+  acceso.
+
+Con el registro oculto o cerrado, la portada le pide a quien ya se registró que entre,
+**complete su perfil** y **lleve su carnet para ingresar al evento**, con un mensaje opcional de
+la organización. Quien ya se registró sigue entrando y corrigiendo sus datos con los tres. El
+detalle está en `docs/ADMINISTRAR-EVENTOS.md` (9.9).
+
+**Qué cambia aunque nadie toque nada.** El registro queda abierto, así que la portada sigue
+ofreciéndolo. Cambian algunos textos, porque ahora dicen que el carnet es la entrada:
+
+- la portada pide diligenciar el perfil completo, con la foto, y llevar el carnet —impreso o en
+  el celular— cada día del evento;
+- la tarjeta de quien ya se registró le dice qué le falta del perfil —su foto, su entidad, su
+  teléfono o su municipio, solo los que pide el formulario—;
+- el carnet de cada persona tiene arriba el aviso **Lleva tu carnet el día del evento**, y el de
+  **Completa tu perfil** si le falta algo.
+
+**Qué cambia en la base de datos.** Solo se **agregan** dos columnas a `evt_evento_formulario`
+(esquema 1.14.0): `registro_estado`, que queda en `abierto` para el evento que ya existe, y
+`registro_mensaje`, vacía. Las agrega la actualización automática en la primera visita, con el
+permiso `ALTER`, como la 3.16. Sin ese permiso, el panel muestra el botón **Actualizar la base
+de datos**; mientras tanto el registro sigue abierto, como estaba, y la pantalla dice que hay
+que actualizar la base para poder cerrarlo.
+
+**Qué no cambia.** `config/config.php`, `almacen/`, los registros, las fotos, los carnets y sus
+códigos QR, el formulario y su configuración, y el formulario de expositores con su enlace.
+
+**Qué archivos cambian** —súbelos todos juntos: las vistas usan funciones nuevas de
+`app/ayudas.php`, y una sin la otra deja la página en error—:
+
+| Archivo | Para qué |
+|---|---|
+| `app/Vistas/publico/registro-cerrado.php` | **Nuevo.** Lo que ve quien llega a `/registro` con el registro cerrado |
+| `app/Vistas/admin/config-registro.php`, `app/Controladores/Configuracion.php` | El estado del registro en Configuración → Registro |
+| `app/Modelos/Formulario.php` | Leer y guardar el estado del registro |
+| `app/Modelos/Persona.php` | Lo que le falta al perfil de cada persona |
+| `app/ayudas.php` | El estado del registro y la lista «tu foto, tu entidad y…» para las vistas |
+| `app/Controladores/Publico.php`, `app/Controladores/Acceso.php` | El cierre en el formulario y en «Crear mi acceso», y los datos de la portada y de la entrada |
+| `app/Controladores/Carnet.php`, `app/Controladores/Admin.php` | Los avisos del carnet, y el recordatorio en el panel |
+| `app/Vistas/publico/inicio.php`, `entrar.php`, `registro.php`, `carnet.php`, `quien-eres.php` | Los textos de cada estado |
+| `app/Vistas/parciales/navegacion.php` | *Registro* sale del menú cuando no está abierto |
+| `app/Esquema.php` | Las dos columnas nuevas, y la versión del esquema 1.14.0 |
+| `app/rutas.php`, `app/Nucleo/Bitacora.php` | La dirección del botón, y cómo se lee en la bitácora |
+| `index.php`, `herramientas/instalar.php`, `herramientas/correo.php` | El número de versión |
+
+**Cómo subirla:**
+
+1. Haz la copia de seguridad de siempre (punto 1 de arriba): **la base de datos y `config/`**.
+   Descarga además, tal como están en el servidor, los archivos de la tabla.
+2. Sube **todos** los archivos de la tabla —o la versión completa—, **sin tocar `config/` ni
+   `almacen/`**. Si producción todavía no tiene la 3.16, sube la versión completa: la primera
+   visita agrega también la columna de la 3.16.
+3. Abre cualquier página. En `/admin` no debe quedar ningún aviso de «base de datos atrasada»;
+   si queda, pulsa **Actualizar la base de datos**.
+4. Compruébalo:
+   - la portada sigue ofreciendo el registro, y *Registro* sigue en el menú;
+   - en **Configuración → Registro**, arriba, *Registro público* está en **Abierto**;
+   - pásalo a **Cerrado** con un mensaje de prueba y abre la portada en una ventana privada: ya
+     no ofrece registrarse, dice que está cerrado, invita a completar el perfil y a llevar el
+     carnet, y muestra tu mensaje. `…/registro` responde que está cerrado;
+   - entra con una cuenta de asistente de prueba —la tuya, no la de un asistente real—: ves tu
+     carnet y puedes corregir tus datos;
+   - si el registro debe seguir abierto, vuelve a dejarlo en **Abierto**.
+
+**Volver atrás:** sube otra vez los archivos que descargaste en el paso 1; el nuevo,
+`app/Vistas/publico/registro-cerrado.php`, puede quedarse o borrarse. Las columnas pueden
+quedarse: la 3.16 no las usa ni las mira. **Ojo: la versión anterior no sabe cerrar el
+registro.** Si vuelves atrás con el registro cerrado u oculto, queda abierto otra vez hasta que
+subas de nuevo la 3.17. Si prefieres quitar las columnas, en phpMyAdmin y después de volver a
+los archivos anteriores: `ALTER TABLE evt_evento_formulario DROP COLUMN registro_mensaje, DROP
+COLUMN registro_estado;`.
 
 ---
 

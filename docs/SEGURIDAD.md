@@ -809,6 +809,34 @@ que llega del público (`App\Modelos\Formulario`):
 - **Ocultar un campo no borra datos.** Lo que alguien ya había dado se conserva al editar su
   registro; simplemente no se le vuelve a preguntar.
 
+### El registro público abierto, oculto o cerrado
+
+Desde la 3.17 un administrador abre, oculta o cierra el registro público en **Configuración →
+Registro** (`evt_evento_formulario.registro_estado`). Cerrar no es esconder el botón:
+
+- **Lo comprueba el servidor en cada puerta** por donde se crea una persona: el formulario
+  —también `/preregistro`, la dirección de los correos viejos— en `Publico::registro()`, y
+  «Crear mi acceso» en `Acceso::crearCuenta()`. Un envío hecho a mano, con un testigo válido,
+  recibe la página de registro cerrado y no crea a nadie. Son las dos únicas que crean una
+  persona; el acceso por código nunca crea cuentas.
+- **Quien ya se registró no pierde el acceso.** El cierre solo mira a quien llega sin sesión: con
+  la suya, `/registro` sigue siendo «Mis datos», y quien solo había creado su acceso termina su
+  registro. El correo de quien tiene sesión sigue sin poder cambiarse desde el formulario.
+- **Oculto** solo deja de anunciarlo —la portada, el menú y la pantalla de entrada—: el
+  formulario sigue recibiendo a quien tenga el enlace. No es un control de acceso, y la pantalla
+  lo dice así.
+- **El formulario de expositores no depende de esto**: lo cierra su propio enlace, que se
+  regenera (ver abajo).
+- **El mensaje para el público** se guarda acotado a 600 caracteres y se escapa al pintarlo, con
+  los saltos de línea como `<br>`: no admite HTML.
+- **Solo administrador**, con testigo CSRF; cada cambio queda en la bitácora
+  (`registro_publico`, con el estado anterior y el nuevo), y el panel lo recuerda en
+  *Pendientes* mientras no esté abierto.
+- **Una base sin las columnas** —su usuario no puede alterar tablas— deja el registro abierto,
+  como estaba: el estado se lee con un valor por omisión y no se puede guardar hasta actualizar
+  la base. Volver a la versión anterior también lo deja abierto, porque esa versión no sabe
+  cerrarlo.
+
 ### El enlace privado del formulario de expositores
 
 Desde la 3.9 hay un segundo formulario de registro, para quienes van a exponer, al que se llega
@@ -1049,7 +1077,7 @@ conviene decirlo con claridad en la pantalla de privacidad.
 ## 6. Verificación
 
 ```bash
-php pruebas/extremo-a-extremo.php      # 844 comprobaciones sobre un servidor real
+php pruebas/extremo-a-extremo.php      # 902 comprobaciones sobre un servidor real
 php pruebas/instalacion.php            # el asistente, y qué se ve cuando falla
 php pruebas/actualizacion.php          # subir desde la 1.0.0 por cada camino, sin perder nada
 php pruebas/claves.php                 # parámetros de Argon2id y rehash
@@ -1119,6 +1147,11 @@ Lo que comprueban las de seguridad, concretamente:
   dirección, 429 para esos intentos mientras un token vigente desde la misma dirección sigue
   respondiendo.
 - Solo un administrador ve, crea y revoca tokens.
+- Con el registro público cerrado, ni el formulario —por `/registro` ni por `/preregistro`— ni
+  «Crear mi acceso» crean a nadie, tampoco con un envío hecho a mano con testigo válido; quien ya
+  se registró entra, corrige sus datos y termina su registro; el formulario de expositores sigue
+  con su enlace; el mensaje para el público sale escapado; solo un administrador lo cambia; y
+  sin las columnas nuevas el registro sigue abierto, como estaba.
 
 ---
 

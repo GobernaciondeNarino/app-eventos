@@ -17,6 +17,7 @@
  * @var bool $tieneClave @var string $foto @var array $documentos @var bool $agendada
  * @var bool $reelegir @var string $perfilFijo
  * @var \App\Modelos\Formulario $formulario @var array $actual
+ * @var array $faltantes  lo que le falta a su perfil, si ya está registrado
  */
 defined('EVENTOS_TIC') || exit;
 
@@ -110,8 +111,15 @@ guiones('foto.js', 'preregistro.js', 'claves.js', 'registro-incompleto.js');
       <span class="notice__icon" aria-hidden="true">◆</span>
       <span>
         Tu acceso ya está creado: puedes volver cuando quieras con tu correo y tu contraseña.
-        El carnet con el código QR se emite en cuanto guardes estos datos.
+        El carnet con el código QR se emite en cuanto guardes estos datos, y lo necesitas para
+        ingresar al evento.
       </span>
+    </div>
+  <?php elseif ($faltantes): ?>
+    <!-- Ya tiene carnet, pero el perfil no está completo: se le dice qué falta. -->
+    <div class="notice" data-faltantes>
+      <span class="notice__icon" aria-hidden="true">◆</span>
+      <span>Para tener tu perfil completo te falta <?= e(enumerar($faltantes)) ?>.</span>
     </div>
   <?php endif; ?>
 

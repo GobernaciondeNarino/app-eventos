@@ -157,6 +157,9 @@ $enrutador->get('/admin', [Admin::class, 'panel'], 'admin:consulta');
 // depender de alguien con acceso al servidor—; las demás, de administrador.
 $enrutador->get('/admin/configuracion', [Configuracion::class, 'inicio'], 'admin:consulta');
 $enrutador->ambos('/admin/configuracion/registro', [Configuracion::class, 'registro'], 'admin:administrador');
+// Abrir, ocultar o cerrar el registro público. Aparte del formulario de arriba:
+// tiene su propio botón y no toca los campos ni el banner.
+$enrutador->post('/admin/configuracion/registro/estado', [Configuracion::class, 'estadoRegistro'], 'admin:administrador');
 $enrutador->ambos('/admin/configuracion/expositores', [Configuracion::class, 'expositores'], 'admin:administrador');
 $enrutador->post('/admin/configuracion/expositores/enlace', [Configuracion::class, 'nuevoEnlace'], 'admin:administrador');
 // Los tokens de la API: quién puede consultarla desde otro sistema.

@@ -125,6 +125,16 @@ final class Admin
                         'ruta' => '/admin/organizadores', 'tipo' => 'danger'];
         }
 
+        // Que no se olvide: con el registro oculto o cerrado, la portada no lo
+        // ofrece, y alguien del equipo puede estar esperando inscripciones.
+        $registro = \App\Modelos\Formulario::delEvento($eventoId)->estadoRegistro();
+        if ($registro !== 'abierto') {
+            $lista[] = ['texto' => $registro === 'cerrado'
+                            ? 'El registro público está cerrado: nadie nuevo se puede registrar'
+                            : 'El registro público está oculto: solo se registra quien tenga el enlace',
+                        'ruta' => '/admin/configuracion/registro#estado-registro', 'tipo' => ''];
+        }
+
         $tema = Tema::del($eventoId);
         if ($tema['logo'] === '') {
             $lista[] = ['texto' => 'El evento todavía no tiene logo cargado',

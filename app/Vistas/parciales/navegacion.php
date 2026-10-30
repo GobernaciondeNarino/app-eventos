@@ -49,11 +49,15 @@ $icono = static function (string $clave, int $tam = 17, float $grosor = 1.5) use
 };
 
 // --- Participante ---------------------------------------------------------
-$grupoParticipante = [
+// El registro sale en el menú solo mientras está abierto. Oculto o cerrado
+// (Configuración → Registro) no se anuncia; quien ya entró lo tiene igual,
+// como «Mis datos».
+$grupoParticipante = array_values(array_filter([
     ['clave' => 'ingreso', 'etiqueta' => 'Ingreso', 'icono' => 'home', 'ruta' => '/'],
-    ['clave' => 'registro', 'etiqueta' => 'Registro', 'icono' => 'form', 'ruta' => '/registro'],
+    registroPublico($evento ?? null) === 'abierto'
+        ? ['clave' => 'registro', 'etiqueta' => 'Registro', 'icono' => 'form', 'ruta' => '/registro'] : null,
     ['clave' => 'agenda', 'etiqueta' => 'Agenda', 'icono' => 'cal', 'ruta' => '/agenda'],
-];
+]));
 
 if ($persona !== null) {
     // Con sesión, el registro pasa a ser «mis datos» y aparecen las suyas.

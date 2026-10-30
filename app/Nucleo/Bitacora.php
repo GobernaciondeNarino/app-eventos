@@ -128,6 +128,13 @@ final class Bitacora
             'formulario_restablecido' => "$quien devolvió el formulario de registro"
                 . (($detalle['formulario'] ?? '') === 'expositores' ? ' de expositores' : '') . ' al de fábrica',
             'enlace_expositores_regenerado' => "$quien generó un enlace nuevo para el registro de expositores; el anterior dejó de servir",
+            'registro_publico'   => ($detalle['estado'] ?? '') === ($detalle['antes'] ?? '')
+                ? "$quien cambió el mensaje del registro público"
+                : match ($detalle['estado'] ?? '') {
+                    'cerrado' => "$quien cerró el registro público",
+                    'oculto'  => "$quien ocultó el registro público: solo se registra quien tenga el enlace",
+                    default   => "$quien abrió el registro público",
+                },
             'token_dia_rotado'   => "$quien regeneró el código de un día",
             'jornada_agregada'   => "$quien agregó un día al evento",
             'jornada_ajustada'   => "$quien cambió la fecha o el horario de un día",

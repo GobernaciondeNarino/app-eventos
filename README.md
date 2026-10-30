@@ -25,7 +25,7 @@ registra gente, se sella asistencia, se aprueban exposiciones y se exportan repo
 | **Autenticación** | Cinco formas de entrar: correo, QR personal, contraseña, WhatsApp y SMS. Se puede crear el acceso con solo correo y contraseña. El equipo, con contraseña y segundo factor. Quien olvida su contraseña la recupera con un enlace al correo, y un administrador puede enviárselo desde el panel |
 | **Códigos QR** | Generador **y lector** propios, verificados uno contra otro y contra una librería de referencia |
 | **API** | Consulta en JSON de expositores, participantes y demás perfiles, con filtros en la dirección y un token por cada sistema que consulta, que se crea y se revoca en Configuración → API. Solo lee, y nunca entrega la identificación ni la caracterización; la fotografía, como enlace, solo a un token con ese permiso |
-| **Pruebas** | 844 comprobaciones de extremo a extremo, 160 de actualización desde la 1.0.0, 149 en navegador, y 641 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy y formulario de registro |
+| **Pruebas** | 902 comprobaciones de extremo a extremo, 160 de actualización desde la 1.0.0, 149 en navegador, y 641 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy y formulario de registro |
 
 ---
 
@@ -99,11 +99,13 @@ les va a crear una cuenta del equipo.
 
 Hay tres puertas, y las tres llevan al mismo sitio:
 
-- **El formulario completo** (`/registro`, siempre abierto al público) — de fábrica, nombre y
+- **El formulario completo** (`/registro`, abierto al público) — de fábrica, nombre y
   documento; el resto es opcional y la caracterización viene plegada. Qué se pide, qué es
   obligatorio, qué opciones trae cada lista y si lleva un banner arriba se cambia por evento en
   **Configuración → Registro**. Si falta algo obligatorio, una ventana dice que el registro no
-  se guardó y qué falta.
+  se guardó y qué falta. Ahí mismo se **oculta** —deja de anunciarse, pero el enlace sirve— o se
+  **cierra**: nadie nuevo se registra por ninguna de las tres puertas, y la portada le pide a
+  quien ya se registró que complete su perfil y lleve su carnet para ingresar al evento.
 - **El formulario de expositores** (`/registro/expositores/…`, privado) — una copia del
   formulario completo que no está en ningún menú: la organización le manda el enlace a quien va
   a exponer. Quien entra por ahí queda con el perfil Expositor y la propuesta ya abierta. Tiene
@@ -183,7 +185,7 @@ proceso, y no ofrece la opción que borra tablas.
 | Expositores | Hoja de revisión por propuesta: los datos completos de quien la presenta, sus dos documentos para bajar, y aprobar, devolver o rechazar. Se le avisa por correo, con los cambios y las observaciones. Aparte, quienes se registraron como expositores y todavía no han enviado su propuesta |
 | Organizadores | Equipo, roles y estado del segundo factor; restablecer el de quien perdió el teléfono |
 | Eventos | Varios eventos a la vez; el activo es el que ven los asistentes |
-| Configuración | Cinco pestañas. **Registro**: los campos del formulario (obligatorio, opcional u oculto), las opciones de cada lista y el banner. **Registro de expositores**: el formulario privado de los expositores, con su enlace y su propia configuración. **Identidad**: colores, tipografía y logo, con revisión de contraste. **Acceso y correo**: las formas de entrar y el envío de correo. **Mi cuenta**: restablecer el código QR del segundo factor y cambiar la contraseña, para todo el equipo |
+| Configuración | Cinco pestañas. **Registro**: si el registro público está abierto, oculto o cerrado, los campos del formulario (obligatorio, opcional u oculto), las opciones de cada lista y el banner. **Registro de expositores**: el formulario privado de los expositores, con su enlace y su propia configuración. **Identidad**: colores, tipografía y logo, con revisión de contraste. **Acceso y correo**: las formas de entrar y el envío de correo. **Mi cuenta**: restablecer el código QR del segundo factor y cambiar la contraseña, para todo el equipo |
 
 **Roles:** `administrador` ⊃ `operador` ⊃ `consulta`. El operador sella ingresos pero no
 exporta datos sensibles ni toca la configuración.
@@ -378,14 +380,14 @@ el enrutado, las cookies, los testigos y los guardias, que es donde suelen estar
 Incluye 19 comprobaciones en el bloque específico de seguridad y otras tantas repartidas por
 los guardias de cada pantalla.
 
-Estado actual: **774 de 774** de extremo a extremo, **77** del asistente de instalación,
+Estado actual: **902 de 902** de extremo a extremo, **78** del asistente de instalación,
 **160** de actualización de una instalación en producción por siete caminos, **46** del
 segundo factor —los vectores del RFC 6238 y el reloj del servidor corrido—, **64** de la
 configuración de los formularios de registro, **22** del hash de contraseñas,
 **19** del correo saliente, **19** de la dirección del visitante detrás del proxy, **21** de la
 fotografía del carnet, **61** de los adjuntos del expositor, **17** del saneado de logos SVG,
 **198** casos de QR idénticos entre PHP y JavaScript, **161** entre JavaScript y la referencia,
-**13** del lector de QR, **138** de interacción en navegador, y las 23 pantallas limpias en
+**13** del lector de QR, **149** de interacción en navegador, y las 23 pantallas limpias en
 escritorio, tableta y móvil.
 
 Las pruebas nacieron de errores reales, y por eso cubren lo que cubren: una instalación que se

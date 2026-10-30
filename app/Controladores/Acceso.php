@@ -56,6 +56,8 @@ final class Acceso
         $evento = App::eventoActivo();
         $errores = [];
         $correo = $peticion->campo('correo');
+        // Si la pantalla le ofrece registrarse a quien todavía no lo ha hecho.
+        $registro = $evento !== null ? \App\Modelos\Formulario::delEvento((int) $evento['id'])->estadoRegistro() : 'abierto';
 
         // En un GET el método llega por la URL —los botones de la pantalla son
         // enlaces— y en el POST por el campo oculto del formulario.
@@ -122,6 +124,7 @@ final class Acceso
             'metodos' => Autenticacion::activos(),
             'catalogo' => Autenticacion::METODOS,
             'puedeCrearCuenta' => Autenticacion::activo('clave'),
+            'registro' => $registro,
         ]);
     }
 
@@ -155,6 +158,14 @@ final class Acceso
         }
 
         $evento = App::eventoExigido();
+
+        // Crear un acceso es registrarse: con el registro público cerrado,
+        // tampoco por aquí. Oculto sí, como el formulario con el enlace.
+        if (!\App\Modelos\Formulario::delEvento((int) $evento['id'])->recibeRegistros()) {
+            Respuesta::redirigir('/entrar', 'El registro está cerrado: ya no se crean accesos nuevos. '
+                . 'Si ya te registraste, entra con tu correo.', 'warn');
+        }
+
         $correo = mb_strtolower($peticion->campo('correo'));
         $errores = [];
         $minima = Autenticacion::claveMinima();

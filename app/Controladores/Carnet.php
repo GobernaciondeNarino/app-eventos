@@ -7,6 +7,7 @@ defined('EVENTOS_TIC') || exit;
 
 use App\Modelos\Asistencia;
 use App\Modelos\Credencial;
+use App\Modelos\Formulario;
 use App\Modelos\Persona;
 use App\Nucleo\App;
 use App\Nucleo\Autenticacion;
@@ -74,6 +75,8 @@ final class Carnet
             // exposición». [] es que todavía no la ha enviado.
             'exposicion'   => Persona::esExpositor($persona)
                 ? (Persona::suPropuesta((int) $persona['id']) ?? []) : null,
+            // Lo que le falta a su perfil, para invitarla a completarlo.
+            'faltantes'    => Persona::faltantes($persona, Formulario::delEvento((int) $persona['evento_id'])),
         ]);
     }
 

@@ -53,12 +53,14 @@ $marca = require __DIR__ . '/../parciales/marca.php';
         </span>
       </a>
 
-      <hr class="divider">
+      <?php if (registroPublico($evento ?? null) === 'abierto'): ?>
+        <hr class="divider">
 
-      <p class="help">
-        ¿Todavía no te has registrado en el evento?
-        <a href="<?= e(u('/registro')) ?>">Regístrate</a> y obtén tu propio carnet.
-      </p>
+        <p class="help">
+          ¿Todavía no te has registrado en el evento?
+          <a href="<?= e(u('/registro')) ?>">Regístrate</a> y obtén tu propio carnet.
+        </p>
+      <?php endif; ?>
     </div>
   </div>
 </div>

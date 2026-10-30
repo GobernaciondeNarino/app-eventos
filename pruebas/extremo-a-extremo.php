@@ -3727,10 +3727,13 @@ comprobar('y la de Expositores dice dónde está', str_contains($jefa->get('/adm
 
 // Lo único propio del de expositores es su configuración, y tiene la misma
 // forma que la del público más el enlace. Las personas no tienen tabla aparte.
+// El público tiene además si está abierto (3.17): el de expositores lo cierra
+// su enlace.
 $columnasDe = static fn(string $tabla): array => $pdo->query("SHOW COLUMNS FROM {$P}$tabla")->fetchAll(PDO::FETCH_COLUMN);
 comprobar('su configuración tiene las mismas columnas que la del público, más las del enlace',
     array_values(array_diff($columnasDe('evento_formulario_expositores'), $columnasDe('evento_formulario'))) === ['token', 'token_rotado_en']
-    && array_diff($columnasDe('evento_formulario'), $columnasDe('evento_formulario_expositores')) === []);
+    && array_values(array_diff($columnasDe('evento_formulario'), $columnasDe('evento_formulario_expositores')))
+        === ['registro_estado', 'registro_mensaje']);
 
 $fuera = new Cliente($BASE);
 $enAlgunMenu = false;
@@ -5053,6 +5056,201 @@ foreach ([$tokenSitio, $tokenTablero, $tokenFotos, $tokenSinColumna] as $t) {
 }
 comprobar('los tokens no quedan escritos, ni a medias, en los registros de la aplicación ni en la bitácora',
     !$rastro && str_contains($registros, 'api_token'));
+
+/* =========================================================================
+   20 · Abrir, ocultar o cerrar el registro público
+   -------------------------------------------------------------------------
+   Desde la 3.17. Cerrado, nadie nuevo se registra: ni con el formulario, ni
+   con un envío hecho a mano, ni creando un acceso. Oculto, no se anuncia pero
+   el enlace sirve. Con los dos, quien ya se registró entra, completa su perfil
+   y lee que tiene que llevar el carnet para ingresar al evento.
+   ========================================================================= */
+titulo('Registro público: abierto, oculto o cerrado');
+
+$pdo->exec("DELETE FROM {$P}intento");
+$personas = static fn(): int => (int) $pdo->query("SELECT COUNT(*) FROM {$P}persona")->fetchColumn();
+$estadoRegistro = static fn(): string => (string) $pdo->query(
+    "SELECT registro_estado FROM {$P}evento_formulario WHERE evento_id = $eventoActivo")->fetchColumn();
+$ponerRegistro = static function (string $estado, string $mensaje = '') use ($jefa): string {
+    $jefa->get('/admin/configuracion/registro');
+    return $jefa->post('/admin/configuracion/registro/estado', ['registro_estado' => $estado, 'registro_mensaje' => $mensaje]);
+};
+$personaPorCorreo = static fn(string $correo): array => $pdo->query("SELECT * FROM {$P}persona WHERE correo = "
+    . $pdo->quote($correo))->fetch(PDO::FETCH_ASSOC) ?: [];
+$altaRegistro = 'action="' . $base . '/registro"';
+$enlaceRegistro = 'href="' . $base . '/registro"';
+
+// ---- De fábrica, abierto -------------------------------------------------------
+$html = $jefa->get('/admin/configuracion/registro');
+comprobar('Configuración → Registro tiene el estado del registro público, abierto de fábrica',
+    str_contains($html, 'id="estado-registro"') && str_contains($html, 'data-estado-registro="abierto"')
+    && preg_match('/name="registro_estado" value="abierto"\s+checked/', $html) === 1
+    && str_contains($html, 'value="oculto"') && str_contains($html, 'value="cerrado"') && $estadoRegistro() === 'abierto');
+$html = $jefa->get('/admin/configuracion/expositores');
+comprobar('el de expositores no lo tiene: lo cierra su propio enlace', $jefa->codigo === 200
+    && !str_contains($html, 'id="estado-registro"'));
+$html = (new Cliente($BASE))->get('/');
+comprobar('abierto, la portada ofrece el registro y ya dice que el carnet es la entrada',
+    str_contains($html, $altaRegistro) && str_contains($html, $enlaceRegistro) && str_contains($html, 'data-registro="abierto"')
+    && str_contains($html, 'con él ingresas') && str_contains($html, 'Llévalo al evento, cada día'));
+
+// Antes de cerrar: alguien se registra completo y alguien solo crea su acceso.
+$completa = new Cliente($BASE);
+$completa->get('/registro');
+$completa->subir('/registro', ['correo' => 'antes.del.cierre@narino.gov.co', 'nombre' => 'Registrada Antes del Cierre',
+    'tipo_documento' => 'CC', 'documento' => '1077665544', 'rol' => 'participante', 'habeas' => '1'], []);
+$aMedias = new Cliente($BASE);
+$aMedias->get('/entrar/crear');
+$aMedias->post('/entrar/crear', ['correo' => 'a.medias.cierre@narino.gov.co', 'clave' => 'clave-antes-del-cierre',
+    'clave2' => 'clave-antes-del-cierre', 'habeas' => '1']);
+comprobar('antes de cerrar, una persona se registra completa y otra solo crea su acceso',
+    ($personaPorCorreo('antes.del.cierre@narino.gov.co')['documento_huella'] ?? null) !== null
+    && ($personaPorCorreo('a.medias.cierre@narino.gov.co')['nombre'] ?? 'x') === '');
+
+// ---- Cerrado ---------------------------------------------------------------------
+$html = $ponerRegistro('cerrado', "Cupo completo: el registro cerró el 25 de octubre.\n<script>alert(1)</script>");
+comprobar('cerrarlo queda guardado, con su aviso y marcado en la pantalla', $estadoRegistro() === 'cerrado'
+    && str_contains($html, 'toast--ok') && str_contains($html, 'Registro cerrado: nadie nuevo')
+    && str_contains($html, 'data-estado-registro="cerrado"') && preg_match('/value="cerrado"\s+checked/', $html) === 1);
+
+$visita = new Cliente($BASE);
+$html = $visita->get('/');
+comprobar('cerrado, la portada ya no ofrece registrarse, ni en el menú',
+    !str_contains($html, $altaRegistro) && !str_contains($html, $enlaceRegistro)
+    && !str_contains($html, '>Preregistrarme<') && !str_contains($html, '>REGISTRARME<'));
+comprobar('invita a quien se registró a entrar, completar su perfil y llevar el carnet',
+    str_contains($html, 'Registro cerrado') && str_contains($html, 'Lleva tu carnet') && str_contains($html, 'completa tu perfil')
+    && str_contains($html, 'Entrar y ver mi carnet') && str_contains($html, 'Completa tu perfil'));
+comprobar('con el mensaje de la organización, escapado', str_contains($html, 'Cupo completo: el registro cerró el 25 de octubre.')
+    && str_contains($html, '&lt;script&gt;alert(1)&lt;/script&gt;') && !str_contains($html, '<script>alert(1)'));
+
+$html = $visita->get('/registro');
+comprobar('/registro dice que está cerrado, sin formulario', $visita->codigo === 200
+    && str_contains($html, 'data-registro-cerrado') && !str_contains($html, 'name="nombre"')
+    && str_contains($html, 'Lleva tu carnet') && str_contains($html, 'Cupo completo'));
+comprobar('igual por /preregistro, la dirección de los correos viejos',
+    str_contains($visita->get('/preregistro'), 'data-registro-cerrado'));
+
+// Envíos hechos a mano, con un testigo válido: si no, el 419 los pararía antes
+// y la prueba pasaría por la razón equivocada.
+$visita->get('/entrar');
+$antes = $personas();
+$html = $visita->subir('/registro', ['correo' => 'despues.del.cierre@narino.gov.co', 'nombre' => 'Llegó Tarde',
+    'tipo_documento' => 'CC', 'documento' => '1066554433', 'rol' => 'participante', 'habeas' => '1'], []);
+comprobar('un envío hecho a mano no crea a nadie: llega al servidor y responde que está cerrado',
+    $personas() === $antes && str_contains($html, 'data-registro-cerrado'));
+$visita->get('/entrar');
+$html = $visita->post('/entrar/crear', ['correo' => 'acceso.tarde@narino.gov.co', 'clave' => 'clave-despues-del-cierre',
+    'clave2' => 'clave-despues-del-cierre', 'habeas' => '1']);
+comprobar('crear un acceso tampoco: lleva a entrar, con el aviso', $personas() === $antes
+    && str_contains($html, 'ya no se crean accesos nuevos') && str_contains($html, 'name="correo"'));
+$html = $visita->get('/entrar');
+comprobar('la pantalla de entrada ya no ofrece crear un acceso ni el formulario, y dice por qué',
+    !str_contains($html, '/entrar/crear') && !str_contains($html, 'formulario completo')
+    && str_contains($html, 'El registro de asistentes nuevos está cerrado'));
+
+$tokenExpositores = (string) $pdo->query("SELECT token FROM {$P}evento_formulario_expositores
+    WHERE evento_id = $eventoActivo")->fetchColumn();
+$expositora = new Cliente($BASE);
+$html = $expositora->get('/registro/expositores/' . $tokenExpositores);
+comprobar('el formulario de expositores sigue abierto con su enlace', $expositora->codigo === 200
+    && str_contains($html, 'name="nombre"') && !str_contains($html, 'data-registro-cerrado'));
+
+// Quien ya se registró.
+$html = $completa->get('/');
+comprobar('quien ya se registró ve que su carnet es su entrada y qué le falta al perfil',
+    str_contains($html, 'Ya estás registrado') && str_contains($html, 'Llévalo el día del evento')
+    && str_contains($html, 'data-faltantes') && str_contains($html, 'tu foto, tu entidad, tu teléfono y tu municipio'));
+$html = $completa->get('/carnet');
+comprobar('su carnet le pide llevarlo y le dice qué le falta', $completa->codigo === 200
+    && str_contains($html, 'data-llevar-carnet') && str_contains($html, 'Lleva tu carnet el día del evento')
+    && str_contains($html, 'Te falta tu foto, tu entidad, tu teléfono y tu municipio')
+    && str_contains($html, 'Con tu foto en el carnet te reconocen en la entrada'));
+$html = $completa->get('/registro');
+comprobar('y sigue corrigiendo sus datos con el registro cerrado', $completa->codigo === 200
+    && str_contains($html, 'name="nombre"') && !str_contains($html, 'data-registro-cerrado')
+    && str_contains($html, 'Para tener tu perfil completo te falta'));
+$html = $completa->subir('/registro', ['nombre' => 'Registrada Antes del Cierre', 'tipo_documento' => 'CC',
+    'documento' => '1077665544', 'rol' => 'participante', 'entidad' => 'Secretaría TIC', 'telefono' => '3001234567',
+    'departamento' => 'Nariño', 'municipio' => 'Pasto', 'habeas' => '1'],
+    ['foto' => ['nombre' => 'foto.jpg', 'tipo' => 'image/jpeg', 'contenido' => $jpg]]);
+$completada = $personaPorCorreo('antes.del.cierre@narino.gov.co');
+comprobar('completa su perfil —con su foto— y el aviso de lo que falta desaparece',
+    ($completada['entidad'] ?? '') === 'Secretaría TIC' && ($completada['municipio'] ?? '') === 'Pasto'
+    && (string) ($completada['foto'] ?? '') !== '' && !str_contains($completa->get('/carnet'), 'data-faltantes')
+    && str_contains($completa->cuerpo, 'data-llevar-carnet'));
+
+$html = $aMedias->get('/registro');
+comprobar('quien solo había creado su acceso termina su registro con el registro cerrado',
+    $aMedias->codigo === 200 && str_contains($html, 'Completa tu registro') && !str_contains($html, 'data-registro-cerrado'));
+$aMedias->subir('/registro', ['nombre' => 'A Medias Antes del Cierre', 'tipo_documento' => 'CC',
+    'documento' => '1055443322', 'rol' => 'participante', 'habeas' => '1'], []);
+comprobar('y queda con su carnet', ($personaPorCorreo('a.medias.cierre@narino.gov.co')['documento_huella'] ?? null) !== null
+    && $aMedias->codigo === 200 && str_contains($aMedias->cuerpo, 'Tu carnet digital'));
+
+$html = $jefa->get('/registro');
+comprobar('alguien del equipo que abre el formulario ve dónde se vuelve a abrir',
+    str_contains($html, 'data-registro-cerrado') && str_contains($html, 'Eres del equipo'));
+$html = $jefa->get('/admin');
+comprobar('el panel recuerda que el registro está cerrado', str_contains($html, 'El registro público está cerrado'));
+
+// ---- Oculto ------------------------------------------------------------------------
+$ponerRegistro('oculto');
+$html = (new Cliente($BASE))->get('/');
+comprobar('oculto, la portada no ofrece registrarse ni dice que esté cerrado',
+    $estadoRegistro() === 'oculto' && !str_contains($html, $altaRegistro) && !str_contains($html, $enlaceRegistro)
+    && !str_contains($html, 'Registro cerrado') && str_contains($html, 'Lleva tu carnet'));
+$html = (new Cliente($BASE))->get('/entrar');
+comprobar('ni la pantalla de entrada', !str_contains($html, '/entrar/crear') && !str_contains($html, 'formulario completo')
+    && !str_contains($html, 'data-registro-cerrado'));
+$invitada = new Cliente($BASE);
+$html = $invitada->get('/registro');
+$invitada->subir('/registro', ['correo' => 'invitada.oculto@narino.gov.co', 'nombre' => 'Invitada Con el Enlace',
+    'tipo_documento' => 'CC', 'documento' => '1044332211', 'rol' => 'participante', 'habeas' => '1'], []);
+comprobar('pero con el enlace, el formulario sigue recibiendo registros', str_contains($html, 'name="nombre"')
+    && ($personaPorCorreo('invitada.oculto@narino.gov.co')['documento_huella'] ?? null) !== null);
+comprobar('y el panel recuerda que está oculto', str_contains($jefa->get('/admin'), 'El registro público está oculto'));
+
+// ---- Lo que no se admite -----------------------------------------------------------------
+$html = $ponerRegistro('cerradisimo');
+comprobar('un estado que no existe no se guarda', $estadoRegistro() === 'oculto' && str_contains($html, 'toast--warn'));
+$operadorRegistro = new Cliente($BASE);
+$operadorRegistro->get('/admin/entrar');
+$operadorRegistro->post('/admin/entrar', ['correo' => 'puerta@narino.gov.co', 'clave' => 'una clave mia y bien larga']);
+$operadorRegistro->get('/admin');
+$operadorRegistro->post('/admin/configuracion/registro/estado', ['registro_estado' => 'abierto'], false);
+comprobar('solo un administrador lo cambia', $operadorRegistro->codigo === 403 && $estadoRegistro() === 'oculto',
+    (string) $operadorRegistro->codigo);
+
+// ---- Abierto otra vez ----------------------------------------------------------------------
+$ponerRegistro('abierto');
+$html = (new Cliente($BASE))->get('/');
+comprobar('abierto otra vez, la portada y el menú vuelven a ofrecerlo', $estadoRegistro() === 'abierto'
+    && str_contains($html, $altaRegistro) && str_contains($html, $enlaceRegistro) && !str_contains($html, 'Cupo completo'));
+$html = $jefa->get('/admin');
+comprobar('la bitácora dice quién cerró, ocultó y abrió el registro',
+    str_contains($html, 'cerró el registro público') && str_contains($html, 'ocultó el registro público')
+    && str_contains($html, 'abrió el registro público') && !str_contains($html, 'El registro público está'));
+
+// ---- Sin las columnas nuevas ----------------------------------------------------------------
+// Si la base no pudo agregarlas sola —su usuario no puede alterar tablas—, el
+// registro sigue abierto como estaba y la pantalla dice qué falta.
+@touch($RAIZ . '/almacen/registro/esquema-al-dia.php');
+$pdo->exec("ALTER TABLE {$P}evento_formulario DROP COLUMN registro_mensaje, DROP COLUMN registro_estado");
+$html = $jefa->get('/admin/configuracion/registro');
+$pantallaSinColumnas = $jefa->codigo === 200 && str_contains($html, 'la base de datos tiene que ponerse al día')
+    && !str_contains($html, 'name="registro_estado"');
+$jefa->post('/admin/configuracion/registro/estado', ['registro_estado' => 'cerrado'], false);
+$guardarSinColumnas = $jefa->codigo === 303 && str_ends_with($jefa->cabecera('Location'), '/admin');
+$html = (new Cliente($BASE))->get('/');
+$portadaSinColumnas = str_contains($html, $altaRegistro);
+$html = (new Cliente($BASE))->get('/registro');
+$registroSinColumnas = str_contains($html, 'name="nombre"');
+$pdo->exec("ALTER TABLE {$P}evento_formulario ADD COLUMN registro_estado VARCHAR(12) NOT NULL DEFAULT 'abierto' AFTER banner_alt,
+    ADD COLUMN registro_mensaje VARCHAR(600) NOT NULL DEFAULT '' AFTER registro_estado");
+comprobar('sin las columnas nuevas, la pantalla dice qué falta en vez de ofrecerlo', $pantallaSinColumnas);
+comprobar('cambiarlo lleva al panel, donde está el botón', $guardarSinColumnas, $jefa->codigo . ' → ' . $jefa->cabecera('Location'));
+comprobar('y el registro sigue abierto, como estaba', $portadaSinColumnas && $registroSinColumnas);
 
 /* =========================================================================
    Resultado

@@ -459,6 +459,9 @@ restauró no es una copia.
    acto: antes el navegador seguía enseñando el anterior hasta un día, y parecía que no dejaba
    reemplazarlo. Ver 7.12.
 
+   La 3.19 tampoco. Quien no ha registrado su municipio es llevado a **Mis datos** al entrar,
+   una vez al día. Ver 7.13.
+
    Si el usuario de la base de datos no tiene permiso de `ALTER` —pasa en algunos
    alojamientos—, la actualización automática no puede hacerse: lo anota en el registro,
    vuelve a intentarlo cada cinco minutos y la plataforma sigue funcionando. Para hacerlo a
@@ -1139,6 +1142,49 @@ que volver a subirlos—, los registros y quién puede ver cada foto.
 
 **Volver atrás:** sube otra vez los archivos que descargaste en el paso 1. Vuelve el problema
 de la foto anterior en pantalla, pero no se pierde nada.
+
+### 7.13 La 3.19: sin municipio, a «Mis datos», sin tocar registros ni configuración
+
+**Qué hace.** Quien ya está registrado y no ha registrado su municipio es llevado a **Mis datos**
+al entrar: al iniciar sesión con cualquier método, o al abrir su carnet o la portada con la
+sesión abierta. Llega con el aviso «Te falta registrar tu municipio», la sección de
+caracterización abierta y la página puesta en *Departamento y municipio*.
+
+- **Una vez al día**, para que nunca le impida enseñar su carnet en la puerta: desde *Mis
+  datos*, *Mi carnet* lo lleva a su carnet sin volver a sacarlo. Al día siguiente, o al iniciar
+  sesión otra vez, se le pide de nuevo hasta que lo registre.
+- No se le pide a quien acaba de registrarse o de guardar *Mis datos* ese día, ni al escanear el
+  QR de la jornada o el carnet de otra persona, ni si el evento oculta *Departamento y
+  municipio* en **Configuración → Registro**.
+- El día en que ya se le pidió queda en los datos de su sesión, en una columna que ya existe.
+
+**Qué no cambia.** La base de datos —ninguna tabla ni columna nueva—, `config/`, `almacen/`, los
+registros y si el municipio es obligatorio u opcional, que sigue siendo lo que diga
+**Configuración → Registro**.
+
+**Qué archivos cambian:**
+
+| Archivo | Para qué |
+|---|---|
+| `app/Nucleo/Guardia.php` | `pedirMunicipio()`: llevar a *Mis datos* una vez al día, y anotarlo |
+| `app/Modelos/Persona.php` | `faltaMunicipio()` |
+| `app/Controladores/Carnet.php` | Al abrir el carnet |
+| `app/Controladores/Publico.php` | Al abrir la portada; *Mis datos* anota que ya lo vio |
+| `app/Vistas/publico/registro.php` | La caracterización abierta, el enlace al municipio y la indicación junto a él |
+| `index.php`, `herramientas/instalar.php`, `herramientas/correo.php` | El número de versión |
+
+**Cómo subirla:**
+
+1. Descarga, tal como están en el servidor, los archivos de la tabla, por si hay que volver atrás.
+2. Súbelos **todos juntos**, sin tocar `config/` ni `almacen/`. `Publico.php` y `registro.php`
+   traen también lo de la 3.18.2: si producción no la tiene, sube con ellos los de la 7.12, o la
+   versión completa.
+3. Con una cuenta de prueba **sin municipio**, entra con su QR de acceso: tiene que llegar a
+   *Mis datos*, en el municipio, con el aviso. Pulsa *Mi carnet*: tiene que abrir el carnet.
+   Elige el municipio, guarda, y vuelve a entrar: tiene que ir directo al carnet.
+
+**Volver atrás:** sube otra vez los archivos que descargaste en el paso 1. Las marcas que quedaron
+en las sesiones no estorban a la versión anterior, que no las lee.
 
 ---
 

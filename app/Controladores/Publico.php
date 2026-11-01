@@ -52,6 +52,11 @@ final class Publico
         // quien ya se registró a completar su perfil y a llevar el carnet.
         $formulario = Formulario::delEvento((int) $evento['id']);
         $persona = Guardia::personaActual();
+        // Quien ya entró y no tiene municipio va primero a «Mis datos», una vez
+        // al día (3.19). Como en su carnet: la portada también es una entrada.
+        if ($persona !== null) {
+            Guardia::pedirMunicipio($persona);
+        }
 
         Respuesta::vista('publico/inicio', [
             'titulo'    => 'Ingreso',
@@ -284,6 +289,12 @@ final class Publico
         $errores = [];
         $existente = null;   // a quién pertenece el correo o la identificación repetidos, para el equipo
 
+        // Está viendo sus datos, con lo que le falta: hoy ya no hace falta
+        // traerla aquí por el municipio al entrar a su carnet.
+        if ($yo !== null) {
+            Guardia::municipioPedido();
+        }
+
         // Con el registro público cerrado, quien no tiene sesión no crea un
         // registro: ni con el formulario a la vista ni con un envío hecho a
         // mano. Quien ya se registró sí entra: viene a completar sus datos. El
@@ -454,6 +465,9 @@ final class Publico
                     // del carnet le llega al buzón.
                     if ($yo === null) {
                         Sesion::abrir('asistente', $personaId);
+                        // Acaba de llenar el formulario: hoy no se le vuelve a
+                        // pedir el municipio, aunque lo haya dejado en blanco.
+                        Guardia::municipioPedido();
                         Correo::carnetEmitido(
                             (string) $valores['correo'],
                             (string) $valores['nombre'],
@@ -565,6 +579,9 @@ final class Publico
             // Lo que le falta para tener el perfil completo, para invitarla a
             // llenarlo: con eso sale entero el carnet con el que entra.
             'faltantes'     => $yo !== null && $completo ? Persona::faltantes($yo, $formulario) : [],
+            // Sin municipio, la caracterización se abre y el aviso lleva a él:
+            // es a lo que se la trae al entrar (Guardia::pedirMunicipio).
+            'faltaMunicipio' => $yo !== null && $completo && Persona::faltaMunicipio($yo, $formulario),
         ]);
     }
 

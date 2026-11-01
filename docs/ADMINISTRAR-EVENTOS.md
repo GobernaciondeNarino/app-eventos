@@ -762,6 +762,25 @@ se conserva.
 
 Lo obligatorio es lo de la sección 9.1: la ventana sigue a la configuración del evento.
 
+**Sin municipio, a «Mis datos» (desde la 3.19).** Quien ya está registrado y no ha registrado su
+municipio es llevado a **Mis datos** al entrar a la plataforma, con el aviso «Te falta registrar
+tu municipio». Llega con la sección de caracterización abierta y la página puesta en
+*Departamento y municipio*. Así se completa la cobertura territorial que piden los informes sin
+tener que escribirle a nadie.
+
+- Pasa al entrar: al iniciar sesión —con el código, la contraseña o su QR de acceso— o al abrir
+  la plataforma con la sesión ya abierta, en su carnet o en la portada.
+- **Una vez al día.** Desde *Mis datos*, *Mi carnet* lo lleva a su carnet con un toque y no lo
+  vuelve a sacar ese día. En la puerta lo que tiene que enseñar es el carnet, y esto nunca se
+  lo impide. Al día siguiente, o al iniciar sesión otra vez, se le vuelve a pedir, hasta que lo
+  registre.
+- Quien acaba de registrarse o de guardar *Mis datos* no es llevado de vuelta ese día, aunque
+  haya dejado el municipio en blanco: acaba de ver el formulario.
+- Escanear el QR de la jornada o el carnet de otra persona no pasa por aquí: el ingreso y el
+  intercambio de contacto se registran primero.
+- Si el evento oculta *Departamento y municipio* en **Configuración → Registro**, no se pide.
+  Para que además sea obligatorio al guardar, ponlo en *Obligatorio* ahí mismo (sección 9.1).
+
 ### 9.8 El formulario privado de expositores
 
 Desde la 3.9 hay un **segundo formulario de registro, solo para quienes van a exponer**. Es el

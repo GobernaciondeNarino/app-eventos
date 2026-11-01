@@ -918,6 +918,9 @@ $html = $maria->post('/preregistro', [
     'correo' => 'cbolanos@tumaco.gov.co',          // el de otro asistente
     'nombre' => 'María Fernanda Zambrano Corregida',
     'tipo_documento' => 'CC', 'documento' => '1085234567',
+    // Con su municipio: sin él, desde la 3.19 entrar la lleva primero a «Mis
+    // datos», y las pruebas de entrar con su QR son de otra cosa.
+    'departamento' => 'Nariño', 'municipio' => 'Pasto',
     'habeas' => '1',
 ]);
 $ajena = $pdo->query("SELECT nombre FROM {$BD['prefijo']}persona
@@ -1637,7 +1640,8 @@ $fotoJpg = static function (int $r, int $g, int $b): array {
     return ['foto' => ['nombre' => 'foto.jpg', 'tipo' => 'image/jpeg', 'contenido' => (string) ob_get_clean()]];
 };
 $datosFotoMaria = [
-    'nombre' => 'María Fernanda Zambrano Corregida', 'tipo_documento' => 'CC', 'documento' => '1085234567', 'habeas' => '1',
+    'nombre' => 'María Fernanda Zambrano Corregida', 'tipo_documento' => 'CC', 'documento' => '1085234567',
+    'departamento' => 'Nariño', 'municipio' => 'Pasto', 'habeas' => '1',
 ];
 comprobar('sin foto, el botón ofrece tomarla o elegirla, y no hay nada que reemplazar',
     str_contains($html, 'Tomar foto o elegir de la galería') && !str_contains($html, 'data-foto-reemplaza'));
@@ -1681,6 +1685,80 @@ $html = $maria->subir('/preregistro', $datosFotoMaria + ['quitar_foto' => '1'], 
 comprobar('«Quitar la foto» sola la quita: el carnet vuelve a las iniciales',
     $archivoDeMaria() === '' && !is_file($RAIZ . '/almacen/fotos/' . $tercera)
     && str_contains($html, 'carnet__photo-empty') && $versionFoto($html) === '');
+
+/* =========================================================================
+   Sin municipio, a «Mis datos» (3.19)
+   -------------------------------------------------------------------------
+   Quien no ha registrado su municipio es llevada a «Mis datos» al entrar: a su
+   carnet —a donde lleva el ingreso— o a la portada. Una vez al día, para que
+   nunca le impida llegar a su carnet en la puerta. Con María sin su municipio
+   un momento, entrando desde otro teléfono con su QR de acceso.
+   ========================================================================= */
+titulo('Sin municipio, a «Mis datos»');
+
+$P0 = $BD['prefijo'];
+$pdo->exec("UPDATE {$P0}persona SET departamento = '', municipio = '' WHERE id = $idMariaFoto");
+$sinMunicipio = new Cliente($BASE);
+$marcaDeOtroDia = static function () use ($pdo, $P0, $sinMunicipio): void {
+    $pdo->prepare("UPDATE {$P0}sesion SET datos = JSON_SET(datos, '$.municipio_pedido', '2000-01-01') WHERE id = ?")
+        ->execute([hash('sha256', $sinMunicipio->cookie('evtic_asis'))]);
+};
+
+$sinMunicipio->get('/entrar/qr/' . $tokenAcceso, false);
+comprobar('el ingreso la lleva a su carnet, como siempre',
+    $sinMunicipio->codigo === 303 && str_ends_with((string) parse_url($sinMunicipio->cabecera('Location'), PHP_URL_PATH), '/carnet'),
+    $sinMunicipio->codigo . ' → ' . $sinMunicipio->cabecera('Location'));
+$sinMunicipio->get('/carnet', false);
+comprobar('pero sin municipio, su carnet la manda primero a «Mis datos», al municipio',
+    $sinMunicipio->codigo === 303 && str_ends_with($sinMunicipio->cabecera('Location'), '/registro#ubicacion'),
+    $sinMunicipio->codigo . ' → ' . $sinMunicipio->cabecera('Location'));
+$html = $sinMunicipio->get('/registro');
+comprobar('con el saludo de bienvenida y lo que le falta',
+    str_contains($html, 'Bienvenido, María') && str_contains($html, 'Te falta registrar tu municipio'));
+comprobar('con la caracterización abierta, el municipio señalado y un enlace a él desde el aviso',
+    preg_match('#class="card__body stack stack--5" id="bloque-opcional"#', $html) === 1
+    && str_contains($html, 'id="ubicacion"') && str_contains($html, 'data-falta-municipio')
+    && str_contains($html, 'href="#ubicacion" data-ir-municipio'));
+$html = $sinMunicipio->get('/carnet');
+comprobar('de ahí llega a su carnet con un toque, sin que la vuelva a sacar',
+    $sinMunicipio->codigo === 200 && str_contains($html, 'Tu carnet digital') && str_contains($html, 'tu municipio'));
+$sinMunicipio->get('/', false);
+comprobar('ni la portada, el mismo día', $sinMunicipio->codigo === 200, (string) $sinMunicipio->codigo);
+
+$marcaDeOtroDia();
+$sinMunicipio->get('/', false);
+comprobar('otro día, al entrar se lo pide otra vez, también desde la portada',
+    $sinMunicipio->codigo === 303 && str_ends_with($sinMunicipio->cabecera('Location'), '/registro#ubicacion'),
+    $sinMunicipio->codigo . ' → ' . $sinMunicipio->cabecera('Location'));
+
+// Si el formulario del evento no pide la ubicación, no hay a dónde llevarla.
+$idEventoActivo = (int) $pdo->query("SELECT id FROM {$P0}evento WHERE activo = 1 ORDER BY id LIMIT 1")->fetchColumn();
+$camposAntes = $pdo->query("SELECT campos FROM {$P0}evento_formulario WHERE evento_id = $idEventoActivo")->fetch(PDO::FETCH_ASSOC);
+$pdo->prepare("INSERT INTO {$P0}evento_formulario (evento_id, campos) VALUES (?, ?)
+                ON DUPLICATE KEY UPDATE campos = VALUES(campos)")
+    ->execute([$idEventoActivo, json_encode(['ubicacion' => 'oculto']
+        + (json_decode((string) ($camposAntes['campos'] ?? ''), true) ?: []))]);
+$marcaDeOtroDia();
+$sinMunicipio->get('/carnet', false);
+comprobar('si el formulario no pide el municipio, entra directo a su carnet', $sinMunicipio->codigo === 200,
+    (string) $sinMunicipio->codigo);
+if ($camposAntes === false) {
+    $pdo->exec("DELETE FROM {$P0}evento_formulario WHERE evento_id = $idEventoActivo");
+} else {
+    $pdo->prepare("UPDATE {$P0}evento_formulario SET campos = ? WHERE evento_id = ?")
+        ->execute([$camposAntes['campos'], $idEventoActivo]);
+}
+
+// Con su municipio guardado, el ingreso vuelve a llevarla directo a su carnet.
+$marcaDeOtroDia();
+$sinMunicipio->get('/registro');
+$html = $sinMunicipio->post('/registro', $datosFotoMaria);
+comprobar('al guardar su municipio vuelve a su carnet', str_contains($html, 'Actualizamos tus datos')
+    && str_contains($html, 'Tu carnet digital'), substr(strip_tags($html), 0, 160));
+$otraVez = new Cliente($BASE);
+$html = $otraVez->get('/entrar/qr/' . $tokenAcceso);
+comprobar('y la próxima vez que entra va directo a su carnet, sin escalas',
+    $otraVez->codigo === 200 && str_contains($html, 'Tu carnet digital') && !str_contains($html, 'Te falta registrar tu municipio'));
 
 /* =========================================================================
    Portada: el botón cambia con la fecha del evento

@@ -211,6 +211,58 @@ final class Guardia
     }
 
     /* =====================================================================
+       Sin municipio, a «Mis datos»
+       ===================================================================== */
+
+    /** La marca, en los datos de la sesión, del día en que ya se le pidió. */
+    private const MUNICIPIO_PEDIDO = 'municipio_pedido';
+
+    /**
+     * Quien no ha registrado su municipio es llevada a «Mis datos» al entrar
+     * (3.19), si el formulario del evento lo pide.
+     *
+     * Se llama al llegar a su carnet —que es a donde lleva el ingreso, con
+     * cualquier método— y a la portada. Una sola vez al día: en la puerta lo
+     * que tiene que enseñar es el carnet, y desde «Mis datos» llega a él con un
+     * toque sin que esto la vuelva a sacar. La marca va en la sesión, así que
+     * cada vez que inicia sesión se le pide otra vez. Un destino concreto —el QR
+     * de la jornada, el carnet de otra persona— no pasa por aquí: esa acción va
+     * primero, y el registro de su ingreso no puede esperar a un formulario.
+     */
+    public static function pedirMunicipio(array $persona): void
+    {
+        if (!\App\Modelos\Persona::registroCompleto($persona)
+            || !\App\Modelos\Persona::faltaMunicipio($persona, \App\Modelos\Formulario::delEvento((int) $persona['evento_id']))) {
+            return;
+        }
+        // Sin sesión donde anotarlo no se manda: se la mandaría cada vez.
+        $sesion = Sesion::actual('asistente');
+        if ($sesion === null || ($sesion['datos'][self::MUNICIPIO_PEDIDO] ?? '') === date('Y-m-d')) {
+            return;
+        }
+        self::municipioPedido();
+
+        // Lo que traía —«Bienvenido de nuevo…»— no se pierde: va delante. Ya se
+        // leyó de su cookie al arrancar (App::compartirConVistas).
+        $traia = Respuesta::compartidas()['aviso'] ?? null;
+        Respuesta::redirigir('/registro#ubicacion', trim((string) ($traia['mensaje'] ?? '') . ' Te falta registrar tu '
+            . 'municipio: elígelo aquí y guarda los cambios. Tu carnet sigue en «Mi carnet».'), 'warn');
+    }
+
+    /**
+     * Anota que hoy ya se le pidió el municipio. También cuando abre o guarda
+     * «Mis datos» por su cuenta: ya vio lo que le falta, y llevarla otra vez
+     * al mismo formulario solo le estorbaría.
+     */
+    public static function municipioPedido(): void
+    {
+        $datos = Sesion::datos('asistente');
+        if (($datos[self::MUNICIPIO_PEDIDO] ?? '') !== date('Y-m-d')) {
+            Sesion::guardarDatos('asistente', [self::MUNICIPIO_PEDIDO => date('Y-m-d')] + $datos);
+        }
+    }
+
+    /* =====================================================================
        Equipo organizador
        ===================================================================== */
 

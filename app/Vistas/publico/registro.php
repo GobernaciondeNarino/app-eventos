@@ -35,6 +35,7 @@ use App\Nucleo\Documento;
 $porEquipo = $porEquipo ?? false;
 $registrada = $registrada ?? null;
 $existente = $existente ?? null;
+$faltaMunicipio = $faltaMunicipio ?? false;
 $f = $formulario;
 /** El asterisco de los obligatorios, y el atributo que lee el aviso de registro incompleto. */
 $req = static fn(string $campo): string => $f->obligatorio($campo) ? ' <span class="req">*</span>' : '';
@@ -69,7 +70,10 @@ $deCaracterizacion = ['rango_edad', 'ubicacion', 'genero', 'etnia', 'discapacida
 $caracterizacionVisible = array_filter($deCaracterizacion, static fn(string $c): bool => $f->visible($c)) !== [];
 $caracterizacionExige = array_filter($deCaracterizacion, static fn(string $c): bool => $f->obligatorio($c)) !== [];
 $erroresOpcionales = ['municipio', 'departamento', 'rango_edad', 'genero', 'etnia', 'discapacidad'];
-$abrirOpcional = $caracterizacionExige || (bool) array_intersect($erroresOpcionales, array_keys($errores));
+// Y si le falta el municipio: al entrar se la trae aquí a registrarlo (3.19), y
+// no puede tener que adivinar que está dentro de una sección plegada.
+$abrirOpcional = $caracterizacionExige || $faltaMunicipio
+    || (bool) array_intersect($erroresOpcionales, array_keys($errores));
 
 // Los errores que se le enseñan a la persona en el aviso de «no se guardó».
 $erroresVisibles = array_diff_key($errores, ['ofrecer_acceso' => true]);
@@ -202,7 +206,12 @@ guiones('foto.js', 'preregistro.js', 'claves.js', 'registro-incompleto.js');
     <!-- Ya tiene carnet, pero el perfil no está completo: se le dice qué falta. -->
     <div class="notice" data-faltantes>
       <span class="notice__icon" aria-hidden="true">◆</span>
-      <span>Para tener tu perfil completo te falta <?= e(enumerar($faltantes)) ?>.</span>
+      <span>
+        Para tener tu perfil completo te falta <?= e(enumerar($faltantes)) ?>.
+        <?php if ($faltaMunicipio): ?>
+          <a href="#ubicacion" data-ir-municipio>Elegir mi municipio ›</a>
+        <?php endif; ?>
+      </span>
     </div>
   <?php endif; ?>
   <?php endif; /* $porEquipo */ ?>
@@ -560,7 +569,14 @@ guiones('foto.js', 'preregistro.js', 'claves.js', 'registro-incompleto.js');
       <?php endif; ?>
 
       <?php if ($f->visible('ubicacion')): ?>
-      <div class="grid-2" style="align-items:end">
+      <!-- #ubicacion: a donde se trae a quien no ha registrado su municipio. -->
+      <div class="grid-2" style="align-items:end" id="ubicacion">
+        <?php if ($faltaMunicipio): ?>
+          <p class="help" style="grid-column:1 / -1;margin:0;color:var(--c-title)" data-falta-municipio>
+            Elige tu departamento y después tu municipio<?= in_array('Otro', $departamentos, true)
+                ? ' —si no está, «Otro»—' : '' ?>, y guarda los cambios al final.
+          </p>
+        <?php endif; ?>
         <div class="field">
           <label class="label" for="departamento">Departamento<?= $req('ubicacion') ?></label>
           <select class="select<?= $err('departamento') ? ' is-invalid' : '' ?>" id="departamento" name="departamento"

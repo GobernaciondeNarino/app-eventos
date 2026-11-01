@@ -38,6 +38,8 @@ final class Carnet
     public function ver(Peticion $peticion): void
     {
         $persona = Guardia::personaActual();
+        // Sin municipio, primero a «Mis datos», una vez al día (3.19).
+        Guardia::pedirMunicipio($persona);
         $evento = App::eventoActivo();
         $credencial = Credencial::asegurar((int) $persona['id']);
 

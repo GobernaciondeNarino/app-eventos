@@ -239,10 +239,20 @@ final class Persona
         if ($f->visible('telefono') && $vacio('telefono')) {
             $faltan[] = 'tu teléfono';
         }
-        if ($f->visible('ubicacion') && $vacio('municipio')) {
+        if (self::faltaMunicipio($persona, $f)) {
             $faltan[] = 'tu municipio';
         }
         return $faltan;
+    }
+
+    /**
+     * Si el formulario pide el departamento y el municipio y la persona no ha
+     * registrado el municipio. Quien no lo tiene es llevada a «Mis datos» al
+     * entrar (Guardia::pedirMunicipio).
+     */
+    public static function faltaMunicipio(array $persona, Formulario $f): bool
+    {
+        return $f->visible('ubicacion') && trim((string) ($persona['municipio'] ?? '')) === '';
     }
 
     /**

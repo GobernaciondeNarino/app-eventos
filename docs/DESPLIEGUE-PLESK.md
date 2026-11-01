@@ -452,6 +452,9 @@ restauró no es una copia.
    de acceso y el administrador siguen registrando a quien llegue sin registro, desde
    **Registros → Registrar persona** o desde **Escanear carnet**. Ver 7.10.
 
+   La 3.18.1 tampoco: solo cambian dos hojas de estilo. En el carnet en pantalla, la foto sale
+   entera y cuadrada, como la encuadró la persona y como sale al imprimir. Ver 7.11.
+
    Si el usuario de la base de datos no tiene permiso de `ALTER` —pasa en algunos
    alojamientos—, la actualización automática no puede hacerse: lo anota en el registro,
    vuelve a intentarlo cada cinco minutos y la plataforma sigue funcionando. Para hacerlo a
@@ -1047,6 +1050,39 @@ cada quince minutos—:
 deshacer en la base. Lo único que deja de existir es el formulario del equipo: con el registro
 cerrado, volvería a hacer falta pasarlo a *Oculto* y enviar el enlace para registrar a alguien.
 Las personas registradas por el equipo siguen ahí como cualquier otra.
+
+### 7.11 La 3.18.1: la foto del carnet en pantalla, sin tocar registros ni configuración
+
+**Qué corrige.** La foto se guarda cuadrada, tal como la persona la encuadra en el formulario.
+El carnet impreso la mostraba así, pero el carnet en pantalla (`/carnet`) la ponía en un marco
+apaisado y le cortaba la parte de abajo: la gente veía su foto distinta a como la había
+encuadrado y se confundía. Ahora el marco de la pantalla también es cuadrado y la foto sale
+entera, igual que al imprimir y en las imágenes descargadas. Si el nombre o la entidad son
+largos, la foto se achica un poco, entera, para que el texto quepa. En un navegador muy viejo
+que no haga el marco cuadrado, la foto sale entera con un margen a los lados, nunca recortada.
+
+**Qué no cambia.** La base de datos, `config/`, `almacen/`, las fotos guardadas —no hay que
+volver a subirlas—, los registros y el carnet impreso.
+
+**Qué archivos cambian:**
+
+| Archivo | Para qué |
+|---|---|
+| `assets/css/components.css` | El marco cuadrado de la foto en el carnet en pantalla |
+| `assets/css/print.css` | Lo mismo si alguien imprime `/carnet` desde el menú del navegador |
+| `index.php`, `herramientas/instalar.php`, `herramientas/correo.php` | El número de versión |
+
+**Cómo subirla:**
+
+1. Descarga, tal como están en el servidor, los archivos de la tabla, por si hay que volver atrás.
+2. Súbelos, **sin tocar `config/` ni `almacen/`**. Si producción todavía no tiene la 3.18, sube
+   la versión completa (ver 7.10).
+3. Abre tu carnet en el celular con una cuenta de prueba que tenga foto: debe verse cuadrada y
+   entera, igual que en **Imprimir**. Las hojas de estilo van con la fecha del archivo en la
+   dirección, así que los teléfonos toman la nueva solos; si alguno sigue mostrando la anterior,
+   basta con recargar la página.
+
+**Volver atrás:** sube otra vez los archivos que descargaste en el paso 1.
 
 ---
 

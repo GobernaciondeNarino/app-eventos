@@ -55,7 +55,8 @@
   .carnet__face::before { border-color: #999999 !important; inset: 2mm; }
   .carnet__k, .carnet__qrcap, .brandtext__sub { color: #555555 !important; }
   .carnet__v, .carnet__rol, .brandtext__name, .carnet__code { color: #000000 !important; }
-  .carnet__photo > div { height: 34mm; }
+  /* Cuadrada, como la foto y como en /carnet/imprimir. */
+  .carnet__photo { flex: none; width: 36mm; height: 36mm; align-self: center; }
   .barcode span { background: #000000 !important; }
   .brandmark { border-color: #000000 !important; color: #000000 !important; background: none !important; }
 

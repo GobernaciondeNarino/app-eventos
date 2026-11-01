@@ -462,6 +462,11 @@ Hasta la 3.14 esta página no ponía la foto —siempre salían las iniciales—
 nombre, la identificación y la entidad quedaban por fuera del recuadro. Ahora lo que se ve en la
 pantalla es exactamente lo que sale en el papel y en las imágenes.
 
+**La foto se ve igual en todas partes.** Se guarda cuadrada, tal como la persona la encuadra en
+el formulario, y así sale en el carnet en pantalla, en el impreso y en las imágenes. Hasta la
+3.18 el carnet en pantalla la ponía en un marco apaisado y le cortaba la parte de abajo: la gente
+veía su foto distinta a como la había encuadrado, aunque al imprimir saliera bien.
+
 ---
 
 ## 7. Acreditar a quien llega sin nada

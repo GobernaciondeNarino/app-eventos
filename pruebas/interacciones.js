@@ -264,6 +264,23 @@ function titulo(t) {
       color && color[0] > 150 && color[1] < 110 && color[2] < 110,
       color ? color.join(',') : 'sin imagen');
 
+    // Y en pantalla se ve como la encuadró: hasta la 3.18 el marco era
+    // apaisado y la foto, cuadrada, se salía por abajo; el carnet en pantalla
+    // no se parecía al editor ni al impreso.
+    const marcoFoto = await p2.evaluate(() => {
+      const caja = document.querySelector('.carnet__photo > div').getBoundingClientRect();
+      const img = document.querySelector('.carnet__photo img').getBoundingClientRect();
+      return {
+        caja: Math.round(caja.width) + 'x' + Math.round(caja.height),
+        img: Math.round(img.width) + 'x' + Math.round(img.height),
+        cuadrado: Math.abs(caja.width - caja.height) <= 1,
+        dentro: img.top >= caja.top - 0.5 && img.bottom <= caja.bottom + 0.5
+          && img.left >= caja.left - 0.5 && img.right <= caja.right + 0.5,
+      };
+    });
+    comprobar('en el carnet en pantalla la foto va entera, en un marco cuadrado como al imprimir',
+      marcoFoto.cuadrado && marcoFoto.dentro, JSON.stringify(marcoFoto));
+
     comprobar('sin errores de consola en el editor', erroresFoto.length === 0,
       erroresFoto.slice(0, 2).join(' | '));
 

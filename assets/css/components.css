@@ -327,13 +327,27 @@ a.paginas__num:hover, .paginas__paso:hover { border-color: var(--c-accent); colo
 .carnet__head { position: relative; display: flex; align-items: center; gap: 11px; padding: 4px 4px 0; }
 /* La foto mide lo de siempre, pero cede alto cuando el nombre o la entidad
    son largos: así el texto no se sale por debajo del carnet. Los textos no
-   ceden (en un flex, su mínimo es su contenido); la foto sí, hasta 140 px. */
+   ceden (en un flex, su mínimo es su contenido); la foto sí, hasta 140 px.
+   El marco es cuadrado, como la foto: se guarda cuadrada, tal como la persona
+   la encuadra en el editor, y así sale en el carnet impreso. Hasta la 3.18 era
+   apaisado, y «cover» le cortaba arriba y abajo: en pantalla la foto no se
+   parecía a la que la persona había encuadrado. El ancho sigue al alto.
+   La foto va posicionada sobre el marco y con «contain»: con alto 100% dentro
+   de la rejilla, el alto no se resolvía y la imagen crecía hasta su ancho,
+   desbordando por abajo. Así, si un navegador no hace el marco cuadrado, se ve
+   entera con un margen a los lados, nunca recortada. */
 .carnet__photo {
   position: relative; margin: 2px 6px 0; border: 1px solid var(--a-40); padding: 5px; background: var(--c-sunken);
   flex: 0 1 230px; min-height: 140px; display: flex;
+  aspect-ratio: 1 / 1; align-self: center;
 }
 .carnet__photo > div { position: relative; width: 100%; flex: 1; min-height: 0; overflow: hidden; display: grid; place-items: center; background: rgba(var(--c-accent-rgb), .05); }
-.carnet__photo img { width: 100%; height: 100%; object-fit: cover; object-position: center 30%; }
+.carnet__photo img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; }
+/* Sin aspect-ratio (Safari antes de la 15), el marco de siempre, a lo ancho:
+   la foto entera en el centro. */
+@supports not (aspect-ratio: 1 / 1) {
+  .carnet__photo { align-self: stretch; }
+}
 .carnet__photo-empty { font-family: var(--f-mono); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--c-muted); text-align: center; padding: 0 12px; }
 .carnet__rol {
   position: relative; text-align: center; font-family: var(--f-display);

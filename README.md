@@ -24,8 +24,8 @@ registra gente, se sella asistencia, se aprueban exposiciones y se exportan repo
 | **Instalación** | Asistente de seis pasos que crea, actualiza o anexa las tablas. Al subir una versión nueva, la base se pone al día sola en la primera visita |
 | **Autenticación** | Cinco formas de entrar: correo, QR personal, contraseña, WhatsApp y SMS. Se puede crear el acceso con solo correo y contraseña. El equipo, con contraseña y segundo factor. Quien olvida su contraseña la recupera con un enlace al correo, y un administrador puede enviárselo desde el panel |
 | **Códigos QR** | Generador **y lector** propios, verificados uno contra otro y contra una librería de referencia |
-| **API** | Consulta en JSON de expositores, participantes y demás perfiles, con filtros en la dirección y un token por cada sistema que consulta, que se crea y se revoca en Configuración → API. Solo lee, y nunca entrega la identificación ni la caracterización; la fotografía, como enlace, solo a un token con ese permiso |
-| **Pruebas** | 970 comprobaciones de extremo a extremo, 160 de actualización desde la 1.0.0, 157 en navegador, y 641 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy y formulario de registro |
+| **API** | Consulta en JSON de expositores, participantes y demás perfiles, con filtros en la dirección y un token por cada sistema que consulta, que se crea, se vuelve a copiar, se revoca y se elimina en Configuración → API. Solo lee, y nunca entrega la identificación; la fotografía, como enlace, y la caracterización, solo a un token con cada permiso |
+| **Pruebas** | 1012 comprobaciones de extremo a extremo, 160 de actualización desde la 1.0.0, 160 en navegador, y 641 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy y formulario de registro |
 
 ---
 
@@ -150,9 +150,10 @@ El sitio web de la Secretaría, un tablero u otra dependencia pueden consultar e
 registraron, en **`/api/v1`**: `/personas` (todos los perfiles), `/expositores` (con su propuesta
 y su lugar en la agenda) y `/perfiles`, con filtros en la dirección
 (`/api/v1/expositores?estado=aprobada&orden=jornada`). Cada sistema usa su propio token, que un
-administrador crea y revoca en **Configuración → API**; el correo y el teléfono, solo con un token
-que lo permita. También el enlace de la fotografía de cada persona, para ponerlo tal cual en una
-página: se abre sin el token y solo lo recibe un token con ese permiso. Ver
+administrador crea, vuelve a ver para copiarlo, revoca y elimina en **Configuración → API**; el
+correo y el teléfono, solo con un token que lo permita. También el enlace de la fotografía de cada
+persona, para ponerlo tal cual en una página —se abre sin el token—, y la caracterización —género,
+rango de edad, grupo étnico y discapacidad—, cada una solo para un token con ese permiso. Ver
 [`docs/API.md`](docs/API.md).
 
 Si el código de la aplicación no entra, la pantalla dice por qué —ya se usó, el reloj del
@@ -380,14 +381,14 @@ el enrutado, las cookies, los testigos y los guardias, que es donde suelen estar
 Incluye 19 comprobaciones en el bloque específico de seguridad y otras tantas repartidas por
 los guardias de cada pantalla.
 
-Estado actual: **970 de 970** de extremo a extremo, **78** del asistente de instalación,
+Estado actual: **1012 de 1012** de extremo a extremo, **78** del asistente de instalación,
 **160** de actualización de una instalación en producción por siete caminos, **46** del
 segundo factor —los vectores del RFC 6238 y el reloj del servidor corrido—, **64** de la
 configuración de los formularios de registro, **22** del hash de contraseñas,
 **19** del correo saliente, **19** de la dirección del visitante detrás del proxy, **21** de la
 fotografía del carnet, **61** de los adjuntos del expositor, **17** del saneado de logos SVG,
 **198** casos de QR idénticos entre PHP y JavaScript, **161** entre JavaScript y la referencia,
-**13** del lector de QR, **157** de interacción en navegador, y las 23 pantallas limpias en
+**13** del lector de QR, **160** de interacción en navegador, y las 23 pantallas limpias en
 escritorio, tableta y móvil.
 
 Las pruebas nacieron de errores reales, y por eso cubren lo que cubren: una instalación que se

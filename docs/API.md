@@ -1,7 +1,7 @@
 # API de consulta
 
 Plataforma de Eventos TIC · versión 1 de la API, desde la 3.14; el enlace de la fotografía, desde
-la 3.16
+la 3.16; la caracterización, volver a ver el token y eliminarlo, desde la 3.20
 
 Para que otro sistema —el sitio web de la Secretaría, un tablero, otra dependencia— consulte en
 JSON quiénes se registraron al evento: expositores, participantes y los demás perfiles, con
@@ -14,7 +14,8 @@ filtros en la dirección.
 ## 1. En un minuto
 
 1. En el panel, **Configuración → API**, escribe para qué sistema es y pulsa **Crear token**.
-   Cópialo: es la única vez que se ve.
+   Cópialo con **Copiar el token**. Si después se pierde, **Ver el token** lo muestra otra vez
+   (2.7).
 2. Consulta:
 
    ```bash
@@ -41,8 +42,8 @@ Cada sistema que consulta tiene su propio token, con un nombre que dice cuál es
 Secretaría TIC», «Tablero de asistencia»). Así se sabe quién usa la API, cuándo fue la última vez
 y cuántas consultas lleva, y se le corta a uno sin dejar sin servicio a los demás.
 
-Solo un **administrador** crea y revoca tokens. Queda en la bitácora del panel quién lo hizo y
-para qué sistema.
+Solo un **administrador** crea, revoca y elimina tokens (2.7). Queda en la bitácora del panel
+quién lo hizo y para qué sistema.
 
 ### 2.2 Qué puede ver: el alcance
 
@@ -54,6 +55,9 @@ para qué sistema.
 Elige el menor que le sirva al sistema. Un sitio web que publica la lista de expositores no
 necesita el correo de nadie; un tablero interno de la organización que llama a los asistentes,
 sí.
+
+Aparte del alcance, cada token puede tener dos permisos, que se dan al crearlo o después, sin
+cambiar el token: **la fotografía** (2.6) y **la caracterización** (2.8).
 
 Con alcance básico, el filtro `q` **no busca en el correo**: si buscara, serviría para averiguar
 si un correo está registrado, que es justo lo que ese alcance no deja ver.
@@ -84,11 +88,14 @@ Quien tenga el token puede consultar los registros. Por eso:
 - La API no envía cabeceras CORS a propósito: un navegador no deja que una página de otro sitio
   lea sus respuestas.
 - Entrégalo por un canal seguro a quien administra ese sistema, no por un grupo de chat.
-- Si se filtró, **revócalo** en Configuración → API y crea otro. Deja de servir en el acto.
+- Si se filtró, **revócalo o elimínalo** en Configuración → API y crea otro. Deja de servir en el
+  acto.
 - Los enlaces de la fotografía (2.6) sí pueden ir en una página pública: no llevan el token.
 
-En la base de datos queda solo la huella SHA-256 de cada token, no el token: quien lea la base
-no puede usarlo. Por eso no se puede volver a mostrar; si se pierde, se crea otro.
+En la base de datos, el token se busca por su huella SHA-256 y, desde la 3.20, se guarda además
+**cifrado con la llave de la instalación** —la misma con que se cifra el número de documento—,
+para poder volver a verlo (2.7). Quien lea solo la base no puede usarlo: le falta la llave, que
+está en `config/config.php` y no en la base.
 
 ### 2.5 Topes
 
@@ -147,6 +154,64 @@ servidor, como en 5—:
 aceptó aparecer en el directorio del evento. Quien quiera guardar copia de las fotos en su propio
 sistema las baja con el mismo enlace; cada una llega como `foto-ID.jpg`.
 
+### 2.7 Volver a verlo, revocarlo, eliminarlo
+
+En **Configuración → API**, cada token vigente tiene:
+
+- **Ver el token** —desde la 3.20—. Lo muestra otra vez arriba de la pantalla, el mismo, con el
+  botón **Copiar el token**. La lista nunca lo lleva: se pide con ese botón, y queda en la bitácora
+  quién lo volvió a ver. Al salir de la pantalla ya no está.
+- **Revocar.** La API lo rechaza desde la consulta siguiente; queda en la lista como revocado,
+  con su historial —cuándo se creó, cuándo se usó por última vez y cuántas consultas hizo—.
+- **Eliminar** —desde la 3.20, también en los revocados—. Lo mismo que revocar si estaba vigente,
+  y además lo quita de la lista. Sus enlaces de fotografía dejan de servir. La bitácora conserva
+  quién lo creó, quién lo eliminó y si estaba vigente.
+
+Las dos últimas preguntan antes de hacerlo.
+
+**Los tokens creados antes de la 3.20 no se pueden volver a ver:** de ellos solo quedó la huella,
+y la pantalla lo dice debajo de cada uno. Siguen funcionando igual. Si se perdió uno de esos, crea
+otro, pásalo al sistema y, cuando ya use el nuevo, elimina el viejo.
+
+### 2.8 La caracterización
+
+Desde la 3.20, a un token se le puede dar **la caracterización** de cada persona —género, rango
+de edad, grupo étnico y discapacidad—: al crearlo, con la casilla **Incluir la caracterización**,
+o después, con el botón **Incluir la caracterización** de la lista, sin cambiar el token. **Quitar
+la caracterización** lo deshace. Ningún token la tiene si no se le da: tampoco los de alcance
+«contacto».
+
+Con el permiso, cada persona trae el campo `caracterizacion`; sin él, el campo no aparece.
+`/api/v1` dice en `"caracterizacion": true` o `false` si el token lo tiene.
+
+```json
+"caracterizacion": {
+  "genero":       { "clave": "F", "nombre": "Femenino" },
+  "rango_edad":   { "clave": "26–35", "nombre": "26–35" },
+  "grupo_etnico": { "clave": "Afrocolombiano", "nombre": "Negro, afrocolombiano o afrodescendiente" },
+  "discapacidad": { "clave": "No", "nombre": "No" }
+}
+```
+
+- Cada campo trae su **`clave`** —el valor que se guarda, que no cambia aunque el administrador
+  cambie el texto de la opción— y su **`nombre`** —lo que vio la persona, con las opciones de ese
+  evento—, como el perfil. Para agrupar o contar conviene la clave; para mostrar, el nombre.
+- **«Prefiero no responder»**, en género, llega con la clave vacía:
+  `{ "clave": "", "nombre": "Prefiero no responder" }`. Es la opción que el formulario trae
+  marcada, y lo que envió quien no eligió otra.
+- **`null` si no lo declaró**: no eligió un rango de edad, el evento oculta ese campo o la persona
+  no pasó por la caracterización —quien no diligenció ninguno de los cuatro los trae todos en
+  `null`—.
+- El **departamento y el municipio** ya venían en cada persona (`departamento`, `municipio`), con
+  cualquier token: no se repiten aquí.
+- No hay filtros por caracterización: para un tablero, se traen las personas por páginas (5) y se
+  cuentan en el sistema que consulta.
+
+**Son datos sensibles** (Ley 1581 de 2012, art. 5): dalos solo al sistema de la propia
+organización que los necesite —un tablero de indicadores, un informe— y no los publiques persona
+por persona. La bitácora del panel anota cada día en que un token los recibe: una línea por token
+y por día, no una por consulta.
+
 ---
 
 ## 3. Las consultas
@@ -164,8 +229,9 @@ en `/api/v1`.
 ### 3.1 `GET /api/v1` — qué se puede consultar
 
 El evento, los días con su fecha, la lista de eventos —con su fecha de inicio, su estado y
-cuál es el activo—, el alcance del token y, para cada consulta, su dirección y sus filtros con
-lo que hace cada uno.
+cuál es el activo—, el alcance del token, si tiene los permisos de la fotografía
+(`"fotografia"`) y de la caracterización (`"caracterizacion"`) y, para cada consulta, su
+dirección y sus filtros con lo que hace cada uno.
 
 ### 3.2 `GET /api/v1/perfiles` — cuántos hay de cada perfil
 
@@ -314,6 +380,7 @@ Colombia (`2026-10-21T14:49:29-05:00`).
 | `telefono` | Solo con alcance de contacto; `null` si no lo dio |
 | `comparte_telefono` | Solo con alcance de contacto: si autorizó compartir el teléfono con otros asistentes |
 | `foto` | Solo si el token tiene el permiso de la fotografía (2.6): el enlace a la suya, o `null` si no tiene |
+| `caracterizacion` | Solo si el token tiene el permiso de la caracterización (2.8): `genero`, `rango_edad`, `grupo_etnico` y `discapacidad`, cada uno con `clave` y `nombre` —«Prefiero no responder» con la clave vacía—, o `null` si no lo declaró |
 | `propuesta` | La más reciente, o `null` si no ha enviado ninguna |
 | `propuesta.estado` | `pendiente`, `observada` (devuelta para corregir), `aprobada` o `rechazada` |
 | `propuesta.dia_preferido` | El día que pidió, o `null` |
@@ -407,7 +474,7 @@ Siempre con la misma forma, y con un mensaje en español que dice qué hacer:
 | Código | Cuándo |
 |---|---|
 | `400` | Un filtro que no existe o con un valor que no se entiende. El mensaje dice los valores válidos |
-| `401` | Falta el token, no existe o fue revocado |
+| `401` | Falta el token, no existe, o fue revocado o eliminado |
 | `404` | La consulta no existe, el evento pedido con `evento=`, o un enlace de fotografía que no sirve (2.6) |
 | `405` | Se usó otro método que no es `GET` |
 | `429` | Pasó el tope de consultas del token, o demasiados intentos con tokens que no sirven. Esperar lo que diga `Retry-After` (segundos) |
@@ -418,17 +485,17 @@ Siempre con la misma forma, y con un mensaje en español que dice qué hacer:
 
 ## 7. Lo que nunca sale por la API
 
-Con ningún alcance:
+Con ningún alcance ni permiso:
 
 - El **número de identificación**. En la base va cifrado, y la API no lo descifra.
-- La **caracterización**: etnia, género, discapacidad y demás. Son datos sensibles (Ley 1581 de
-  2012, art. 5).
 - Lo que el **comité** le escribe al expositor al devolver una propuesta, y los **requerimientos**
   técnicos de la exposición.
 - Ningún **token** ni **código**: ni el del QR del carnet, ni los de acceso, ni el de los días.
 - Ninguna **contraseña**, ni su huella.
 
-La **fotografía** sale solo como enlace, y solo a un token con ese permiso (2.6).
+La **fotografía** sale solo como enlace, y solo a un token con ese permiso (2.6). La
+**caracterización** —género, rango de edad, grupo étnico y discapacidad, datos sensibles (Ley 1581
+de 2012, art. 5)— sale solo a un token con ese permiso (2.8); hasta la 3.19 no salía con ninguno.
 
 Lo que sí sale son datos personales. El sistema que los recibe pasa a tratarlos en nombre de la
 Gobernación: solo para lo que se pidió el token, y con el mismo cuidado que aquí.

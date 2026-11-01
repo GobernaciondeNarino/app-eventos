@@ -1002,22 +1002,37 @@ En **Configuración → API**, escribe para qué sistema es y elige qué datos p
 - **Con correo y teléfono**: lo mismo, y además cómo contactar a cada persona. Solo para
   sistemas de la propia organización.
 
-Aparte, la casilla **Incluir el enlace de la fotografía** (desde la 3.16) hace que cada persona
-traiga la dirección de su foto. Ver 12.3.
+Aparte, dos casillas: **Incluir el enlace de la fotografía** (desde la 3.16) hace que cada
+persona traiga la dirección de su foto —ver 12.3—, e **Incluir la caracterización** (desde la
+3.20), su género, rango de edad, grupo étnico y discapacidad —ver 12.4—.
 
 Al pulsar **Crear token** aparece el token, con consultas de ejemplo que ya lo llevan puesto.
-**Es la única vez que se ve**: cópialo y entrégalo por un canal seguro a quien administra ese
-sistema. En la base queda solo su huella; si se pierde, se crea otro y se revoca el viejo.
+Cópialo con **Copiar el token** y entrégalo por un canal seguro a quien administra ese sistema.
+Si después se pierde, **Ver el token** lo muestra otra vez (12.2).
 
 Uno por sistema: así la lista dice quién consulta, cuándo fue la última vez y cuántas consultas
 lleva, y se le corta a uno sin dejar sin servicio a los demás.
 
-### 12.2 Revocar
+### 12.2 Volver a copiarlo, revocarlo o eliminarlo
 
-**Revocar**, junto a cada token vigente. Deja de servir en el acto; los demás siguen. Hazlo
-cuando un sistema ya no lo necesite, cuando cambie quien lo administra o si el token pudo
-haberse filtrado —se pegó en un chat, quedó en un correo reenviado, se publicó en una página—.
-Un token revocado queda en la lista, marcado, para saber que existió.
+Debajo de cada token de la lista están sus botones:
+
+- **Ver el token** (desde la 3.20). Lo muestra arriba de la pantalla, con **Copiar el token**.
+  La lista no lo lleva a la vista: aparece solo al pulsarlo, y queda en la bitácora quién lo
+  volvió a ver. **Los tokens creados antes de la 3.20 no tienen este botón**: de ellos solo se
+  guardó la huella y no hay cómo recuperarlos. Siguen funcionando; la pantalla lo dice debajo de
+  cada uno. Si se perdió uno de esos, crea otro, pásalo al sistema y, cuando ya lo use, elimina
+  el viejo.
+- **Revocar.** Deja de servir en el acto; los demás siguen. El token queda en la lista, marcado,
+  con su historial. Hazlo cuando un sistema ya no lo necesite, cuando cambie quien lo administra
+  o si el token pudo haberse filtrado —se pegó en un chat, quedó en un correo reenviado, se
+  publicó en una página—.
+- **Eliminar** (desde la 3.20, también en los revocados). Lo mismo que revocar, y además lo quita
+  de la lista: sirve para limpiar los de prueba y los que ya no se usan. La bitácora conserva
+  quién lo creó, quién lo eliminó y si estaba vigente.
+
+Revocar y eliminar preguntan antes. Ninguno de los dos se deshace: para volver a dar acceso, se
+crea un token nuevo.
 
 ### 12.3 La fotografía
 
@@ -1032,14 +1047,29 @@ Deja de servir cuando:
 
 - pulsas **Quitar la fotografía** en ese token —si se la vuelves a incluir, recibe enlaces
   nuevos; los de antes ya no sirven—,
-- revocas el token, o
+- revocas o eliminas el token, o
 - la persona cambia de foto.
 
 Dáselo solo al sistema que de verdad va a mostrar fotos. La foto es un dato personal: quien la
 publique debería mostrar solo la de quien aceptó aparecer en el directorio del evento
 (`en_directorio`), o la de los expositores que lo autorizaron.
 
-### 12.4 Qué decirle a quien lo va a usar
+### 12.4 La caracterización
+
+Desde la 3.20, a un token se le puede dar la **caracterización** de cada persona: género, rango
+de edad, grupo étnico y discapacidad. Al crearlo, con la casilla, o después, con **Incluir la
+caracterización** junto a cada token vigente; no cambia el token. **Quitar la caracterización** lo
+deshace. Ningún token la tiene si no se le da, tampoco los que ya existían ni los de correo y
+teléfono. En la lista, los que la tienen llevan la etiqueta **Con caracterización**.
+
+El departamento y el municipio no dependen de este permiso: salen con cualquier token.
+
+Son **datos sensibles** (Ley 1581 de 2012, art. 5): dalos solo a un sistema de la propia
+organización que los necesite —un tablero de indicadores, un informe de población atendida— y
+no a un sitio público. La bitácora del panel anota cada día en que un token los recibe, además
+de quién le dio o le quitó el permiso.
+
+### 12.5 Qué decirle a quien lo va a usar
 
 - La dirección es `https://tic.narino.gov.co/cumbreAI/api/v1`. Abierta con el token, dice todo lo
   que se puede consultar y con qué filtros.
@@ -1050,11 +1080,14 @@ publique debería mostrar solo la de quien aceptó aparecer en el directorio del
 - Cada token admite 600 consultas cada diez minutos. Ver una foto no cuenta.
 - Si tiene la fotografía: el enlace de cada foto cambia cuando la persona cambia de foto, así que
   hay que tomarlo de la API cada vez que se actualicen los datos, no guardarlo para siempre.
+- Si tiene la caracterización: cada campo trae `clave` y `nombre` —«Prefiero no responder», en
+  género, con la clave vacía—, o `null` si la persona no lo declaró. Son datos sensibles: no se
+  publican persona por persona.
 
-### 12.5 Lo que nunca sale por ahí
+### 12.6 Lo que nunca sale por ahí
 
-El número de identificación, la caracterización, lo que el comité le escribe al expositor y sus
-requerimientos. Ni con el alcance de contacto. La fotografía, solo a un token con ese permiso.
+El número de identificación, lo que el comité le escribe al expositor y sus requerimientos. Ni
+con el alcance de contacto. La fotografía y la caracterización, solo a un token con cada permiso.
 
-Quién creó y quién revocó cada token, y quién le incluyó o le quitó la fotografía, queda en la
-bitácora del panel.
+Quién creó, revocó o eliminó cada token, quién lo volvió a ver y quién le incluyó o le quitó la
+fotografía o la caracterización, queda en la bitácora del panel.

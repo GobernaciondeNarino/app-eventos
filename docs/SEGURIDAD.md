@@ -94,7 +94,9 @@ choque (`Asistencia::sellar`).
 La caracterización —género, pertenencia étnica, condición de discapacidad— es dato sensible
 según el artículo 5 de la Ley 1581 de 2012. Está en `persona_caracterizacion`, separada de
 `persona`, con dos consecuencias prácticas: las consultas del día a día nunca la tocan, y su
-exportación se audita por separado y exige rol administrador.
+exportación se audita por separado y exige rol administrador. Por la API sale solo a un token al
+que un administrador le dio ese permiso, y cada día en que la recibe queda en la bitácora (ver
+«La API de consulta», punto 11).
 
 Si alguien no diligencia la caracterización, **no se crea la fila**. Una tabla de datos
 sensibles llena de registros vacíos solo agranda el riesgo sin aportar nada.
@@ -707,18 +709,19 @@ Desde la 3.14, otros sistemas consultan en JSON quiénes se registraron (`/api/v
 
 1. **Solo lee.** Solo hay rutas `GET`; por ahí no se crea, cambia ni borra nada.
 2. **Un token por sistema, que solo crea un administrador** en Configuración → API, con un
-   nombre que dice para qué sistema es. Se revoca uno sin tocar a los demás, y la pantalla
-   muestra cuándo se usó cada uno por última vez y cuántas consultas lleva.
-3. **El token no se guarda.** Lleva 256 bits al azar; en `evt_api_token` queda su SHA-256 y sus
-   primeros ocho caracteres, para reconocerlo en la lista. Se ve una sola vez, al crearlo.
-   Adivinarlo no es viable, y quien copie la tabla no obtiene tokens que sirvan.
+   nombre que dice para qué sistema es. Se revoca o se elimina uno sin tocar a los demás, y la
+   pantalla muestra cuándo se usó cada uno por última vez y cuántas consultas lleva.
+3. **El token no se guarda en claro.** Lleva 256 bits al azar; en `evt_api_token` queda su
+   SHA-256 —por el que se busca— y sus primeros ocho caracteres, para reconocerlo en la lista.
+   Desde la 3.20 queda además cifrado con la llave de la instalación, para volver a verlo (punto
+   12). Adivinarlo no es viable, y quien copie solo la tabla no obtiene tokens que sirvan.
 4. **Lo que entrega está en una lista cerrada** (`Api::persona()`): lo que no está ahí no sale.
-   Nunca la identificación —ni cifrada ni su huella—, la caracterización, lo que el comité le
-   escribe al expositor, sus requerimientos, ningún token o código ni ninguna contraseña. El
-   correo y el teléfono, solo con un token de alcance **contacto**; con el básico, la búsqueda
-   tampoco mira el correo, para que no sirva para averiguar si alguien está registrado. La
-   agenda que entrega es la pública: solo lo publicado. La fotografía, solo como enlace y solo
-   a un token con ese permiso (punto 10).
+   Nunca la identificación —ni cifrada ni su huella—, lo que el comité le escribe al expositor,
+   sus requerimientos, ningún token o código ni ninguna contraseña. El correo y el teléfono, solo
+   con un token de alcance **contacto**; con el básico, la búsqueda tampoco mira el correo, para
+   que no sirva para averiguar si alguien está registrado. La agenda que entrega es la pública:
+   solo lo publicado. La fotografía, solo como enlace y solo a un token con ese permiso (punto
+   10); la caracterización, solo a un token con el suyo (punto 11).
 5. **Filtros en parámetros, orden de una lista fija.** Los textos van a `LIKE` como parámetros,
    con los comodines escapados; el orden se elige por clave contra una lista de expresiones
    (`App\Nucleo\Orden`), como en el panel. Un filtro desconocido o con un valor que no se
@@ -736,10 +739,13 @@ Desde la 3.14, otros sistemas consultan en JSON quiénes se registraron (`/api/v
    cabecera `Authorization: Bearer`, que el `.htaccess` le pasa a PHP.
 8. **Errores en JSON**, también los generales —una ruta que no existe, la base caída, un fallo
    inesperado—, sin trazas ni rutas del servidor.
-9. **Queda en la bitácora** quién creó cada token, para qué sistema, con qué alcance y si con
-   la fotografía (`api_token_creado`), quién se la incluyó o se la quitó después
-   (`api_token_foto`) y quién lo revocó (`api_token_revocado`). Las consultas no van a la
-   bitácora, que es de solo inserción y crecería sin medida: se cuentan en la fila del token.
+9. **Queda en la bitácora** quién creó cada token, para qué sistema, con qué alcance y con qué
+   permisos (`api_token_creado`), quién le incluyó o le quitó la fotografía (`api_token_foto`) o
+   la caracterización (`api_token_caracterizacion`), quién lo volvió a ver
+   (`api_token_mostrado`), quién lo revocó (`api_token_revocado`) y quién lo eliminó y si estaba
+   vigente (`api_token_eliminado`). Las consultas no van a la bitácora, que es de solo inserción
+   y crecería sin medida: se cuentan en la fila del token. La excepción es la caracterización
+   (punto 11).
 10. **La fotografía, con permiso y por enlace firmado** (desde la 3.16). Es un permiso aparte del
     alcance —`evt_api_token.foto_desde`, que un administrador da o quita sin cambiar el token—,
     y los tokens de antes no lo tienen. Con él, cada persona trae
@@ -759,6 +765,29 @@ Desde la 3.14, otros sistemas consultan en JSON quiénes se registraron (`/api/v
     las demás fotos, y el nombre `foto-ID.jpg` en vez del del archivo. Que un sitio público
     muestre la foto de alguien sigue requiriendo su autorización: la API entrega
     `en_directorio` para respetarla.
+11. **La caracterización, solo con su propio permiso** (desde la 3.20). Género, rango de edad,
+    grupo étnico y discapacidad son datos sensibles (Ley 1581, art. 5), así que no van con ningún
+    alcance: un administrador da o quita el permiso por token —`evt_api_token.caracterizacion_desde`—
+    sin cambiar el token, con una confirmación que dice que son datos sensibles. Ningún token lo
+    tiene si no se le da, tampoco los de antes ni los de alcance contacto. Se lee de
+    `evt_persona_caracterizacion` solo en las consultas de esos tokens, en una sola sentencia por
+    página. La entrega queda en la bitácora (`api_caracterizacion`) una vez por token y por día
+    —no una por consulta, por lo dicho en el punto 9—: así se sabe qué sistema la recibió y en
+    qué días. No hay filtros por esos campos.
+12. **Volver a ver un token, y eliminarlo** (desde la 3.20). La copia cifrada usa
+    `Cripto::cifrar()` —XChaCha20-Poly1305, o AES-256-GCM sin libsodium— con la llave de
+    `config/config.php`, la misma del número de documento. El riesgo que agrega es acotado:
+    quien tenga solo la base no la abre, y quien tenga la base y la llave ya tiene los datos que
+    el token consulta; aun así, si se sospecha esa filtración, se eliminan los tokens y se crean
+    otros. La lista de tokens no lleva el token ni su copia cifrada (`TokenApi::todos()` la quita
+    antes de la vista): un administrador lo pide con **Ver el token**, un `POST` con testigo, y la
+    respuesta sale con `Cache-Control: no-store` y queda en la bitácora. Antes de mostrarlo se
+    comprueba que lo descifrado tenga el SHA-256 de esa fila: una copia cambiada en la base no
+    muestra otro token. Los tokens de antes de la 3.20 no tienen copia y no se pueden volver a
+    ver. Si cifrar falla —una llave dañada—, el token se crea sin copia, como antes, y el error
+    se anota sin la traza, que llevaría el token. **Eliminar** borra la fila: si estaba vigente,
+    la API lo rechaza desde la consulta siguiente y sus enlaces de fotografía dejan de servir;
+    la bitácora conserva quién lo creó y quién lo eliminó.
 
 ### El carnet para imprimir o descargar
 
@@ -1110,7 +1139,7 @@ conviene decirlo con claridad en la pantalla de privacidad.
 ## 6. Verificación
 
 ```bash
-php pruebas/extremo-a-extremo.php      # 970 comprobaciones sobre un servidor real
+php pruebas/extremo-a-extremo.php      # 1012 comprobaciones sobre un servidor real
 php pruebas/instalacion.php            # el asistente, y qué se ve cuando falla
 php pruebas/actualizacion.php          # subir desde la 1.0.0 por cada camino, sin perder nada
 php pruebas/claves.php                 # parámetros de Argon2id y rehash
@@ -1165,11 +1194,19 @@ Lo que comprueban las de seguridad, concretamente:
   de Argon2 que trae PHP.
 - La contraseña del correo no vuelve al navegador, no entra en la transcripción SMTP que se
   muestra en pantalla, y no queda en la bitácora.
-- La API sin token, con uno inventado o con uno revocado responde 401; el token queda en la
-  base como hash y no aparece ni en la bitácora ni en el registro de errores.
-- Por la API no salen la identificación, su huella, la caracterización, las observaciones del
-  comité ni los requerimientos; el correo y el teléfono, solo con alcance de contacto, y con el
-  básico la búsqueda no encuentra a nadie por su correo.
+- La API sin token, con uno inventado, revocado o eliminado responde 401; el token queda en la
+  base como hash y como copia cifrada —nunca en claro— y no aparece ni en la bitácora ni en el
+  registro de errores.
+- La lista de tokens no lleva ninguno; **Ver el token** muestra el mismo, sin caché y con su
+  apunte en la bitácora, solo a un administrador y solo de uno vigente. Uno sin copia —de antes
+  de la 3.20— o con la copia de otro token en su fila no muestra nada.
+- Por la API no salen la identificación, su huella, las observaciones del comité ni los
+  requerimientos; el correo y el teléfono, solo con alcance de contacto, y con el básico la
+  búsqueda no encuentra a nadie por su correo.
+- La caracterización solo sale a un token con ese permiso —ni con alcance de contacto—, cada
+  campo con su clave y su nombre —«Prefiero no responder» con la clave vacía—, o null si no se
+  declaró o el evento oculta el campo; quitar el permiso la corta desde la
+  consulta siguiente, y la bitácora anota una entrega por token y por día.
 - La fotografía solo sale a un token con ese permiso, como enlace firmado que se abre sin el
   token y entrega el archivo tal cual. Con la firma, la persona o el token cambiados responde
   404 en JSON; deja de servir al quitar el permiso —y al volver a darlo hay enlaces nuevos, los

@@ -462,6 +462,10 @@ restauró no es una copia.
    La 3.19 tampoco. Quien no ha registrado su municipio es llevado a **Mis datos** al entrar,
    una vez al día. Ver 7.13.
 
+   La 3.20 agrega **dos columnas** a la tabla de los tokens de la API (`evt_api_token`): la
+   copia cifrada de cada token nuevo, para volver a verlo, y el permiso de la caracterización.
+   Ningún registro cambia, y los tokens que ya existen responden exactamente lo mismo. Ver 7.14.
+
    Si el usuario de la base de datos no tiene permiso de `ALTER` —pasa en algunos
    alojamientos—, la actualización automática no puede hacerse: lo anota en el registro,
    vuelve a intentarlo cada cinco minutos y la plataforma sigue funcionando. Para hacerlo a
@@ -1191,6 +1195,80 @@ registros y si el municipio es obligatorio u opcional, que sigue siendo lo que d
 
 **Volver atrás:** sube otra vez los archivos que descargaste en el paso 1. Las marcas que quedaron
 en las sesiones no estorban a la versión anterior, que no las lee.
+
+### 7.14 La 3.20: la API entrega la caracterización, y los tokens se vuelven a copiar y se eliminan
+
+**Qué agrega.** En **Configuración → API**:
+
+- **La caracterización por la API.** Hasta la 3.19 la API no la entregaba con ningún token: solo
+  el departamento y el municipio. Ahora, a un token se le puede dar el permiso **Incluir la
+  caracterización** —al crearlo o después, sin cambiar el token—, y entonces cada persona trae
+  `caracterizacion` con su género, rango de edad, grupo étnico y discapacidad, cada uno con su
+  clave y su nombre —«Prefiero no responder» incluido—, o `null` si no lo declaró. Son datos
+  sensibles: ningún token lo tiene si no
+  se le da, y la bitácora anota cada día en que un token los recibe. El detalle está en
+  `docs/API.md` (2.8).
+- **Ver el token** otra vez para copiarlo. Los tokens que se creen desde ahora se guardan además
+  cifrados con la llave de la instalación; el botón los muestra, el mismo, con **Copiar el
+  token**, y queda en la bitácora quién lo vio. **Los que ya existen no se pueden volver a ver**:
+  de ellos solo se guardó la huella. Siguen funcionando igual, y la pantalla lo dice debajo de
+  cada uno.
+- **Eliminar**, en cada token, vigente o revocado. Si estaba vigente, la API lo rechaza desde
+  ese momento. Sirve para limpiar los tokens de prueba y los revocados de la lista.
+
+**Qué cambia en la base de datos.** Solo se **agregan** dos columnas a `evt_api_token` (esquema
+1.15.0), vacías en los tokens que ya existen: `token_cifrado` y `caracterizacion_desde`. Las
+agrega la actualización automática en la primera visita; como la 3.16, necesita el permiso
+`ALTER` del usuario de la base. Si no lo tiene, el panel muestra el aviso de «base de datos
+atrasada» con el botón **Actualizar la base de datos**. Mientras tanto, la API y los tokens
+funcionan como en la 3.19: **Configuración → API** no ofrece la caracterización ni **Ver el
+token**, y un token nuevo se ve una sola vez.
+
+**Qué no cambia.** `config/config.php` —no hay que agregar nada: la copia del token usa la llave
+de cifrado que ya está ahí—, `almacen/`, los registros, la caracterización guardada y **lo que
+responde cada token que ya existe**: ninguno recibe la caracterización hasta que un
+administrador se la incluya. Subir la versión no entrega ningún dato nuevo a nadie.
+
+**Qué archivos cambian:**
+
+| Archivo | Para qué |
+|---|---|
+| `app/Controladores/Api.php` | El campo `caracterizacion`, y `caracterizacion` en `/api/v1` |
+| `app/Modelos/TokenApi.php` | La copia cifrada, volver a verlo, eliminarlo y el permiso de la caracterización |
+| `app/Controladores/Configuracion.php`, `app/Vistas/admin/config-api.php` | Los botones **Ver el token**, **Incluir la caracterización** y **Eliminar**, y la casilla al crear un token |
+| `app/Esquema.php` | Las dos columnas nuevas, y la versión del esquema 1.15.0 |
+| `app/rutas.php` | Las direcciones de los tres botones |
+| `app/Nucleo/Bitacora.php` | Cómo se leen en la bitácora las acciones nuevas |
+| `index.php`, `herramientas/instalar.php`, `herramientas/correo.php` | El número de versión |
+
+**Cómo subirla:**
+
+1. Haz la copia de seguridad de siempre (punto 1 de arriba): **la base de datos y `config/`**.
+   Descarga además, tal como están en el servidor, los archivos de la tabla.
+2. Súbelos **todos juntos** —o la versión completa—, **sin tocar `config/` ni `almacen/`**. Los
+   de la 3.19 no se repiten aquí: si producción no tiene la 3.18.1, la 3.18.2 o la 3.19, sube
+   también los de la 7.11, la 7.12 y la 7.13, o la versión completa.
+3. Abre cualquier página de la plataforma. En `/admin` no debe quedar ningún aviso de «base de
+   datos atrasada»; si queda, pulsa **Actualizar la base de datos** en ese aviso.
+4. Compruébalo:
+   - un token que ya usa otro sistema responde igual que antes: `…/api/v1?token=…` dice
+     `"caracterizacion": false` y las personas no traen `caracterizacion`; en la lista, ese
+     token dice que no se puede volver a ver;
+   - en **Configuración → API**, crea un token de prueba **con la casilla de la caracterización**
+     y abre `…/api/v1/personas?por=5&token=…`: cada persona trae `caracterizacion`;
+   - vuelve a la pestaña y pulsa **Ver el token** en el de prueba: aparece el mismo, con
+     **Copiar el token**;
+   - pulsa **Eliminar** en el de prueba: sale de la lista y la misma dirección responde
+     `{"error": {"codigo": 401, …}}`.
+5. Si algún sistema necesita la caracterización, dásela con **Incluir la caracterización** en su
+   token: no hace falta crearle otro.
+
+**Volver atrás:** sube otra vez los archivos que descargaste en el paso 1. Las dos columnas
+pueden quedarse: la 3.19 no las usa ni las mira, y una base más nueva que el código no dispara
+ninguna actualización. Con los archivos anteriores, la API deja de dar la caracterización y los
+tokens dejan de poder verse otra vez o eliminarse; todos siguen funcionando, también los creados
+con la 3.20. Si prefieres quitarlas, `ALTER TABLE evt_api_token DROP COLUMN token_cifrado, DROP
+COLUMN caracterizacion_desde;` en phpMyAdmin, después de volver a los archivos anteriores.
 
 ---
 

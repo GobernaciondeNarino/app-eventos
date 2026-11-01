@@ -164,12 +164,24 @@ final class Bitacora
             'api_token_creado'   => "$quien creó un token de la API"
                 . (isset($detalle['nombre']) ? ' para «' . $detalle['nombre'] . '»' : '')
                 . (($detalle['alcance'] ?? '') === 'contacto' ? ', con correo y teléfono' : '')
-                . (!empty($detalle['foto']) ? ', con la fotografía' : ''),
+                . (!empty($detalle['foto']) ? ', con la fotografía' : '')
+                . (!empty($detalle['caracterizacion']) ? ', con la caracterización' : ''),
             'api_token_foto'     => "$quien " . (!empty($detalle['permitida'])
                     ? 'incluyó la fotografía en el token de la API' : 'quitó la fotografía del token de la API')
                 . (isset($detalle['nombre']) ? ' de «' . $detalle['nombre'] . '»' : ''),
+            'api_token_caracterizacion' => "$quien " . (!empty($detalle['permitida'])
+                    ? 'incluyó la caracterización en el token de la API' : 'quitó la caracterización del token de la API')
+                . (isset($detalle['nombre']) ? ' de «' . $detalle['nombre'] . '»' : ''),
             'api_token_revocado' => "$quien revocó un token de la API"
                 . (isset($detalle['nombre']) ? ': el de «' . $detalle['nombre'] . '»' : ''),
+            'api_token_eliminado' => "$quien eliminó un token de la API"
+                . (isset($detalle['nombre']) ? ': el de «' . $detalle['nombre'] . '»' : '')
+                . (!empty($detalle['vigente']) ? ', que estaba vigente' : ''),
+            'api_token_mostrado' => "$quien volvió a ver un token de la API"
+                . (isset($detalle['nombre']) ? ': el de «' . $detalle['nombre'] . '»' : ''),
+            // Una línea por token y por día, no por consulta (TokenApi::anotarCaracterizacion()).
+            'api_caracterizacion' => 'La API entregó la caracterización'
+                . (isset($detalle['nombre']) ? ' con el token de «' . $detalle['nombre'] . '»' : ''),
             'usuario_restablecido' => 'Se restableció el acceso de una cuenta administradora',
             'segundo_factor_retirado' => 'Se retiró el segundo factor de una cuenta',
             'segundo_factor_activado' => "$quien activó la verificación en dos pasos",

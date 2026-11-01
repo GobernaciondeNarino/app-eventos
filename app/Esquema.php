@@ -15,7 +15,7 @@ use App\Nucleo\Bd;
  */
 final class Esquema
 {
-    public const VERSION = '1.14.0';
+    public const VERSION = '1.15.0';
 
     /**
      * Columnas que ya existen pero cambiaron de tipo.
@@ -523,15 +523,20 @@ final class Esquema
 
             // 1.12.0. Tabla nueva y nada más, como la de la 1.11.0.
             'api_token' => [
-                'nota' => 'Tokens de la API de consulta (/api/v1). Se guarda el hash de cada uno, no el token; cada sistema que consulta tiene el suyo y se revoca sin tocar los demás.',
+                'nota' => 'Tokens de la API de consulta (/api/v1). Se buscan por su hash; desde la 1.15.0, cada uno se guarda además cifrado con la llave de la instalación, para volver a copiarlo. Cada sistema que consulta tiene el suyo y se revoca o se elimina sin tocar los demás.',
                 'columnas' => [
                     'id'             => 'INT UNSIGNED NOT NULL AUTO_INCREMENT',
                     // Para qué sistema es: «Sitio web de la Secretaría».
                     'nombre'         => 'VARCHAR(120) NOT NULL',
                     'token_hash'     => 'CHAR(64) NOT NULL',
                     // Los primeros ocho caracteres, para reconocerlo en la
-                    // lista sin guardar el resto.
+                    // lista sin mostrar el resto.
                     'pista'          => 'CHAR(8) NOT NULL',
+                    // 1.15.0. El token cifrado con la llave de la instalación
+                    // —la misma del documento—, para volver a verlo y copiarlo
+                    // desde Configuración → API. NULL en los creados antes: de
+                    // esos solo quedó el hash, y no hay cómo recuperarlos.
+                    'token_cifrado'  => 'VARBINARY(255) NULL',
                     // 'basico': sin datos de contacto. 'contacto': además
                     // correo y teléfono.
                     'alcance'        => "ENUM('basico','contacto') NOT NULL DEFAULT 'basico'",
@@ -543,6 +548,12 @@ final class Esquema
                     // no vuelven a servir aunque se dé otra vez. Con
                     // microsegundos, para que eso valga aun en el mismo segundo.
                     'foto_desde'     => 'DATETIME(6) NULL',
+                    // 1.15.0. Desde cuándo la API le da a este token la
+                    // caracterización de cada persona —género, rango de edad,
+                    // grupo étnico y discapacidad—; NULL si no se la da. Son
+                    // datos sensibles (Ley 1581, art. 5): un permiso aparte
+                    // del alcance y de la fotografía, que se da a propósito.
+                    'caracterizacion_desde' => 'DATETIME NULL',
                     'creado_por'     => 'INT UNSIGNED NULL',
                     'creado_en'      => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
                     'ultimo_uso_en'  => 'DATETIME NULL',

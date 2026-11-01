@@ -1017,6 +1017,40 @@ function titulo(t) {
     listaPerfiles !== null && listaPerfiles.abierta && listaPerfiles.arriba >= 0 && listaPerfiles.arriba < 200,
     JSON.stringify(listaPerfiles));
 
+  // ---- Tokens de la API: volver a copiar uno, y eliminarlo ----
+  // Desde la 3.20 el token se puede volver a ver; copiarlo es del navegador,
+  // y eliminarlo pregunta antes.
+  titulo('Tokens de la API');
+  await escritorio.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(BASE).origin });
+  await p3.goto(BASE + '/admin/configuracion/api', { waitUntil: 'networkidle' });
+  await p3.fill('#api-nombre', 'Tablero de prueba del navegador');
+  await p3.check('input[name="caracterizacion"]');
+  await Promise.all([p3.waitForNavigation(), p3.click('button:has-text("Crear token")')]);
+  const tokenCreado = (await p3.locator('[data-token-nuevo] .sql-preview').innerText().catch(() => '')).trim();
+  comprobar('al crear un token con la caracterización, lo muestra con ese permiso',
+    /^[a-f0-9]{64}$/.test(tokenCreado)
+    && /con la caracterización/.test(await p3.locator('[data-token-nuevo] strong').innerText().catch(() => '')));
+
+  await p3.goto(BASE + '/admin/configuracion/api', { waitUntil: 'networkidle' });
+  const filaPrueba = p3.locator('[data-token]').filter({ hasText: 'Tablero de prueba del navegador' });
+  await Promise.all([p3.waitForNavigation(), filaPrueba.locator('button:has-text("Ver el token")').click()]);
+  await p3.click('[data-token-mostrado] [data-copiar]');
+  await p3.waitForTimeout(250);
+  const copiado = await p3.evaluate(() => navigator.clipboard.readText()).catch(() => '');
+  comprobar('«Ver el token» y después «Copiar el token» dejan en el portapapeles el mismo token',
+    copiado === tokenCreado, copiado.slice(0, 8) + '… / ' + tokenCreado.slice(0, 8) + '…');
+
+  await p3.goto(BASE + '/admin/configuracion/api', { waitUntil: 'networkidle' });
+  p3.once('dialog', d => d.dismiss());
+  await filaPrueba.locator('button:has-text("Eliminar")').click();
+  await p3.waitForTimeout(300);
+  const sigueAlCancelar = await filaPrueba.count();
+  p3.once('dialog', d => d.accept());
+  await Promise.all([p3.waitForNavigation(), filaPrueba.locator('button:has-text("Eliminar")').click()]);
+  comprobar('«Eliminar» pregunta antes: si se cancela no pasa nada, y aceptado sale de la lista',
+    sigueAlCancelar === 1 && (await filaPrueba.count()) === 0
+    && /eliminado/i.test(await p3.locator('.toast').innerText().catch(() => '')));
+
   // En el celular, sin quedar debajo de la barra de arriba, que es fija.
   const celularAdmin = await navegador.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const pCel = await celularAdmin.newPage();

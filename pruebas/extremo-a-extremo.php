@@ -4701,8 +4701,10 @@ ajustarConfig($RAIZ, ['modo_correo' => $configAntesForm['modo_correo'] ?? null])
    -------------------------------------------------------------------------
    Otros sistemas consultan en JSON quiénes se registraron, con los filtros en
    la dirección y un token que se crea en Configuración → API. Solo lee; nunca
-   entrega la identificación, la caracterización ni lo que escribe el comité,
-   y el correo y el teléfono solo con un token de alcance «contacto».
+   entrega la identificación ni lo que escribe el comité; el correo y el
+   teléfono solo con un token de alcance «contacto», y la fotografía y la
+   caracterización solo a un token con cada permiso. Desde la 3.20 el token se
+   puede volver a ver para copiarlo, y eliminar.
    ========================================================================= */
 titulo('La API de consulta');
 
@@ -4740,18 +4742,20 @@ comprobar('sin un nombre de verdad, o con un alcance que no existe, no se crea',
 
 $html = $jefa->post('/admin/configuracion/api/crear', ['nombre' => 'Sitio web de la Secretaría TIC', 'alcance' => 'basico']);
 $tokenSitio = $tokenDeLaPantalla($html);
-comprobar('al crearlo, el token aparece una vez para copiarlo, con consultas de ejemplo',
-    strlen($tokenSitio) === 64 && str_contains($html, 'data-token-nuevo') && str_contains($html, 'única vez que aparece')
+comprobar('al crearlo, el token aparece para copiarlo, con consultas de ejemplo',
+    strlen($tokenSitio) === 64 && str_contains($html, 'data-token-nuevo') && str_contains($html, 'vuelve a verlo aquí con «Ver el token»')
     && str_contains($html, '/api/v1/personas?perfil=participante&amp;token=' . $tokenSitio));
 $filaToken = $pdo->query("SELECT * FROM {$P}api_token")->fetch(PDO::FETCH_ASSOC) ?: [];
-comprobar('en la base queda su hash, no el token', ($filaToken['token_hash'] ?? '') === hash('sha256', $tokenSitio)
-    && !in_array($tokenSitio, array_map('strval', $filaToken), true) && ($filaToken['pista'] ?? '') === substr($tokenSitio, 0, 8));
+comprobar('en la base queda su hash y una copia cifrada, nunca el token en claro', ($filaToken['token_hash'] ?? '') === hash('sha256', $tokenSitio)
+    && !in_array($tokenSitio, array_map('strval', $filaToken), true) && ($filaToken['pista'] ?? '') === substr($tokenSitio, 0, 8)
+    && strlen((string) ($filaToken['token_cifrado'] ?? '')) > 64
+    && !str_contains((string) $filaToken['token_cifrado'], substr($tokenSitio, 8, 16)));
 comprobar('con su nombre, su alcance y quién lo creó', ($filaToken['nombre'] ?? '') === 'Sitio web de la Secretaría TIC'
     && ($filaToken['alcance'] ?? '') === 'basico' && (int) ($filaToken['creado_por'] ?? 0) === $idJefa);
 $html = $jefa->get('/admin/configuracion/api');
-comprobar('al volver a la pantalla ya no se ve: solo sus primeros caracteres', !str_contains($html, $tokenSitio)
+comprobar('al volver a la pantalla ya no se ve: solo sus primeros caracteres y el botón para verlo', !str_contains($html, $tokenSitio)
     && str_contains($html, substr($tokenSitio, 0, 8) . '…') && str_contains($html, 'Nunca se ha usado')
-    && str_contains($html, '1 vigente<'));
+    && str_contains($html, '1 vigente<') && substr_count($html, '>Ver el token</button>') === 1);
 
 // ---- Qué se consulta ----------------------------------------------------------------
 $personasEvento = $cuenta("SELECT COUNT(*) FROM {$P}persona WHERE evento_id = $eventoActivo");
@@ -4785,8 +4789,8 @@ comprobar('sin alcance de contacto, ni correo ni teléfono', !array_key_exists('
 $huellas = $pdo->query("SELECT documento_huella FROM {$P}persona WHERE documento_huella IS NOT NULL")->fetchAll(PDO::FETCH_COLUMN);
 $fugasEn = static function (string $cuerpo) use ($huellas): array {
     $fuga = [];
-    foreach (['"documento', 'huella', '"etnia"', '"genero"', '"discapacidad"', '"foto', '"token', '"observacion',
-              'requerimientos', 'clave_hash'] as $clave) {
+    foreach (['"documento', 'huella', '"caracterizacion"', '"etnia"', '"grupo_etnico"', '"genero"', '"rango_edad"',
+              '"discapacidad"', '"foto', '"token', '"observacion', 'requerimientos', 'clave_hash'] as $clave) {
         if (str_contains($cuerpo, $clave)) {
             $fuga[] = $clave;
         }
@@ -5200,6 +5204,241 @@ $operadorApi->post('/admin/configuracion/api/foto', ['token' => (string) $idToke
 comprobar('ni les incluye la fotografía', $operadorApi->codigo === 403
     && $cuenta("SELECT COUNT(*) FROM {$P}api_token WHERE id = $idTokenTablero AND foto_desde IS NOT NULL") === 0);
 
+// ---- La caracterización ------------------------------------------------------------------
+// Género, rango de edad, grupo étnico y discapacidad son datos sensibles (Ley
+// 1581, art. 5): solo a un token con ese permiso, aparte del alcance y de la
+// foto. Cada campo con su clave guardada y el nombre que vio la persona.
+require_once $RAIZ . '/app/Datos.php';
+$html = $jefa->get('/admin/configuracion/api');
+comprobar('al crear un token se puede pedir la caracterización', str_contains($html, 'name="caracterizacion" value="1"'));
+$html = $jefa->post('/admin/configuracion/api/crear',
+    ['nombre' => 'Tablero de indicadores', 'alcance' => 'basico', 'caracterizacion' => '1']);
+$tokenIndicadores = $tokenDeLaPantalla($html);
+$idTokenIndicadores = $idDeToken($tokenIndicadores);
+comprobar('queda con ese permiso, y la pantalla lo dice', strlen($tokenIndicadores) === 64
+    && $cuenta("SELECT COUNT(*) FROM {$P}api_token WHERE id = $idTokenIndicadores AND caracterizacion_desde IS NOT NULL") === 1
+    && str_contains($html, 'Sin datos de contacto · con la caracterización') && str_contains($html, 'data-con-caracterizacion'));
+comprobar('los tokens creados sin marcarlo no lo tienen',
+    $cuenta("SELECT COUNT(*) FROM {$P}api_token WHERE caracterizacion_desde IS NOT NULL") === 1);
+$r = $pedirApi($api, '/api/v1?token=' . $tokenIndicadores);
+$sinPermiso = $pedirApi($api, '/api/v1?token=' . $tokenTablero);
+comprobar('/api/v1 dice si el token recibe la caracterización', ($r['caracterizacion'] ?? null) === true
+    && ($sinPermiso['caracterizacion'] ?? null) === false);
+
+// Tres personas del evento con lo que se sabe de antemano: una con los cuatro
+// campos —códigos de fábrica cuyo nombre es otro—, una que no declaró su
+// género y una sin fila. Lo de cada una se deja después como estaba.
+$tresDelEvento = $pdo->query("SELECT id FROM {$P}persona WHERE evento_id = $eventoActivo ORDER BY id LIMIT 3")
+    ->fetchAll(PDO::FETCH_COLUMN);
+[$idConTodo, $idSinGenero, $idSinFila] = array_map('intval', $tresDelEvento + [0, 0, 0]);
+$caracterizacionAntes = [];
+foreach ([$idConTodo, $idSinGenero, $idSinFila] as $id) {
+    $caracterizacionAntes[$id] = $pdo->query("SELECT genero, rango_edad, etnia, discapacidad FROM {$P}persona_caracterizacion
+        WHERE persona_id = $id")->fetch(PDO::FETCH_ASSOC) ?: null;
+}
+$ponerCaracterizacion = $pdo->prepare("INSERT INTO {$P}persona_caracterizacion (persona_id, genero, rango_edad, etnia, discapacidad)
+    VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE genero = VALUES(genero), rango_edad = VALUES(rango_edad),
+    etnia = VALUES(etnia), discapacidad = VALUES(discapacidad)");
+$ponerCaracterizacion->execute([$idConTodo, 'NB', '36–45', 'Afrocolombiano', 'Cognitiva']);
+$ponerCaracterizacion->execute([$idSinGenero, '', '18–25', 'Ninguno', 'No']);
+$pdo->exec("DELETE FROM {$P}persona_caracterizacion WHERE persona_id = $idSinFila");
+
+// El nombre sale de las opciones del evento; si su lista no se ha tocado, de
+// las de fábrica (Formulario::listaPorDefecto()).
+$listasEvento = json_decode((string) $pdo->query("SELECT listas FROM {$P}evento_formulario WHERE evento_id = $eventoActivo")
+    ->fetchColumn(), true) ?: [];
+$nombreDe = static function (string $lista, string $valor) use ($listasEvento): string {
+    if (!isset($listasEvento[$lista])) {
+        return ['genero' => App\Datos::GENEROS, 'etnia' => App\Datos::ETNIAS,
+                'discapacidad' => App\Datos::DISCAPACIDADES][$lista][$valor] ?? $valor;
+    }
+    foreach ((array) $listasEvento[$lista] as $opcion) {
+        if (is_array($opcion) && (string) ($opcion['valor'] ?? '') === $valor) {
+            return (string) $opcion['etiqueta'];
+        }
+    }
+    return $valor;
+};
+
+$r = $pedirApi($api, '/api/v1/personas?por=200&token=' . $tokenIndicadores);
+$caracterizacionDe = array_column(array_map(static fn(array $d): array =>
+    ['id' => $d['id'], 'c' => $d['caracterizacion'] ?? 'falta'], $r['datos'] ?? []), 'c', 'id');
+$todasConLaClave = $caracterizacionDe !== [] && $idSinFila > 0;
+foreach ($caracterizacionDe as $c) {
+    $todasConLaClave = $todasConLaClave && is_array($c) && array_keys($c) === ['genero', 'rango_edad', 'grupo_etnico', 'discapacidad'];
+}
+comprobar('con el permiso, cada persona trae «caracterizacion» con sus cuatro campos', $api->codigo === 200 && $todasConLaClave,
+    json_encode(array_slice($caracterizacionDe, 0, 2, true), JSON_UNESCAPED_UNICODE));
+$conTodo = $caracterizacionDe[$idConTodo] ?? [];
+comprobar('cada campo con la clave guardada y el nombre que vio la persona', ($conTodo['genero'] ?? null) === ['clave' => 'NB', 'nombre' => $nombreDe('genero', 'NB')]
+    && ($conTodo['rango_edad'] ?? null) === ['clave' => '36–45', 'nombre' => '36–45']
+    && ($conTodo['grupo_etnico'] ?? null) === ['clave' => 'Afrocolombiano', 'nombre' => $nombreDe('etnia', 'Afrocolombiano')]
+    && ($conTodo['discapacidad'] ?? null) === ['clave' => 'Cognitiva', 'nombre' => $nombreDe('discapacidad', 'Cognitiva')]
+    && $nombreDe('etnia', 'Afrocolombiano') !== 'Afrocolombiano', json_encode($conTodo, JSON_UNESCAPED_UNICODE));
+// «Prefiero no responder» se guarda vacío: con el campo a la vista, eso fue lo
+// que envió la persona, y así sale. Si el evento oculta el campo, null.
+$camposGuardados = $pdo->query("SELECT campos FROM {$P}evento_formulario WHERE evento_id = $eventoActivo")->fetchColumn();
+$camposEvento = json_decode((string) $camposGuardados, true) ?: [];
+$sinGenero = $caracterizacionDe[$idSinGenero] ?? [];
+comprobar('«Prefiero no responder», que viene marcado, sale con su nombre y la clave vacía',
+    ($sinGenero['genero'] ?? 'falta') === (($camposEvento['genero'] ?? 'opcional') === 'oculto'
+        ? null : ['clave' => '', 'nombre' => $nombreDe('genero', '')])
+    && $nombreDe('genero', '') !== '' && ($sinGenero['rango_edad']['clave'] ?? '') === '18–25',
+    json_encode($sinGenero, JSON_UNESCAPED_UNICODE));
+comprobar('quien no diligenció ninguno trae los cuatro en null, también el género',
+    ($caracterizacionDe[$idSinFila] ?? 'falta') === ['genero' => null, 'rango_edad' => null, 'grupo_etnico' => null, 'discapacidad' => null]);
+$ponerCampos = $pdo->prepare("INSERT INTO {$P}evento_formulario (evento_id, campos) VALUES (?, ?)
+    ON DUPLICATE KEY UPDATE campos = VALUES(campos)");
+$ponerCampos->execute([$eventoActivo, json_encode(['genero' => 'oculto'] + $camposEvento)]);
+$r = $pedirApi($api, '/api/v1/personas?por=200&token=' . $tokenIndicadores);
+$conGeneroOculto = array_column(array_map(static fn(array $d): array =>
+    ['id' => $d['id'], 'c' => $d['caracterizacion'] ?? 'falta'], $r['datos'] ?? []), 'c', 'id');
+if ($camposGuardados === false) {
+    $pdo->exec("DELETE FROM {$P}evento_formulario WHERE evento_id = $eventoActivo");
+} else {
+    $ponerCampos->execute([$eventoActivo, $camposGuardados]);
+}
+comprobar('si el evento oculta el género, el vacío es null; lo que sí declaró se sigue entregando',
+    array_key_exists('genero', $conGeneroOculto[$idSinGenero] ?? [])
+    && $conGeneroOculto[$idSinGenero]['genero'] === null && ($conGeneroOculto[$idConTodo]['genero']['clave'] ?? '') === 'NB');
+$r = $pedirApi($api, '/api/v1/expositores?por=200&token=' . $tokenIndicadores);
+comprobar('/expositores también la trae', ($r['datos'] ?? []) !== [] && is_array($r['datos'][0]['caracterizacion'] ?? null));
+$pedirApi($api, '/api/v1/personas?por=200&token=' . $tokenTablero);
+comprobar('sin el permiso, ni siquiera con alcance de contacto, no sale ni la clave', $api->codigo === 200
+    && !str_contains($api->cuerpo, '"caracterizacion"') && !str_contains($api->cuerpo, '"grupo_etnico"')
+    && !str_contains($api->cuerpo, '"genero"'));
+
+// En la bitácora, una línea por token y por día: no una por consulta.
+$entregas = static fn(int $id): int => $cuenta("SELECT COUNT(*) FROM {$P}bitacora
+    WHERE accion = 'api_caracterizacion' AND entidad = 'api_token' AND entidad_id = $id");
+$pedirApi($api, '/api/v1/personas?token=' . $tokenIndicadores);
+$pedirApi($api, '/api/v1/perfiles?token=' . $tokenIndicadores);
+comprobar('la bitácora anota la entrega una vez al día por token, no en cada consulta', $entregas($idTokenIndicadores) === 1
+    && $entregas($idTokenTablero) === 0, (string) $entregas($idTokenIndicadores));
+$pdo->exec("UPDATE {$P}bitacora SET creado_en = DATE_SUB(creado_en, INTERVAL 1 DAY)
+             WHERE accion = 'api_caracterizacion' AND entidad_id = $idTokenIndicadores");
+$pedirApi($api, '/api/v1/personas?token=' . $tokenIndicadores);
+comprobar('y otra el día siguiente', $entregas($idTokenIndicadores) === 2);
+$html = $jefa->get('/admin');
+comprobar('dice quién creó el token con la caracterización, y con qué token la entregó la API',
+    str_contains($html, 'creó un token de la API para «Tablero de indicadores», con la caracterización')
+    && str_contains($html, 'La API entregó la caracterización con el token de «Tablero de indicadores»'));
+
+// El permiso, desde la pantalla, sin cambiar de token.
+$html = $jefa->get('/admin/configuracion/api');
+comprobar('cada token vigente tiene su botón para incluir o quitar la caracterización',
+    substr_count($html, '>Quitar la caracterización</button>') === 1 && substr_count($html, '>Incluir la caracterización</button>') === 1);
+$jefa->post('/admin/configuracion/api/caracterizacion', ['token' => (string) $idTokenIndicadores, 'permitir' => '0']);
+$pedirApi($api, '/api/v1/personas?por=200&token=' . $tokenIndicadores);
+comprobar('al quitarle el permiso, la API deja de darla con ese mismo token', $api->codigo === 200
+    && !str_contains($api->cuerpo, '"caracterizacion"') && $cuenta("SELECT COUNT(*) FROM {$P}api_token
+        WHERE id = $idTokenIndicadores AND caracterizacion_desde IS NULL") === 1);
+$html = $jefa->post('/admin/configuracion/api/caracterizacion', ['token' => (string) $idTokenIndicadores, 'permitir' => '0']);
+comprobar('quitarla dos veces solo avisa', str_contains($html, 'toast--warn') && str_contains($html, 'ya estaba así'));
+$jefa->post('/admin/configuracion/api/caracterizacion', ['token' => (string) $idTokenTablero, 'permitir' => '1']);
+$r = $pedirApi($api, '/api/v1/personas?por=200&token=' . $tokenTablero);
+comprobar('al incluírsela a otro token, la recibe desde la consulta siguiente',
+    is_array($r['datos'][0]['caracterizacion'] ?? null) && isset($r['datos'][0]['correo']));
+$jefa->post('/admin/configuracion/api/caracterizacion', ['token' => (string) $idTokenTablero, 'permitir' => '0']);
+$jefa->post('/admin/configuracion/api/caracterizacion', ['token' => (string) $idTokenFotos, 'permitir' => '1']);
+comprobar('a un token revocado no se le da', str_contains($jefa->cuerpo, 'toast--warn')
+    && $cuenta("SELECT COUNT(*) FROM {$P}api_token WHERE id = $idTokenFotos AND caracterizacion_desde IS NOT NULL") === 0);
+$operadorApi->post('/admin/configuracion/api/caracterizacion', ['token' => (string) $idTokenTablero, 'permitir' => '1'], false);
+comprobar('ni un operador se la da a nadie', $operadorApi->codigo === 403
+    && $cuenta("SELECT COUNT(*) FROM {$P}api_token WHERE id = $idTokenTablero AND caracterizacion_desde IS NOT NULL") === 0);
+$html = $jefa->get('/admin');
+comprobar('la bitácora dice quién incluyó o quitó la caracterización, y en qué token',
+    str_contains($html, 'quitó la caracterización del token de la API de «Tablero de indicadores»')
+    && str_contains($html, 'incluyó la caracterización en el token de la API de «Tablero de la Secretaría»'));
+
+foreach ($caracterizacionAntes as $id => $antes) {
+    if ($antes === null) {
+        $pdo->exec("DELETE FROM {$P}persona_caracterizacion WHERE persona_id = " . (int) $id);
+    } else {
+        $ponerCaracterizacion->execute([$id, $antes['genero'], $antes['rango_edad'], $antes['etnia'], $antes['discapacidad']]);
+    }
+}
+
+// ---- Volver a ver el token ---------------------------------------------------------------
+// Desde la 3.20 se guarda cifrado con la llave de la instalación. La lista no
+// lo lleva: se pide con un POST, y queda en la bitácora quién lo vio.
+$html = $jefa->get('/admin/configuracion/api');
+$tokenEnLaLista = false;
+foreach ([$tokenSitio, $tokenTablero, $tokenFotos, $tokenIndicadores] as $t) {
+    $tokenEnLaLista = $tokenEnLaLista || str_contains($html, $t);
+}
+comprobar('la lista no lleva ningún token, y cada vigente tiene «Ver el token»', !$tokenEnLaLista
+    && substr_count($html, '>Ver el token</button>') === 2
+    && $cuenta("SELECT COUNT(*) FROM {$P}api_token WHERE revocado_en IS NULL AND token_cifrado IS NOT NULL") === 2);
+$html = $jefa->post('/admin/configuracion/api/ver', ['token' => (string) $idTokenTablero]);
+comprobar('«Ver el token» lo muestra otra vez, el mismo, con sus permisos', $jefa->codigo === 200
+    && str_contains($html, 'data-token-mostrado') && $tokenDeLaPantalla($html) === $tokenTablero
+    && str_contains($html, 'Token de «Tablero de la Secretaría» · Con correo y teléfono<'));
+comprobar('esa respuesta no se guarda en ninguna caché', str_contains($jefa->cabecera('Cache-Control'), 'no-store'));
+$html = $jefa->get('/admin/configuracion/api');
+comprobar('y al volver a la pestaña ya no está', !str_contains($html, $tokenTablero) && !str_contains($html, 'data-token-mostrado'));
+$html = $jefa->get('/admin');
+comprobar('queda en la bitácora quién lo volvió a ver', str_contains($html, 'volvió a ver un token de la API: el de «Tablero de la Secretaría»'));
+
+// Uno de antes de la 3.20: de él solo quedó el hash.
+$cifradoTablero = (string) $pdo->query("SELECT token_cifrado FROM {$P}api_token WHERE id = $idTokenTablero")->fetchColumn();
+$cifrar = $pdo->prepare("UPDATE {$P}api_token SET token_cifrado = ? WHERE id = ?");
+$cifrar->execute([null, $idTokenTablero]);
+$html = $jefa->get('/admin/configuracion/api');
+$filaTablero = preg_match('#data-token="' . $idTokenTablero . '".*?Eliminar</button>#s', $html, $m) ? $m[0] : '';
+comprobar('uno creado antes de la 3.20 no tiene «Ver el token», y la pantalla dice por qué', $filaTablero !== ''
+    && !str_contains($filaTablero, 'Ver el token') && str_contains($filaTablero, 'data-sin-copia'));
+$html = $jefa->post('/admin/configuracion/api/ver', ['token' => (string) $idTokenTablero]);
+comprobar('pedirlo igual solo avisa que de él no queda copia', str_contains($html, 'toast--warn')
+    && str_contains($html, 'solo queda su huella') && !str_contains($html, $tokenTablero));
+// Con la copia de otro token en su fila, no muestra nada: lo que se abre tiene
+// que ser el token de esa fila.
+$cifrar->execute([(string) $pdo->query("SELECT token_cifrado FROM {$P}api_token WHERE id = $idTokenIndicadores")->fetchColumn(),
+    $idTokenTablero]);
+$jefa->get('/admin/configuracion/api');
+$html = $jefa->post('/admin/configuracion/api/ver', ['token' => (string) $idTokenTablero]);
+comprobar('si la copia guardada no es la de ese token, no muestra ninguno', str_contains($html, 'toast--warn')
+    && !str_contains($html, $tokenIndicadores) && !str_contains($html, $tokenTablero));
+$cifrar->execute([$cifradoTablero, $idTokenTablero]);
+$html = $jefa->post('/admin/configuracion/api/ver', ['token' => (string) $idTokenFotos]);
+comprobar('uno revocado ya no se muestra', str_contains($html, 'toast--warn') && str_contains($html, 'ya está revocado')
+    && !str_contains($html, $tokenFotos));
+$operadorApi->post('/admin/configuracion/api/ver', ['token' => (string) $idTokenTablero], false);
+comprobar('ni se lo muestra a un operador', $operadorApi->codigo === 403 && !str_contains($operadorApi->cuerpo, $tokenTablero));
+
+// ---- Eliminar -----------------------------------------------------------------------------
+$html = $jefa->get('/admin/configuracion/api');
+comprobar('cada token, vigente o revocado, tiene «Eliminar»',
+    substr_count($html, '>Eliminar</button>') === $cuenta("SELECT COUNT(*) FROM {$P}api_token"));
+$html = $jefa->post('/admin/configuracion/api/eliminar', ['token' => (string) $idTokenFotos]);
+comprobar('eliminar uno revocado lo quita de la base y de la lista',
+    $cuenta("SELECT COUNT(*) FROM {$P}api_token WHERE id = $idTokenFotos") === 0
+    && str_contains($html, 'eliminado de la lista') && !str_contains($html, 'data-token="' . $idTokenFotos . '"'));
+
+$jefa->post('/admin/configuracion/api/foto', ['token' => (string) $idTokenIndicadores, 'permitir' => '1']);
+$enlaceIndicadores = $fotoPorApi($tokenIndicadores);
+$visitante->get($enlaceIndicadores);
+$fotoAntesDeEliminar = $visitante->codigo;
+$jefa->get('/admin/configuracion/api');
+$html = $jefa->post('/admin/configuracion/api/eliminar', ['token' => (string) $idTokenIndicadores]);
+$r = $pedirApi($api, '/api/v1/perfiles?token=' . $tokenIndicadores);
+comprobar('eliminar uno vigente lo corta en el acto', $api->codigo === 401 && ($r['error']['titulo'] ?? '') === 'Token no válido'
+    && str_contains($html, 'desde ahora la API lo rechaza'));
+$visitante->get($enlaceIndicadores);
+comprobar('y sus enlaces de fotografía dejan de servir', $fotoAntesDeEliminar === 200 && $visitante->codigo === 404);
+$pedirApi($api, '/api/v1/perfiles?token=' . $tokenTablero);
+comprobar('sin tocar a los demás', $api->codigo === 200);
+$html = $jefa->post('/admin/configuracion/api/eliminar', ['token' => (string) $idTokenIndicadores]);
+comprobar('eliminarlo otra vez solo avisa', str_contains($html, 'toast--warn') && str_contains($html, 'ya no existe'));
+$tokensAntes = $cuenta("SELECT COUNT(*) FROM {$P}api_token");
+$operadorApi->post('/admin/configuracion/api/eliminar', ['token' => (string) $idTokenTablero], false);
+comprobar('un operador no elimina ninguno', $operadorApi->codigo === 403 && $cuenta("SELECT COUNT(*) FROM {$P}api_token") === $tokensAntes);
+$html = $jefa->get('/admin');
+comprobar('la bitácora dice quién eliminó cada token, y si estaba vigente',
+    str_contains($html, 'eliminó un token de la API: el de «Tablero de indicadores», que estaba vigente')
+    && str_contains($html, 'eliminó un token de la API: el de «Sitio con fotografías»')
+    && !str_contains($html, 'el de «Sitio con fotografías», que estaba vigente'));
+
 // ---- Sin la tabla de los tokens ---------------------------------------------------------
 // Lo que pasa si la base no se pudo poner al día sola. La marca de «al día» se
 // renueva antes, para que la actualización automática no la cree en medio.
@@ -5245,6 +5484,40 @@ comprobar('un enlace de fotografía responde 503 en JSON, explicando por qué', 
 $jefa->get('/admin/configuracion/api');
 $jefa->post('/admin/configuracion/api/revocar', ['token' => (string) $idDeToken($tokenSinColumna)]);
 
+// ---- Sin las columnas de la 1.15.0 ----------------------------------------------------
+// La copia cifrada y el permiso de la caracterización. Si la base no pudo
+// agregarlas sola, los tokens se siguen creando y consultando como antes: se
+// ven una sola vez y sin caracterización, y la pantalla dice qué falta.
+@touch($RAIZ . '/almacen/registro/esquema-al-dia.php');
+$pdo->exec("ALTER TABLE {$P}api_token DROP COLUMN token_cifrado, DROP COLUMN caracterizacion_desde");
+$html = $jefa->get('/admin/configuracion/api');
+$pantallaSin115 = $jefa->codigo === 200 && !str_contains($html, 'name="caracterizacion"')
+    && !str_contains($html, 'la caracterización</button>') && !str_contains($html, '>Ver el token</button>')
+    && !str_contains($html, 'data-sin-copia') && str_contains($html, 'Para dar también la caracterización');
+$tokensAntes = $cuenta("SELECT COUNT(*) FROM {$P}api_token");
+$jefa->post('/admin/configuracion/api/crear',
+    ['nombre' => 'Con caracterización y sin la columna', 'alcance' => 'basico', 'caracterizacion' => '1'], false);
+$caracterizacionSinColumna = $jefa->codigo === 303 && str_ends_with($jefa->cabecera('Location'), '/admin')
+    && $cuenta("SELECT COUNT(*) FROM {$P}api_token") === $tokensAntes;
+$jefa->get('/admin/configuracion/api');
+$html = $jefa->post('/admin/configuracion/api/crear', ['nombre' => 'Sin las columnas nuevas', 'alcance' => 'basico']);
+$tokenSin115 = $tokenDeLaPantalla($html);
+$unaSolaVez = str_contains($html, 'única vez que aparece') && !str_contains($html, '«Ver el token»');
+$r = $pedirApi($api, '/api/v1?token=' . $tokenSin115);
+$apiSin115 = $api->codigo === 200 && ($r['caracterizacion'] ?? null) === false;
+$pedirApi($api, '/api/v1/personas?por=5&token=' . $tokenSin115);
+$apiSin115 = $apiSin115 && $api->codigo === 200 && !str_contains($api->cuerpo, '"caracterizacion"');
+$pdo->exec("ALTER TABLE {$P}api_token ADD COLUMN token_cifrado VARBINARY(255) NULL AFTER pista,
+            ADD COLUMN caracterizacion_desde DATETIME NULL AFTER foto_desde");
+comprobar('sin las columnas de la 1.15.0, la pantalla no ofrece ni la caracterización ni «Ver el token», y dice qué falta',
+    $pantallaSin115);
+comprobar('pedir la caracterización lleva al panel, donde está el botón, sin crear el token', $caracterizacionSinColumna,
+    $jefa->codigo . ' → ' . $jefa->cabecera('Location'));
+comprobar('y los tokens se crean como antes: se ven una sola vez, y consultan sin caracterización',
+    strlen($tokenSin115) === 64 && $unaSolaVez && $apiSin115);
+$jefa->get('/admin/configuracion/api');
+$jefa->post('/admin/configuracion/api/eliminar', ['token' => (string) $idDeToken($tokenSin115)]);
+
 // ---- Rastro ---------------------------------------------------------------------------------
 // Ni siquiera su comienzo: la traza de un error lleva los argumentos de cada
 // llamada, y con el fallo de arriba el token podía quedar escrito a medias.
@@ -5252,7 +5525,7 @@ $registros = implode('', array_map('file_get_contents', glob($RAIZ . '/almacen/r
 $bitacoraEntera = implode("\n", $pdo->query("SELECT CONCAT(accion, ' ', COALESCE(detalle, '')) FROM {$P}bitacora")
     ->fetchAll(PDO::FETCH_COLUMN));
 $rastro = false;
-foreach ([$tokenSitio, $tokenTablero, $tokenFotos, $tokenSinColumna] as $t) {
+foreach ([$tokenSitio, $tokenTablero, $tokenFotos, $tokenSinColumna, $tokenIndicadores, $tokenSin115] as $t) {
     $rastro = $rastro || str_contains($registros, substr($t, 0, 12)) || str_contains($bitacoraEntera, substr($t, 0, 12));
 }
 comprobar('los tokens no quedan escritos, ni a medias, en los registros de la aplicación ni en la bitácora',

@@ -167,6 +167,9 @@ $enrutador->get('/admin/configuracion/api', [Configuracion::class, 'api'], 'admi
 $enrutador->post('/admin/configuracion/api/crear', [Configuracion::class, 'crearTokenApi'], 'admin:administrador');
 $enrutador->post('/admin/configuracion/api/revocar', [Configuracion::class, 'revocarTokenApi'], 'admin:administrador');
 $enrutador->post('/admin/configuracion/api/foto', [Configuracion::class, 'fotoTokenApi'], 'admin:administrador');
+$enrutador->post('/admin/configuracion/api/caracterizacion', [Configuracion::class, 'caracterizacionTokenApi'], 'admin:administrador');
+$enrutador->post('/admin/configuracion/api/ver', [Configuracion::class, 'verTokenApi'], 'admin:administrador');
+$enrutador->post('/admin/configuracion/api/eliminar', [Configuracion::class, 'eliminarTokenApi'], 'admin:administrador');
 $enrutador->ambos('/admin/cuenta', [Cuenta::class, 'ver'], 'admin:consulta');
 
 // Aplica al esquema lo que falte para esta versión del código. Solo agrega

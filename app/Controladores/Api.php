@@ -27,11 +27,12 @@ use App\Nucleo\Url;
  * la cabecera «Authorization: Bearer …». La cabecera es mejor cuando se puede:
  * la dirección queda escrita en los registros del servidor web.
  *
- * Lo que nunca sale por aquí: el número de identificación, la caracterización
- * —datos sensibles, Ley 1581 art. 5—, las observaciones del comité ni ningún
- * token de acceso. El correo y el teléfono, solo con un token creado con
- * alcance «contacto»; el enlace de la fotografía, solo con un token que tenga
- * ese permiso (ver foto()).
+ * Lo que nunca sale por aquí: el número de identificación, las observaciones
+ * del comité ni ningún token de acceso. El correo y el teléfono, solo con un
+ * token creado con alcance «contacto»; el enlace de la fotografía (ver foto())
+ * y la caracterización —género, rango de edad, grupo étnico y discapacidad,
+ * datos sensibles (Ley 1581, art. 5)—, solo con un token que tenga cada
+ * permiso.
  *
  * Los filtros van en la dirección y son todos opcionales. Uno que no se
  * entiende —un nombre mal escrito, un valor que no existe— responde 400
@@ -70,8 +71,9 @@ final class Api
             'api'      => 'Plataforma de Eventos TIC · API de consulta',
             'version'  => 1,
             'alcance'  => $conContacto ? 'contacto' : 'basico',
-            // Si cada persona trae el enlace de su fotografía.
+            // Si cada persona trae el enlace de su fotografía, y su caracterización.
             'fotografia' => TokenApi::daFoto($token),
+            'caracterizacion' => TokenApi::daCaracterizacion($token),
             'evento'   => $this->datosEvento($evento),
             'eventos'  => array_map(static fn(array $e): array => [
                 'id' => (int) $e['id'], 'nombre' => (string) $e['nombre'], 'fecha_inicio' => (string) $e['fecha_inicio'],
@@ -472,8 +474,20 @@ final class Api
             $parametros
         );
 
-        $propuestas = $this->propuestasDe(array_map(static fn(array $f): int => (int) $f['id'], $filas));
+        $ids = array_map(static fn(array $f): int => (int) $f['id'], $filas);
+        $propuestas = $this->propuestasDe($ids);
         $exigeDocumento = Formulario::exigeDocumento($eventoId);
+
+        // La caracterización, solo con ese permiso: de toda la página en una
+        // consulta, y con un apunte al día en la bitácora (anotarCaracterizacion()).
+        $caracterizaciones = null;
+        if (TokenApi::daCaracterizacion($token)) {
+            $caracterizaciones = $this->caracterizacionesDe($ids);
+            if ($filas !== []) {
+                TokenApi::anotarCaracterizacion($token);
+            }
+        }
+        $formulario = Formulario::delEvento($eventoId);
 
         $this->responder([
             'evento'     => $this->datosEvento($evento),
@@ -489,10 +503,34 @@ final class Api
                 'anterior'   => $paginacion->pagina > 1 ? min($paginacion->pagina - 1, $paginas) : null,
             ],
             'datos'      => array_map(
-                fn(array $f): array => $this->persona($f, $propuestas[(int) $f['id']] ?? null, $token, $exigeDocumento),
+                fn(array $f): array => $this->persona($f, $propuestas[(int) $f['id']] ?? null, $token, $exigeDocumento,
+                    $caracterizaciones === null ? null : ($caracterizaciones[(int) $f['id']] ?? []), $formulario),
                 $filas
             ),
         ]);
+    }
+
+    /**
+     * La caracterización de cada una de esas personas, en una consulta. Quien
+     * no diligenció ninguno de los cuatro campos no tiene fila.
+     *
+     * @param array<int, int> $ids
+     * @return array<int, array>
+     */
+    private function caracterizacionesDe(array $ids): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+        $porPersona = [];
+        foreach (Bd::filas(
+            'SELECT persona_id, genero, rango_edad, etnia, discapacidad FROM {persona_caracterizacion}
+              WHERE persona_id IN (' . implode(',', array_map('intval', $ids)) . ')',
+            []
+        ) as $fila) {
+            $porPersona[(int) $fila['persona_id']] = $fila;
+        }
+        return $porPersona;
     }
 
     /**
@@ -522,9 +560,20 @@ final class Api
         return $porPersona;
     }
 
-    /** Una persona como sale por la API. Lo que no está aquí, no sale. */
-    private function persona(array $p, ?array $propuesta, array $token, bool $exigeDocumento): array
-    {
+    /**
+     * Una persona como sale por la API. Lo que no está aquí, no sale.
+     *
+     * $caracterizacion es null si el token no tiene ese permiso, y [] si la
+     * persona no diligenció ninguno de sus campos.
+     */
+    private function persona(
+        array $p,
+        ?array $propuesta,
+        array $token,
+        bool $exigeDocumento,
+        ?array $caracterizacion,
+        Formulario $formulario
+    ): array {
         $conContacto = $token['alcance'] === 'contacto';
         $item = [
             'id'                => (int) $p['id'],
@@ -548,6 +597,26 @@ final class Api
             $archivo = (string) ($p['foto'] ?? '');
             $item['foto'] = $archivo === '' ? null : Url::absoluta('/api/v1/fotos/' . (int) $p['id'] . '/'
                 . (int) $token['id'] . '/' . TokenApi::firmaFoto($token, (int) $p['id'], $archivo));
+        }
+
+        // Cada campo con su clave —el valor guardado, que no cambia— y su
+        // nombre —lo que vio la persona, con las opciones de este evento—, como
+        // el perfil. null si no lo declaró.
+        //
+        // Vacío es «no lo declaró», salvo cuando la lista tiene una opción
+        // vacía —en género, «Prefiero no responder», que es la que viene
+        // marcada— y la persona pasó por la caracterización con ese campo a la
+        // vista: eso fue lo que envió, y así sale, con la clave vacía.
+        if ($caracterizacion !== null) {
+            $item['caracterizacion'] = [];
+            foreach (['genero' => 'genero', 'rango_edad' => 'rango_edad', 'grupo_etnico' => 'etnia',
+                      'discapacidad' => 'discapacidad'] as $clave => $columna) {
+                $valor = (string) ($caracterizacion[$columna] ?? '');
+                $nombre = $formulario->etiqueta($columna, $valor);
+                $declarado = $valor !== ''
+                    || ($nombre !== '' && $caracterizacion !== [] && $formulario->visible($columna));
+                $item['caracterizacion'][$clave] = $declarado ? ['clave' => $valor, 'nombre' => $nombre] : null;
+            }
         }
 
         if ($conContacto) {

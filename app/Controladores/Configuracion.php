@@ -106,21 +106,27 @@ final class Configuracion
     /**
      * La pestaña de la API: los tokens que hay, y cómo se consulta.
      *
-     * $tokenNuevo llega solo justo después de crear uno, en la misma petición:
-     * no viaja en la redirección ni en el aviso, y no se vuelve a poder ver.
+     * $parametros['enPantalla'] es un token en claro —el recién creado, o uno
+     * que un administrador pidió volver a ver— con su nombre y sus permisos.
+     * Llega solo en la respuesta de esa misma petición: no viaja en la
+     * redirección ni en el aviso, y la lista nunca lo lleva.
      */
     public function api(Peticion $peticion, array $parametros = []): void
     {
         $this->exigirTablaApi();
+        $enPantalla = $parametros['enPantalla'] ?? null;
+        if ($enPantalla !== null) {
+            // Con el token a la vista, que ninguna caché guarde la página.
+            header('Cache-Control: private, no-store');
+        }
         Respuesta::vista('admin/config-api', [
             'titulo'     => 'API',
             'pantalla'   => 'configuracion',
             'tokens'     => \App\Modelos\TokenApi::todos(),
-            'tokenNuevo' => (string) ($parametros['tokenNuevo'] ?? ''),
-            'nombreNuevo' => (string) ($parametros['nombreNuevo'] ?? ''),
-            'alcanceNuevo' => (string) ($parametros['alcanceNuevo'] ?? ''),
-            'fotoNuevo'  => (bool) ($parametros['fotoNuevo'] ?? false),
+            'enPantalla' => $enPantalla,
             'fotoDisponible' => $this->fotoDisponible(),
+            'caracterizacionDisponible' => $this->caracterizacionDisponible(),
+            'copiaDisponible' => \App\Modelos\TokenApi::tieneColumna('token_cifrado'),
             'base'       => Url::absoluta('/api/v1'),
         ]);
     }
@@ -143,11 +149,46 @@ final class Configuracion
         if ($conFoto) {
             $this->exigirColumnaFoto();
         }
-        $token = \App\Modelos\TokenApi::crear($nombre, $alcance, $conFoto, (int) Guardia::usuarioActual()['id']);
+        $conCaracterizacion = $peticion->campo('caracterizacion') === '1';
+        if ($conCaracterizacion) {
+            $this->exigirColumnaCaracterizacion();
+        }
+        $token = \App\Modelos\TokenApi::crear($nombre, $alcance, $conFoto, (int) Guardia::usuarioActual()['id'],
+            $conCaracterizacion);
 
-        // Se pinta en esta misma respuesta, una sola vez.
-        $this->api($peticion, ['tokenNuevo' => $token, 'nombreNuevo' => $nombre, 'alcanceNuevo' => $alcance,
-            'fotoNuevo' => $conFoto]);
+        // Se pinta en esta misma respuesta.
+        $this->api($peticion, ['enPantalla' => [
+            'token' => $token, 'nombre' => $nombre, 'alcance' => $alcance, 'foto' => $conFoto,
+            'caracterizacion' => $conCaracterizacion, 'nuevo' => true,
+        ]]);
+    }
+
+    /**
+     * Vuelve a mostrar un token vigente para copiarlo. Es un POST con testigo:
+     * el token no aparece porque sí al abrir la pestaña, y cada vez que alguien
+     * lo ve queda en la bitácora.
+     */
+    public function verTokenApi(Peticion $peticion): void
+    {
+        $this->exigirTablaApi();
+        $resultado = \App\Modelos\TokenApi::paraCopiar($peticion->entero('token'));
+        $fila = $resultado['fila'];
+
+        if ($resultado['estado'] !== 'ok' || $fila === null) {
+            Respuesta::redirigir('/admin/configuracion/api', match ($resultado['estado']) {
+                'sin_copia' => 'Ese token se creó antes de que la plataforma guardara una copia para volver a verlo: '
+                    . 'de él solo queda su huella. Si se perdió, crea otro y elimina este cuando el sistema ya use el nuevo.',
+                'ilegible'  => 'No se pudo leer ese token con la llave de cifrado de la instalación. Crea otro y elimina '
+                    . 'este cuando el sistema ya use el nuevo.',
+                default     => 'Ese token no existe o ya está revocado.',
+            }, 'warn');
+        }
+
+        $this->api($peticion, ['enPantalla' => [
+            'token' => $resultado['token'], 'nombre' => (string) $fila['nombre'], 'alcance' => (string) $fila['alcance'],
+            'foto' => \App\Modelos\TokenApi::daFoto($fila),
+            'caracterizacion' => \App\Modelos\TokenApi::daCaracterizacion($fila), 'nuevo' => false,
+        ]]);
     }
 
     public function revocarTokenApi(Peticion $peticion): void
@@ -157,6 +198,34 @@ final class Configuracion
         Respuesta::redirigir('/admin/configuracion/api', $revocado
             ? 'Token revocado: desde ahora la API lo rechaza. Los demás siguen funcionando.'
             : 'Ese token ya estaba revocado o no existe.', $revocado ? 'ok' : 'warn');
+    }
+
+    /** Lo quita de la lista; si estaba vigente, la API lo rechaza desde ahora. */
+    public function eliminarTokenApi(Peticion $peticion): void
+    {
+        $this->exigirTablaApi();
+        $eliminado = \App\Modelos\TokenApi::eliminar($peticion->entero('token'));
+        Respuesta::redirigir('/admin/configuracion/api', $eliminado === null
+            ? 'Ese token ya no existe.'
+            : ($eliminado['vigente']
+                ? 'Token de «' . $eliminado['nombre'] . '» eliminado: desde ahora la API lo rechaza. Los demás siguen funcionando.'
+                : 'Token de «' . $eliminado['nombre'] . '» eliminado de la lista.'),
+            $eliminado === null ? 'warn' : 'ok');
+    }
+
+    /** Da o quita a un token la caracterización de cada persona, sin cambiar el token. */
+    public function caracterizacionTokenApi(Peticion $peticion): void
+    {
+        $this->exigirTablaApi();
+        $this->exigirColumnaCaracterizacion();
+        $permitir = $peticion->campo('permitir') === '1';
+        $hecho = \App\Modelos\TokenApi::permitirCaracterizacion($peticion->entero('token'), $permitir);
+        Respuesta::redirigir('/admin/configuracion/api', !$hecho
+            ? 'Ese token no existe, ya estaba revocado o ya estaba así.'
+            : ($permitir
+                ? 'Listo: desde la próxima consulta, cada persona trae su caracterización con ese token.'
+                : 'Listo: la API ya no da la caracterización con ese token.'),
+            $hecho ? 'ok' : 'warn');
     }
 
     /** Da o quita a un token el enlace de la fotografía, sin cambiar el token. */
@@ -203,6 +272,20 @@ final class Configuracion
     {
         if (!$this->fotoDisponible()) {
             Respuesta::redirigir('/admin', 'Para el enlace de la fotografía, la base de datos tiene que ponerse al día. '
+                . 'Pulsa «Actualizar la base de datos» en el aviso de arriba y vuelve a Configuración → API.', 'warn');
+        }
+    }
+
+    /** El permiso de la caracterización es una columna de la 1.15.0, como el de la foto en la 1.13.0. */
+    private function caracterizacionDisponible(): bool
+    {
+        return \App\Modelos\TokenApi::tieneColumna('caracterizacion_desde');
+    }
+
+    private function exigirColumnaCaracterizacion(): void
+    {
+        if (!$this->caracterizacionDisponible()) {
+            Respuesta::redirigir('/admin', 'Para dar la caracterización por la API, la base de datos tiene que ponerse al día. '
                 . 'Pulsa «Actualizar la base de datos» en el aviso de arriba y vuelve a Configuración → API.', 'warn');
         }
     }

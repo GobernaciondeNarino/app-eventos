@@ -1,6 +1,6 @@
 # Esquema de datos
 
-Plataforma de Eventos TIC · versión del esquema **1.14.0**
+Plataforma de Eventos TIC · versión del esquema **1.15.0**
 
 > Documento generado con `php herramientas/generar-doc-esquema.php` a partir de
 > `app/Esquema.php`, la misma definición que el instalador usa para crear y actualizar
@@ -30,7 +30,7 @@ poder compartir la base con otras aplicaciones del alojamiento.
 | `evt_dispositivo` | 8 | Teléfonos desde los que un asistente ya entró. Le evitan volver a pedir el código cada vez. |
 | `evt_codigo_acceso` | 7 | Códigos de un solo uso que se envían por correo al asistente. Se guarda el hash, no el código. |
 | `evt_recuperacion_clave` | 9 | Enlaces de un solo uso para poner una contraseña nueva, de asistentes y del equipo. Se guarda el hash del enlace, no el enlace. |
-| `evt_api_token` | 14 | Tokens de la API de consulta (/api/v1). Se guarda el hash de cada uno, no el token; cada sistema que consulta tiene el suyo y se revoca sin tocar los demás. |
+| `evt_api_token` | 16 | Tokens de la API de consulta (/api/v1). Se buscan por su hash; desde la 1.15.0, cada uno se guarda además cifrado con la llave de la instalación, para volver a copiarlo. Cada sistema que consulta tiene el suyo y se revoca o se elimina sin tocar los demás. |
 | `evt_intento` | 5 | Contador de intentos fallidos para el límite de fuerza bruta. La clave se guarda como HMAC, no en claro. |
 | `evt_bitacora` | 8 | Auditoría. Quién hizo qué, cuándo y desde dónde. Solo se inserta: no se actualiza ni se borra. |
 | `evt_migracion` | 3 | Qué versión del esquema está aplicada. Sin esto el instalador no sabría si actualizar o instalar. |
@@ -49,7 +49,7 @@ evento ─┬─ evento_tema        identidad visual: paleta, tipografía y logo
 
 usuario ─── sesion            equipo organizador y sus sesiones
 recuperacion_clave            enlaces para poner una contraseña nueva, de personas y del equipo
-api_token                     quién puede consultar la API; solo el hash de cada token
+api_token                     quién puede consultar la API; el hash de cada token y su copia cifrada
 intento                       contador para el límite de fuerza bruta
 bitacora                      auditoría; solo inserciones
 migracion                     versión del esquema aplicada
@@ -470,7 +470,7 @@ Llaves e índices:
 
 ### `evt_api_token`
 
-Tokens de la API de consulta (/api/v1). Se guarda el hash de cada uno, no el token; cada sistema que consulta tiene el suyo y se revoca sin tocar los demás.
+Tokens de la API de consulta (/api/v1). Se buscan por su hash; desde la 1.15.0, cada uno se guarda además cifrado con la llave de la instalación, para volver a copiarlo. Cada sistema que consulta tiene el suyo y se revoca o se elimina sin tocar los demás.
 
 | Columna | Tipo |
 |---|---|
@@ -478,8 +478,10 @@ Tokens de la API de consulta (/api/v1). Se guarda el hash de cada uno, no el tok
 | `nombre` | `VARCHAR(120) NOT NULL` |
 | `token_hash` | `CHAR(64) NOT NULL` |
 | `pista` | `CHAR(8) NOT NULL` |
+| `token_cifrado` | `VARBINARY(255) NULL` |
 | `alcance` | `ENUM('basico','contacto') NOT NULL DEFAULT 'basico'` |
 | `foto_desde` | `DATETIME(6) NULL` |
+| `caracterizacion_desde` | `DATETIME NULL` |
 | `creado_por` | `INT UNSIGNED NULL` |
 | `creado_en` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` |
 | `ultimo_uso_en` | `DATETIME NULL` |

@@ -401,7 +401,7 @@ guiones('foto.js', 'preregistro.js', 'claves.js', 'registro-incompleto.js');
 
         <div class="row">
           <button class="btn btn--sm btn--primary" type="button" data-foto-elegir>
-            Tomar foto o elegir de la galería
+            <?= $foto !== '' ? 'Cambiar la foto' : 'Tomar foto o elegir de la galería' ?>
           </button>
           <button class="btn btn--sm hidden" type="button" data-foto-descartar>
             Descartar
@@ -428,8 +428,17 @@ guiones('foto.js', 'preregistro.js', 'claves.js', 'registro-incompleto.js');
         <input type="hidden" name="foto_ancho" data-foto-ancho>
         <input type="hidden" name="foto_alto" data-foto-alto>
 
+        <?php if ($foto !== ''): ?>
+          <!-- Con una foto nueva en el editor, foto.js cambia la casilla de
+               quitar por este aviso: la nueva reemplaza a la actual, y solo
+               al guardar. -->
+          <p class="help hidden" data-foto-reemplaza style="margin:0">
+            La foto nueva reemplaza a la actual cuando guardes los cambios.
+          </p>
+        <?php endif; ?>
+
         <?php if ($foto !== '' && !$f->obligatorio('foto')): ?>
-          <label class="row" style="gap:10px;cursor:pointer;flex-wrap:nowrap;align-items:flex-start">
+          <label class="row" style="gap:10px;cursor:pointer;flex-wrap:nowrap;align-items:flex-start" data-foto-quitar>
             <input type="checkbox" name="quitar_foto" value="1"
                    style="width:18px;height:18px;margin-top:2px;flex:none;accent-color:var(--c-accent)">
             <span class="help">Quitar la foto actual y dejar el carnet con mis iniciales</span>

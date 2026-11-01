@@ -552,8 +552,7 @@ final class Publico
             'pideClave'     => !$porEquipo && Autenticacion::activo('clave'),
             'claveMinima'   => Autenticacion::claveMinima(),
             'tieneClave'    => $yo !== null && Persona::tieneClave($yo),
-            'foto'          => $yo !== null && Persona::tieneFoto($yo)
-                ? u('/medios/foto/' . (int) $yo['id']) : '',
+            'foto'          => $yo !== null ? urlFoto($yo) : '',
             'documentos'    => $suPropuesta['documentos'],
             'agendada'      => $suPropuesta['aprobada'],
             'reelegir'      => $reelegir,
@@ -580,13 +579,15 @@ final class Publico
      */
     private function guardarFoto(Peticion $peticion, int $personaId): ?string
     {
-        if ($peticion->marcado('quitar_foto')) {
-            Persona::quitarFoto($personaId);
-            return null;
-        }
-
+        // Una foto nueva gana sobre «Quitar la foto actual», como en el banner:
+        // quien marca la casilla y además elige otra quiere cambiarla, no
+        // quedarse sin ninguna. Hasta la 3.18.1 ganaba quitar, y la foto nueva
+        // se descartaba sin ningún aviso: el carnet quedaba con las iniciales.
         $archivo = $peticion->archivo('foto');
         if ($archivo === null) {
+            if ($peticion->marcado('quitar_foto')) {
+                Persona::quitarFoto($personaId);
+            }
             return null;
         }
 
@@ -814,9 +815,9 @@ final class Publico
 
         if ($f->obligatorio('foto')) {
             $archivo = $peticion->archivo('foto');
-            // «Quitar la foto» gana sobre una subida (guardarFoto()), así que
-            // con la foto obligatoria tampoco se acepta.
-            if ($peticion->marcado('quitar_foto') || ($archivo === null && empty($actual['foto']))) {
+            // Sin una foto nueva, «Quitar la foto» la dejaría sin ninguna; con
+            // una nueva, la nueva reemplaza a la de antes (guardarFoto()).
+            if ($archivo === null && ($peticion->marcado('quitar_foto') || empty($actual['foto']))) {
                 $errores['foto'] = 'Sube tu fotografía: este evento la pide para el carnet.';
             } elseif ($archivo !== null) {
                 // Obligatoria, tiene que servir antes de guardar nada.

@@ -48,7 +48,7 @@ guiones('identidad.js');
         <div class="stack stack--2">
           <div style="aspect-ratio:1;border:1px dashed var(--a-28);display:grid;place-items:center;background:var(--c-sunken);overflow:hidden;padding:10px">
             <?php if ($temaEvento['logo'] !== ''): ?>
-              <img src="<?= e(u('/medios/logo/' . (int) $evento['id'])) ?>" alt="Logo actual"
+              <img src="<?= e(urlLogo($temaEvento, $evento)) ?>" alt="Logo actual"
                    style="max-width:100%;max-height:100%;object-fit:contain">
             <?php else: ?>
               <span class="mono" style="font-size:9.5px;color:var(--c-muted);text-align:center;letter-spacing:.08em;text-transform:uppercase">

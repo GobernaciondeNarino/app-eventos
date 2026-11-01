@@ -281,6 +281,69 @@ function titulo(t) {
     comprobar('en el carnet en pantalla la foto va entera, en un marco cuadrado como al imprimir',
       marcoFoto.cuadrado && marcoFoto.dentro, JSON.stringify(marcoFoto));
 
+    /* Cambiarla. Hasta la 3.18.1 la foto nueva se guardaba pero no se veía:
+       su dirección era la misma de la anterior y este navegador —que ya tiene
+       la anterior en su caché— la seguía enseñando. Se cambia por una azul y
+       se vuelve a una roja, que es la que espera el carnet para imprimir. */
+    const colorDe = (selector) => p2.evaluate(async (selector) => {
+      const img = document.querySelector(selector);
+      if (!img) return null;
+      await img.decode();
+      const l = document.createElement('canvas');
+      l.width = l.height = 8;
+      const c = l.getContext('2d');
+      c.drawImage(img, 0, 0, 8, 8);
+      const d = c.getImageData(4, 4, 1, 1).data;
+      return [d[0], d[1], d[2]];
+    }, selector);
+    const fotoLisa = async (archivo, relleno) => fs.writeFileSync(archivo, Buffer.from(await p2.evaluate((relleno) => {
+      const l = document.createElement('canvas');
+      l.width = l.height = 600;
+      const c = l.getContext('2d');
+      c.fillStyle = relleno; c.fillRect(0, 0, 600, 600);
+      return l.toDataURL('image/png').split(',')[1];
+    }, relleno), 'base64'));
+    const esAzul = (c) => !!c && c[2] > 150 && c[0] < 110;
+    const esRoja = (c) => !!c && c[0] > 150 && c[2] < 110;
+    const azul = 'pruebas/capturas/foto-azul.png';
+    const roja = 'pruebas/capturas/foto-roja.png';
+    await fotoLisa(azul, '#1e3cc8');
+    await fotoLisa(roja, '#dc1e1e');
+
+    await p2.goto(BASE + '/preregistro', { waitUntil: 'networkidle' });
+    comprobar('con foto, el botón dice «Cambiar la foto»',
+      (await p2.locator('[data-foto-elegir]').innerText()).trim().toLowerCase() === 'cambiar la foto');
+    await p2.locator('input[name=quitar_foto]').check();
+    await p2.setInputFiles('#foto', azul);
+    await p2.waitForSelector('[data-foto-lienzo]:not([hidden])', { timeout: 5000 });
+    comprobar('al elegir otra, avisa que reemplaza a la actual al guardar y esconde «Quitar», desmarcada',
+      await p2.locator('[data-foto-reemplaza]').isVisible() && await p2.locator('[data-foto-quitar]').isHidden()
+      && !(await p2.locator('input[name=quitar_foto]').isChecked()));
+    await p2.locator('[data-foto-descartar]').click();
+    comprobar('y al descartarla vuelve todo: la foto actual, «Quitar» y sin el aviso',
+      await p2.locator('[data-foto-actual]').isVisible() && await p2.locator('[data-foto-quitar]').isVisible()
+      && await p2.locator('[data-foto-reemplaza]').isHidden());
+
+    await p2.setInputFiles('#foto', azul);
+    await p2.waitForSelector('[data-foto-lienzo]:not([hidden])', { timeout: 5000 });
+    await p2.locator('button[type=submit]', { hasText: 'Guardar cambios' }).click();
+    await p2.waitForLoadState('networkidle');
+    const cambiada = await colorDe('.carnet__photo img');
+    comprobar('al cambiar la foto, el carnet enseña la nueva, no la que el navegador tenía guardada',
+      esAzul(cambiada), cambiada ? cambiada.join(',') : 'sin imagen');
+    await p2.goto(BASE + '/preregistro', { waitUntil: 'networkidle' });
+    const enMisDatos = await colorDe('[data-foto-actual]');
+    comprobar('y «Mis datos» también', esAzul(enMisDatos), enMisDatos ? enMisDatos.join(',') : 'sin imagen');
+
+    await p2.setInputFiles('#foto', roja);
+    await p2.waitForSelector('[data-foto-lienzo]:not([hidden])', { timeout: 5000 });
+    await p2.locator('button[type=submit]', { hasText: 'Guardar cambios' }).click();
+    await p2.waitForLoadState('networkidle');
+    const otraVez = await colorDe('.carnet__photo img');
+    comprobar('y cambiarla otra vez también se ve en el acto', esRoja(otraVez), otraVez ? otraVez.join(',') : 'sin imagen');
+    fs.unlinkSync(azul);
+    fs.unlinkSync(roja);
+
     comprobar('sin errores de consola en el editor', erroresFoto.length === 0,
       erroresFoto.slice(0, 2).join(' | '));
 

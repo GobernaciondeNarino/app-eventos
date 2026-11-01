@@ -30,8 +30,8 @@ $rol = (string) $persona['rol'];
 $nombreRol = etiquetaRol($rol, (int) $persona['evento_id']);
 $colores = Tema::delCarnetImpreso($tema, $rol);
 
-$foto = (string) ($persona['foto'] ?? '') !== '' ? u('/medios/foto/' . (int) $persona['id']) : '';
-$logo = ($tema['logo'] ?? '') !== '' && !empty($evento['id']) ? u('/medios/logo/' . (int) $evento['id']) : '';
+$foto = urlFoto($persona);
+$logo = urlLogo($tema, $evento);
 $inicialEvento = mb_strtoupper(mb_substr(trim((string) $evento['nombre']), 0, 1)) ?: 'E';
 $identificacion = identificacion($persona['tipo_documento'], $documento);
 $entidad = (string) $persona['entidad'] !== '' ? (string) $persona['entidad'] : 'Independiente';

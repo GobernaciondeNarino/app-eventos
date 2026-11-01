@@ -15,7 +15,7 @@
 defined('EVENTOS_TIC') || exit;
 
 $id = (int) $persona['id'];
-$foto = (string) ($persona['foto'] ?? '') !== '' ? u('/medios/foto/' . $id) : '';
+$foto = urlFoto($persona);
 $qrAcceso = $qrAcceso ?? '';
 $claveActiva = $claveActiva ?? true;
 $enlaceClave = $enlaceClave ?? null;

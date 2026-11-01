@@ -35,7 +35,7 @@ $desde = ($tanda - 1) * $porTanda + 1;
 $hasta = min($conCarnet, $tanda * $porTanda);
 
 $colores = Tema::delCarnetImpreso($tema, '');
-$logo = ($tema['logo'] ?? '') !== '' && !empty($evento['id']) ? u('/medios/logo/' . (int) $evento['id']) : '';
+$logo = urlLogo($tema, $evento);
 $inicialEvento = mb_strtoupper(mb_substr(trim((string) $evento['nombre']), 0, 1)) ?: 'E';
 $dependencia = (string) ($evento['dependencia'] ?? '');
 
@@ -93,7 +93,7 @@ $talla = static function (string $texto, int $corto, int $largo): string {
           $p = $t['persona'];
           $rol = (string) $p['rol'];
           $nombreRol = etiquetaRol($rol);
-          $foto = (string) ($p['foto'] ?? '') !== '' ? u('/medios/foto/' . (int) $p['id']) : '';
+          $foto = urlFoto($p);
           $identificacion = identificacion($p['tipo_documento'], $t['documento']);
           $entidad = (string) $p['entidad'] !== '' ? (string) $p['entidad'] : 'Independiente';
         ?>

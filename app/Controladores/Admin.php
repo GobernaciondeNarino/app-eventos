@@ -1469,7 +1469,10 @@ final class Admin
                 Respuesta::redirigir('/admin/identidad', $e->getMessage(), 'warn');
             }
         }
-        if ($peticion->marcado('quitar_logo')) {
+        // Un logo nuevo gana sobre «Quitar», como en el banner y en la foto.
+        // Antes ganaba quitar: el logo nuevo ya estaba guardado en el disco y
+        // quedaba ahí huérfano, y el evento, sin ninguno.
+        if ($archivo === null && $peticion->marcado('quitar_logo')) {
             $datos['logo_archivo'] = '';
             $datos['logo_tipo'] = '';
         }

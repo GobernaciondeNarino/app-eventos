@@ -439,6 +439,11 @@ ahí. Las dos últimas son las que más cuidado piden, porque el formulario est�
 7. **Nunca se sirve desde el disco.** Pasa por `Medios::foto`, que además comprueba quién
    mira: su dueño, o el equipo organizador. El id es correlativo, así que sin esa
    comprobación bastaría con contar desde uno para descargar la cara de todos los asistentes.
+8. **La dirección lleva una versión** (`/medios/foto/{id}?v=…`, desde la 3.18.2, y lo mismo
+   el logo): la foto sale con un día de caché, y sin la versión el navegador seguía enseñando
+   la anterior después de cambiarla. La versión son diez caracteres de un resumen del nombre
+   del archivo: no lo revela, y no sirve para nada sin la comprobación de quién mira, que es
+   la misma con versión o sin ella.
 
 **Los documentos del expositor** (`App\Nucleo\Documento::guardar`). Desde la 3.3 quien marca
 que va a exponer **tiene que** adjuntar su hoja de vida (PDF) y su exposición (PDF o PPTX): son

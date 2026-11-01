@@ -14,9 +14,9 @@ defined('EVENTOS_TIC') || exit;
 return static function (string $tamano = '') use ($tema, $evento): string {
     $clase = 'brandmark' . ($tamano !== '' ? ' brandmark--' . $tamano : '');
 
-    if (($tema['logo'] ?? '') !== '' && !empty($evento['id'])) {
-        return '<span class="' . $clase . '"><img src="'
-            . e(u('/medios/logo/' . (int) $evento['id'])) . '" alt=""></span>';
+    $logo = urlLogo($tema, $evento);
+    if ($logo !== '') {
+        return '<span class="' . $clase . '"><img src="' . e($logo) . '" alt=""></span>';
     }
 
     $inicial = mb_strtoupper(mb_substr(trim((string) ($evento['nombre'] ?? 'E')), 0, 1));

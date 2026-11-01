@@ -279,7 +279,7 @@ $volver = http_build_query($conOrden + ['pagina' => $paginacion->pagina, 'por' =
             <div class="ficha">
               <div class="ficha__foto">
                 <?php if ((string) $p['foto'] !== ''): ?>
-                  <img src="<?= e(u('/medios/foto/' . (int) $p['persona_id'])) ?>"
+                  <img src="<?= e(urlFoto($p, (int) $p['persona_id'])) ?>"
                        alt="Fotografía de <?= e($p['expositor']) ?>">
                 <?php else: ?>
                   <span class="ficha__iniciales" aria-hidden="true"><?= e(iniciales((string) $p['expositor'])) ?></span>

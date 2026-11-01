@@ -36,6 +36,34 @@ function recurso(string $ruta): string
     return Url::recurso($ruta);
 }
 
+/**
+ * La foto del carnet de una persona, o '' si no tiene.
+ *
+ * La dirección lleva la versión de la foto. Las imágenes subidas se sirven con
+ * un día de caché (Respuesta::archivo) y /medios/foto/{id} es la misma para
+ * todas las fotos que suba una persona: sin la versión, después de cambiarla
+ * el navegador seguía enseñando la anterior —en su carnet, en «Mis datos», en
+ * la ficha y en los carnets impresos— y parecía que no dejaba reemplazarla.
+ * El archivo se llama distinto en cada subida (Imagen::guardarFoto), así que la
+ * versión cambia sola: la foto nueva se pide una vez y después sale de la caché.
+ *
+ * $id cuando la fila no lo trae como «id» (en Expositores es persona_id).
+ */
+function urlFoto(array $persona, ?int $id = null): string
+{
+    $archivo = (string) ($persona['foto'] ?? '');
+    $id ??= (int) ($persona['id'] ?? 0);
+    return $archivo === '' || $id <= 0 ? '' : Url::a('/medios/foto/' . $id, ['v' => substr(md5($archivo), 0, 10)]);
+}
+
+/** El logo del evento, o '' si no tiene. Con la versión, por lo mismo que urlFoto(). */
+function urlLogo(?array $tema, ?array $evento): string
+{
+    $archivo = (string) ($tema['logo'] ?? '');
+    $id = (int) ($evento['id'] ?? 0);
+    return $archivo === '' || $id <= 0 ? '' : Url::a('/medios/logo/' . $id, ['v' => substr(md5($archivo), 0, 10)]);
+}
+
 /** Campo oculto con el testigo contra falsificación de peticiones. */
 function testigo(): string
 {

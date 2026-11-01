@@ -455,6 +455,10 @@ restauró no es una copia.
    La 3.18.1 tampoco: solo cambian dos hojas de estilo. En el carnet en pantalla, la foto sale
    entera y cuadrada, como la encuadró la persona y como sale al imprimir. Ver 7.11.
 
+   La 3.18.2 tampoco. Al cambiar la foto del carnet o el logo del evento, el nuevo se ve en el
+   acto: antes el navegador seguía enseñando el anterior hasta un día, y parecía que no dejaba
+   reemplazarlo. Ver 7.12.
+
    Si el usuario de la base de datos no tiene permiso de `ALTER` —pasa en algunos
    alojamientos—, la actualización automática no puede hacerse: lo anota en el registro,
    vuelve a intentarlo cada cinco minutos y la plataforma sigue funcionando. Para hacerlo a
@@ -1083,6 +1087,58 @@ volver a subirlas—, los registros y el carnet impreso.
    basta con recargar la página.
 
 **Volver atrás:** sube otra vez los archivos que descargaste en el paso 1.
+
+### 7.12 La 3.18.2: cambiar la foto o el logo, sin tocar registros ni configuración
+
+**Qué corrige.** Al cambiar su foto desde **Mis datos**, la persona seguía viendo la anterior en
+su carnet. La nueva sí se guardaba, pero la foto se pedía siempre a la misma dirección
+(`/medios/foto/{id}`) y el navegador la guarda en su memoria hasta un día, así que enseñaba la
+de antes: parecía que no dejaba reemplazarla. Le pasaba igual al equipo —en la ficha, en
+Expositores y en los carnets que imprime en tanda— y al administrador con el logo del evento.
+Ahora la dirección de cada foto y del logo lleva una versión que cambia con cada imagen nueva
+(`?v=…`), y la nueva se ve en el acto, sin recargar.
+
+Además:
+
+- **Una foto nueva gana sobre «Quitar la foto actual».** Quien marcaba la casilla y además
+  elegía otra perdía la nueva sin ningún aviso, y su carnet quedaba con las iniciales. Ahora
+  queda la nueva, como ya pasaba con el banner del registro. Lo mismo con el logo.
+- Con una foto ya cargada, el botón dice **Cambiar la foto**. Al elegir otra, la casilla de
+  quitar se esconde y se avisa que la nueva reemplaza a la actual al guardar los cambios.
+
+**Qué no cambia.** La base de datos, `config/`, `almacen/`, las fotos y logos guardados —no hay
+que volver a subirlos—, los registros y quién puede ver cada foto.
+
+**Qué archivos cambian:**
+
+| Archivo | Para qué |
+|---|---|
+| `app/ayudas.php` | `urlFoto()` y `urlLogo()`: la dirección con su versión |
+| `app/Controladores/Publico.php` | **Mis datos** con la dirección nueva; una foto nueva gana sobre «Quitar» |
+| `app/Controladores/Admin.php` | Un logo nuevo gana sobre «Quitar» |
+| `app/Vistas/publico/registro.php` | El botón **Cambiar la foto** y el aviso de que la nueva reemplaza a la actual |
+| `app/Vistas/publico/carnet.php`, `app/Vistas/publico/carnet-imprimir.php` | La foto y el logo con su versión |
+| `app/Vistas/admin/ficha-persona.php`, `app/Vistas/admin/expositores.php`, `app/Vistas/admin/carnets-imprimir.php` | Lo mismo en las pantallas del equipo |
+| `app/Vistas/admin/identidad.php`, `app/Vistas/parciales/marca.php` | El logo con su versión |
+| `assets/js/foto.js` | Al elegir otra foto, esconde «Quitar» y muestra el aviso |
+| `index.php`, `herramientas/instalar.php`, `herramientas/correo.php` | El número de versión |
+
+**Cómo subirla:**
+
+1. Descarga, tal como están en el servidor, los archivos de la tabla, por si hay que volver atrás.
+2. Súbelos **todos juntos**, sin tocar `config/` ni `almacen/`. `app/ayudas.php` tiene que ir con
+   las vistas: una vista nueva con el `ayudas.php` anterior se detiene con un error de función
+   no definida. Si producción todavía no tiene la 3.18.1 —la versión sale en
+   `/instalar/diagnostico`, entrando como administrador—, sube la versión completa (ver 7.10 y
+   7.11).
+3. Con una cuenta de prueba que tenga foto: entra a **Mis datos**, pulsa **Cambiar la foto**,
+   elige otra y guarda. El carnet tiene que mostrar la nueva en el acto. Mira también su ficha
+   en **Registros**.
+4. Nada más. La primera vez después de subirla, cada navegador vuelve a pedir las fotos una vez,
+   porque cambió su dirección; después salen de su memoria como siempre.
+
+**Volver atrás:** sube otra vez los archivos que descargaste en el paso 1. Vuelve el problema
+de la foto anterior en pantalla, pero no se pierde nada.
 
 ---
 

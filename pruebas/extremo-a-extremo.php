@@ -1126,6 +1126,46 @@ $html = $admin->post('/admin/identidad', [
 $html = $anonimo->get('/');
 comprobar('un color inválido no entra en el CSS', !str_contains($html, 'javascript'));
 
+// ---- Cambiar el logo ------------------------------------------------------------
+// Hasta la 3.18.1 el logo nuevo se guardaba pero no se veía: /medios/logo/{evento}
+// era la misma dirección para todos y sale con un día de caché, así que el
+// navegador seguía enseñando el anterior. Ahora la dirección lleva una versión
+// que cambia con cada logo. Los envíos son los mismos de arriba, para dejar el
+// evento como estaba: sin logo.
+$idEventoLogo = (int) $pdo->query("SELECT id FROM {$BD['prefijo']}evento WHERE activo = 1 ORDER BY id LIMIT 1")->fetchColumn();
+$logoDe = static fn(): string => (string) $pdo->query(
+    "SELECT logo_archivo FROM {$BD['prefijo']}evento_tema WHERE evento_id = $idEventoLogo"
+)->fetchColumn();
+$versionLogo = static fn(string $html): string =>
+    preg_match('#/medios/logo/' . $idEventoLogo . '\?v=([0-9a-f]{10})"#', $html, $m) === 1 ? $m[1] : '';
+$logoPng = static function (int $r, int $g, int $b): array {
+    $imagen = imagecreatetruecolor(120, 120);
+    imagefilledrectangle($imagen, 0, 0, 120, 120, imagecolorallocate($imagen, $r, $g, $b));
+    ob_start();
+    imagepng($imagen);
+    return ['logo' => ['nombre' => 'logo.png', 'tipo' => 'image/png', 'contenido' => (string) ob_get_clean()]];
+};
+$identidadIgual = ['nombre' => 'Cumbre Tecnológica CIOS Nariño', 'preset' => 'narino-verde', 'tipografia' => 'neutra'];
+
+$admin->get('/admin/identidad');
+$html = $admin->subir('/admin/identidad', $identidadIgual, $logoPng(200, 30, 30));
+$logoUno = $logoDe();
+$versionUno = $versionLogo($html);
+comprobar('con logo, su dirección lleva la versión', $logoUno !== '' && $versionUno !== '', substr(strip_tags($html), 0, 120));
+$html = $admin->subir('/admin/identidad', $identidadIgual, $logoPng(30, 60, 200));
+$logoDos = $logoDe();
+$versionDos = $versionLogo($html);
+comprobar('al cambiar el logo, la dirección cambia con él: el navegador no puede enseñar el anterior',
+    $logoDos !== '' && $logoDos !== $logoUno && $versionDos !== '' && $versionDos !== $versionUno, "$versionUno → $versionDos");
+comprobar('y en la parte pública también sale el nuevo', $versionLogo($anonimo->get('/')) === $versionDos);
+$html = $admin->subir('/admin/identidad', $identidadIgual + ['quitar_logo' => '1'], $logoPng(40, 160, 90));
+$logoTres = $logoDe();
+comprobar('con «Quitar» marcada y un logo nuevo, gana el nuevo: el evento no se queda sin logo',
+    $logoTres !== '' && $logoTres !== $logoDos && is_file($RAIZ . '/almacen/logos/' . $logoTres)
+    && !is_file($RAIZ . '/almacen/logos/' . $logoDos), $logoTres);
+$html = $admin->post('/admin/identidad', $identidadIgual + ['quitar_logo' => '1']);
+comprobar('«Quitar» sola lo quita', $logoDe() === '' && $versionLogo($html) === '');
+
 /* =========================================================================
    9 · Seguridad
    ========================================================================= */
@@ -1574,6 +1614,73 @@ comprobar('trae el editor para centrar y acercar',
     str_contains($html, 'data-foto-visor') && str_contains($html, 'data-foto-zoom'));
 comprobar('y los campos del encuadre viajan con el formulario',
     str_contains($html, 'name="foto_lado"') && str_contains($html, 'name="foto_ancho"'));
+
+// ---- Cambiar la foto ------------------------------------------------------------
+// Hasta la 3.18.1 la foto nueva se guardaba pero no se veía: /medios/foto/{id}
+// era la misma dirección para todas las fotos de una persona y sale con un día
+// de caché, así que el navegador seguía enseñando la anterior —en su carnet, en
+// «Mis datos», en la ficha del equipo— y parecía que no dejaba reemplazarla.
+// Ahora la dirección lleva una versión que cambia con cada foto. Se envía lo
+// mismo que María envió la última vez, para no tocarle nada más que la foto, y
+// se termina como empezó: sin foto.
+$idMariaFoto = (int) $pdo->query("SELECT id FROM {$BD['prefijo']}persona WHERE correo = 'mzambrano@narino.gov.co'")->fetchColumn();
+$archivoDeMaria = static fn(): string => (string) $pdo->query(
+    "SELECT foto FROM {$BD['prefijo']}persona WHERE id = $idMariaFoto"
+)->fetchColumn();
+$versionFoto = static fn(string $html): string =>
+    preg_match('#/medios/foto/' . $idMariaFoto . '\?v=([0-9a-f]{10})"#', $html, $m) === 1 ? $m[1] : '';
+$fotoJpg = static function (int $r, int $g, int $b): array {
+    $imagen = imagecreatetruecolor(480, 480);
+    imagefilledrectangle($imagen, 0, 0, 480, 480, imagecolorallocate($imagen, $r, $g, $b));
+    ob_start();
+    imagejpeg($imagen, null, 85);
+    return ['foto' => ['nombre' => 'foto.jpg', 'tipo' => 'image/jpeg', 'contenido' => (string) ob_get_clean()]];
+};
+$datosFotoMaria = [
+    'nombre' => 'María Fernanda Zambrano Corregida', 'tipo_documento' => 'CC', 'documento' => '1085234567', 'habeas' => '1',
+];
+comprobar('sin foto, el botón ofrece tomarla o elegirla, y no hay nada que reemplazar',
+    str_contains($html, 'Tomar foto o elegir de la galería') && !str_contains($html, 'data-foto-reemplaza'));
+
+$html = $maria->subir('/preregistro', $datosFotoMaria, $fotoJpg(200, 30, 30));
+$primera = $archivoDeMaria();
+$versionPrimera = $versionFoto($html);
+comprobar('con foto, el carnet la pide con su versión en la dirección', $primera !== '' && $versionPrimera !== '',
+    substr(strip_tags($html), 0, 160));
+$html = $maria->get('/preregistro');
+comprobar('«Mis datos» la ofrece cambiar, y avisa que la nueva reemplaza a la actual al guardar',
+    str_contains($html, 'Cambiar la foto') && str_contains($html, 'data-foto-reemplaza')
+    && $versionFoto($html) === $versionPrimera);
+
+$html = $maria->subir('/preregistro', $datosFotoMaria, $fotoJpg(30, 60, 200));
+$segunda = $archivoDeMaria();
+$versionSegunda = $versionFoto($html);
+comprobar('al cambiarla se guarda la nueva', str_contains($html, 'Actualizamos tus datos') && $segunda !== ''
+    && $segunda !== $primera, substr(strip_tags($html), 0, 160));
+comprobar('la anterior se borra del disco', !is_file($RAIZ . '/almacen/fotos/' . $primera));
+comprobar('y su dirección cambia con ella: el navegador ya no puede enseñar la anterior',
+    $versionSegunda !== '' && $versionSegunda !== $versionPrimera, "$versionPrimera → $versionSegunda");
+$servida = $maria->get('/medios/foto/' . $idMariaFoto . '?v=' . $versionSegunda);
+comprobar('en esa dirección está la foto nueva', $maria->codigo === 200
+    && $servida === (string) file_get_contents($RAIZ . '/almacen/fotos/' . $segunda));
+comprobar('con la misma versión en «Mis datos», en el carnet para imprimir y en la ficha del equipo',
+    $versionFoto($maria->get('/preregistro')) === $versionSegunda
+    && $versionFoto($maria->get('/carnet/imprimir')) === $versionSegunda
+    && $versionFoto($admin->get('/admin/registros/' . $idMariaFoto)) === $versionSegunda);
+
+// Quien marca «Quitar la foto actual» y además elige otra quiere cambiarla. Hasta
+// la 3.18.1 ganaba quitar y la nueva se perdía sin aviso; ahora gana la nueva,
+// como en el banner y el logo.
+$maria->get('/preregistro');
+$html = $maria->subir('/preregistro', $datosFotoMaria + ['quitar_foto' => '1'], $fotoJpg(40, 160, 90));
+$tercera = $archivoDeMaria();
+comprobar('con «Quitar la foto» marcada y una foto nueva, gana la nueva: no se queda sin foto',
+    $tercera !== '' && $tercera !== $segunda && !is_file($RAIZ . '/almacen/fotos/' . $segunda)
+    && $versionFoto($html) !== '' && $versionFoto($html) !== $versionSegunda, $tercera);
+$html = $maria->subir('/preregistro', $datosFotoMaria + ['quitar_foto' => '1'], []);
+comprobar('«Quitar la foto» sola la quita: el carnet vuelve a las iniciales',
+    $archivoDeMaria() === '' && !is_file($RAIZ . '/almacen/fotos/' . $tercera)
+    && str_contains($html, 'carnet__photo-empty') && $versionFoto($html) === '');
 
 /* =========================================================================
    Portada: el botón cambia con la fecha del evento
@@ -3458,6 +3565,22 @@ comprobar('con una foto que sirve, se registra con ella', str_contains($html, 'R
     substr(strip_tags($html), 0, 160));
 comprobar('y no se ofrece quitarla, porque el evento la pide',
     !str_contains($conFoto->get('/registro'), 'name="quitar_foto"'));
+// Obligatoria también se cambia. Una nueva reemplaza a la de antes aunque el
+// envío traiga «Quitar» —un formulario abierto desde antes, uno hecho a mano—;
+// sin una nueva, «Quitar» sigue sin aceptarse.
+$fotoAntes = $fotoDe();
+$otraFoto = imagecreatetruecolor(600, 600);
+imagefilledrectangle($otraFoto, 0, 0, 600, 600, imagecolorallocate($otraFoto, 40, 80, 200));
+ob_start();
+imagejpeg($otraFoto, null, 85);
+$jpgOtra = (string) ob_get_clean();
+$html = $conFoto->subir('/registro', $datosConFoto + ['quitar_foto' => '1'],
+    ['foto' => ['nombre' => 'otra.jpg', 'tipo' => 'image/jpeg', 'contenido' => $jpgOtra]]);
+comprobar('con la foto obligatoria se cambia por otra, aunque el envío traiga «Quitar»',
+    str_contains($html, 'Actualizamos tus datos') && $fotoDe() !== '' && $fotoDe() !== $fotoAntes,
+    substr(strip_tags($html), 0, 160));
+$html = $conFoto->subir('/registro', $datosConFoto + ['quitar_foto' => '1'], []);
+comprobar('pero «Quitar» sin una nueva no se acepta', str_contains($html, 'Sube tu fotografía') && $fotoDe() !== '');
 
 // ---- El carnet para imprimir o descargar ---------------------------------------
 // Hasta la 3.14 salía sin la foto —siempre con las iniciales— y con el nombre y
@@ -3467,7 +3590,7 @@ require_once $RAIZ . '/app/Nucleo/Tema.php';
 $idConFoto = (int) $pdo->query("SELECT id FROM {$P}persona WHERE correo = 'confoto@narino.gov.co'")->fetchColumn();
 $html = $conFoto->get('/carnet/imprimir');
 comprobar('el carnet para imprimir trae la foto, no las iniciales', $conFoto->codigo === 200
-    && preg_match('#class="impreso__foto">\s*<img src="[^"]*/medios/foto/' . $idConFoto . '"#', $html) === 1);
+    && preg_match('#class="impreso__foto">\s*<img src="[^"]*/medios/foto/' . $idConFoto . '\?v=[0-9a-f]{10}"#', $html) === 1);
 comprobar('con «Descargar imágenes» antes de «Imprimir»',
     ($descargar = strpos($html, 'data-descargar-carnet')) !== false
     && ($imprimir = strpos($html, 'data-imprimir')) !== false && $descargar < $imprimir);

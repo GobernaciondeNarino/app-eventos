@@ -13,7 +13,7 @@ $marca = require __DIR__ . '/../parciales/marca.php';
 $rol = (string) $persona['rol'];
 // El nombre del perfil, como lo configuró el evento de esta persona.
 $nombreRol = etiquetaRol($rol, (int) $persona['evento_id']);
-$foto = (string) ($persona['foto'] ?? '') !== '' ? u('/medios/foto/' . (int) $persona['id']) : '';
+$foto = urlFoto($persona);
 $entidad = (string) $persona['entidad'] !== '' ? (string) $persona['entidad'] : 'Independiente';
 // Letra algo menor para los textos muy largos; el resto lo hace el máximo de
 // renglones del CSS. Sin esto, la entidad se salía por debajo del carnet.

@@ -42,6 +42,10 @@
   var error = q('[data-foto-error]');
   var actual = q('[data-foto-actual]');
   var vacia = q('[data-foto-vacia]');
+  // Solo si ya tiene una: el aviso de que la nueva la reemplaza al guardar, y
+  // la casilla de quitarla, que con una nueva en el editor no aplica.
+  var reemplaza = q('[data-foto-reemplaza]');
+  var quitar = q('[data-foto-quitar]');
 
   if (!campo || !visor || !lienzo || !mandos || !zoom) return;
 
@@ -135,6 +139,8 @@
     if (descartar) descartar.classList.add('hidden');
     if (actual) actual.hidden = false;
     if (vacia) vacia.hidden = false;
+    if (reemplaza) reemplaza.classList.add('hidden');
+    if (quitar) quitar.classList.remove('hidden');
     for (var k in salida) { if (salida[k]) salida[k].value = ''; }
   }
 
@@ -153,6 +159,15 @@
     if (marco) marco.hidden = false;
     mandos.classList.remove('hidden');
     if (descartar) descartar.classList.remove('hidden');
+    // Una foto nueva reemplaza a la actual (y el servidor le da la razón:
+    // Publico::guardarFoto). La casilla de quitarla se desmarca y se esconde
+    // para que nadie crea que hay que marcarla para cambiarla.
+    if (reemplaza) reemplaza.classList.remove('hidden');
+    if (quitar) {
+      quitar.classList.add('hidden');
+      var casilla = quitar.querySelector('input');
+      if (casilla) casilla.checked = false;
+    }
   }
 
   /* ---------------------------------------------------------------------

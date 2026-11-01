@@ -467,6 +467,15 @@ el formulario, y así sale en el carnet en pantalla, en el impreso y en las imá
 3.18 el carnet en pantalla la ponía en un marco apaisado y le cortaba la parte de abajo: la gente
 veía su foto distinta a como la había encuadrado, aunque al imprimir saliera bien.
 
+**Cambiar la foto.** La persona la cambia cuando quiera desde **Mis datos**, con **Cambiar la
+foto**: elige otra, la encuadra y guarda. La nueva reemplaza a la anterior —que se borra del
+servidor— y se ve en el acto en su carnet, en el impreso, en las imágenes y en la ficha del
+equipo. Hasta la 3.18.1 la nueva se guardaba pero no se veía: el navegador seguía enseñando la
+anterior, que guarda en su memoria hasta un día, y parecía que no dejaba reemplazarla. Si marca
+«Quitar la foto actual» y además elige otra, queda la nueva; antes se perdía sin aviso y el
+carnet quedaba con las iniciales. Con el logo del evento, en **Identidad**, pasa lo mismo: el
+nuevo se ve en el acto.
+
 ---
 
 ## 7. Acreditar a quien llega sin nada

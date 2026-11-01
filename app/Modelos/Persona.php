@@ -289,14 +289,19 @@ final class Persona
      * llena dos veces. En ese caso se actualizan sus datos en vez de fallar.
      *
      * @param string $formulario por cuál llegó: Formulario::PUBLICO o ::EXPOSITORES
+     * @param array<string, scalar> $bitacora lo que se anota además en la bitácora: quién registró, si fue el equipo
      */
-    public static function registrar(int $eventoId, array $datos, string $formulario = Formulario::PUBLICO): array
-    {
+    public static function registrar(
+        int $eventoId,
+        array $datos,
+        string $formulario = Formulario::PUBLICO,
+        array $bitacora = []
+    ): array {
         $correo = mb_strtolower(trim((string) $datos['correo']));
         $documento = self::normalizarDocumento((string) ($datos['documento'] ?? ''));
         $huella = $documento === '' ? null : Cripto::huella($documento);
 
-        return Bd::transaccion(static function () use ($eventoId, $datos, $correo, $documento, $huella, $formulario): array {
+        return Bd::transaccion(static function () use ($eventoId, $datos, $correo, $documento, $huella, $formulario, $bitacora): array {
             $existente = self::porCorreo($eventoId, $correo);
 
             // El documento pertenece a otro correo del mismo evento: son dos
@@ -362,7 +367,7 @@ final class Persona
             Bitacora::registrar($nueva ? 'registro' : 'registro_actualizado', 'persona', $id, [
                 'rol' => $campos['rol'],
                 'municipio' => $campos['municipio'],
-            ] + ($formulario === Formulario::PUBLICO ? [] : ['formulario' => $formulario]));
+            ] + ($formulario === Formulario::PUBLICO ? [] : ['formulario' => $formulario]) + $bitacora);
 
             return ['id' => $id, 'nueva' => $nueva, 'credencial' => $credencial];
         });

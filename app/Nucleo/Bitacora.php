@@ -110,8 +110,11 @@ final class Bitacora
             'acceso_cerrado'     => "$quien cerró sesión",
             'asistencia_sellada' => "$quien registró un ingreso" . (isset($detalle['dia']) ? ' del día ' . $detalle['dia'] : ''),
             'checkin_propio'     => 'Un asistente registró su ingreso' . (isset($detalle['dia']) ? ' del día ' . $detalle['dia'] : ''),
-            'registro'           => 'Nuevo registro'
-                . (($detalle['formulario'] ?? '') === 'expositores' ? ' por el enlace de expositores' : ''),
+            'registro'           => ($detalle['por'] ?? '') === 'equipo'
+                ? "$quien registró a una persona"
+                    . (($detalle['registro_publico'] ?? '') === 'cerrado' ? ' con el registro público cerrado' : '')
+                : 'Nuevo registro'
+                    . (($detalle['formulario'] ?? '') === 'expositores' ? ' por el enlace de expositores' : ''),
             'registro_actualizado' => 'Registro actualizado'
                 . (($detalle['formulario'] ?? '') === 'expositores' ? ' por el enlace de expositores' : ''),
             'acceso_creado'      => 'Acceso creado con correo y contraseña',

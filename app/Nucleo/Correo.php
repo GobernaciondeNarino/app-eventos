@@ -1311,7 +1311,8 @@ final class Correo
         string $nombre,
         string $evento,
         string $enlace,
-        string $enlaceAcceso = ''
+        string $enlaceAcceso = '',
+        bool $porEquipo = false
     ): bool {
         $principal = $enlaceAcceso !== '' ? $enlaceAcceso : $enlace;
 
@@ -1319,7 +1320,12 @@ final class Correo
             $evento,
             'Tu carnet está listo',
             '<p style="margin:0 0 16px">Hola ' . htmlspecialchars($nombre) . ',</p>'
-            . '<p style="margin:0 0 16px">Tu preregistro quedó completo. Desde este enlace puedes ver '
+            . '<p style="margin:0 0 16px">'
+            // Registrada por el equipo, la persona no llenó nada: se le dice
+            // quién lo hizo, para que el correo no le parezca de otro.
+            . ($porEquipo
+                ? 'El equipo del evento te registró. Desde este enlace puedes ver '
+                : 'Tu preregistro quedó completo. Desde este enlace puedes ver ')
             . 'tu carnet digital con el código QR:</p>'
             . '<p style="margin:0 0 22px"><a href="' . htmlspecialchars($principal) . '" '
             . 'style="background:#0C2E3C;color:#fff;padding:13px 22px;text-decoration:none;'

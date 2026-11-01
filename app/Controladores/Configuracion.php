@@ -84,7 +84,8 @@ final class Configuracion
         Respuesta::redirigir($volver, match ($estado) {
             'abierto' => 'Registro abierto: la portada y el menú lo vuelven a ofrecer.',
             'oculto'  => 'Registro oculto: ya no aparece en la portada ni en el menú, pero quien tenga el enlace se sigue registrando.',
-            default   => 'Registro cerrado: nadie nuevo se puede registrar. Quien ya lo hizo entra, completa su perfil y ve su carnet.',
+            default   => 'Registro cerrado: nadie nuevo se registra por su cuenta; el equipo sí, desde Registros. '
+                . 'Quien ya lo hizo entra, completa su perfil y ve su carnet.',
         });
     }
 

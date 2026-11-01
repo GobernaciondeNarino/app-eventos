@@ -46,6 +46,10 @@ final class Limite
         'envio_codigo'     => [4, 3600, 3600],   // 4 correos por hora y destinatario
         'token_qr'         => [30, 300, 900],    // enumeración de credenciales
         'preregistro_ip'   => [60, 3600, 900],   // altas masivas; toda una sede comparte IP
+        // El equipo que registra a la gente en la puerta, por cuenta: de sobra
+        // para una fila de personas, y un tope si alguien usa una cuenta del
+        // equipo para dar de alta registros en cadena.
+        'registro_equipo'  => [200, 3600, 900],
         'contacto'         => [60, 3600, 600],   // intercambios, por persona
         // Enlaces para recuperar la contraseña. Se cuenta cada pedido, exista o
         // no la cuenta, por la misma razón que el envío de códigos: si solo se

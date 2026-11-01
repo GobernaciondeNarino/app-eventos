@@ -50,7 +50,8 @@ $opcionesRegistro = [
     'abierto' => 'Cualquiera se registra desde la portada, el menú o el enlace del formulario. Es como ha funcionado siempre.',
     'oculto'  => 'No aparece en la portada, en el menú ni en la pantalla de entrada, pero el formulario sigue recibiendo '
         . 'a quien tenga el enlace. Para registrar solo a quienes se lo envíes.',
-    'cerrado' => 'Nadie nuevo se puede registrar: ni con el formulario, ni con el enlace, ni creando un acceso. '
+    'cerrado' => 'Nadie nuevo se puede registrar por su cuenta: ni con el formulario, ni con el enlace, ni creando '
+        . 'un acceso. El operador de acceso y el administrador sí, desde Registros → «Registrar persona». '
         . 'Quien ya se registró sigue entrando, completa su perfil y ve su carnet.',
 ];
 ?>

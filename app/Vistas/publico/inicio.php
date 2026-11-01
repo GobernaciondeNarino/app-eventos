@@ -69,6 +69,16 @@ $pasos = $abierto ? [
         </div>
       <?php endif; ?>
 
+      <?php if (!$abierto && ($usuario ?? null) !== null && \App\Nucleo\Guardia::tieneRol($usuario, 'operador')): ?>
+        <?php /* Oculto o cerrado para el público, no para el equipo: el operador
+                 de acceso y el administrador registran a quien llegue sin registro. */ ?>
+        <a class="notice" href="<?= e(u('/admin/registros/nuevo')) ?>" style="text-decoration:none;color:inherit;max-width:440px"
+           data-registro-equipo>
+          <span class="notice__icon" aria-hidden="true">◆</span>
+          <span>Eres del equipo: a quien llegue sin registro lo registras tú. Registrar a una persona ›</span>
+        </a>
+      <?php endif; ?>
+
       <?php if ($persona !== null && !\App\Modelos\Persona::registroCompleto($persona)): ?>
         <?php /* Creó su acceso y todavía no llenó nada: no tiene carnet que
                  enseñar, así que la tarjeta dice lo único que falta. */ ?>

@@ -101,6 +101,28 @@ final class Publico
     }
 
     /**
+     * El equipo registra a una persona (desde la 3.18): operador de acceso o
+     * administrador, el guardia está en app/rutas.php.
+     *
+     * Es el formulario público, con su misma configuración, pero lo llena el
+     * equipo por alguien que llega sin registro —a la puerta, el día del
+     * evento—, y por eso sirve también con el registro público cerrado: se
+     * cierra para el público, no para el equipo. Cambia lo que tiene que
+     * cambiar cuando quien escribe no es la persona:
+     *   · no abre su sesión en este navegador: quien se registre después en el
+     *     mismo equipo no puede caer en los datos del anterior;
+     *   · no le pone contraseña: la elige ella, con el enlace de su correo;
+     *   · no gasta el límite por dirección de la sede, que es del público, sino
+     *     el de la cuenta del equipo que registra;
+     *   · un correo o una identificación que ya están registrados llevan a la
+     *     ficha de esa persona y no a «entra con tu código».
+     */
+    public function registroPorEquipo(Peticion $peticion): void
+    {
+        $this->formularioDeRegistro($peticion, Formulario::PUBLICO, '/admin/registros/nuevo', true);
+    }
+
+    /**
      * «Mi exposición»: la propuesta de quien expone, aparte de sus datos
      * personales.
      *
@@ -246,25 +268,34 @@ final class Publico
      * mismo, con la configuración de cada uno.
      *
      * @param string $ruta a dónde se envía, y a dónde se vuelve tras entrar con el código
+     * @param bool $porEquipo lo llena el equipo por otra persona (registroPorEquipo())
      */
-    private function formularioDeRegistro(Peticion $peticion, string $tipo, string $ruta): void
+    private function formularioDeRegistro(Peticion $peticion, string $tipo, string $ruta, bool $porEquipo = false): void
     {
         $evento = App::eventoExigido();
         $formulario = Formulario::delEvento((int) $evento['id'], $tipo);
         $deExpositores = $tipo === Formulario::EXPOSITORES;
 
-        $yo = Guardia::personaActual();
+        // Con el formulario del equipo, quien escribe no es quien se registra:
+        // la sesión de asistente que tenga abierta este navegador —la de un
+        // organizador que también se registró— no cuenta. Si contara, el
+        // formulario sería «Mis datos» y se guardaría encima de su registro.
+        $yo = $porEquipo ? null : Guardia::personaActual();
         $errores = [];
+        $existente = null;   // a quién pertenece el correo o la identificación repetidos, para el equipo
 
         // Con el registro público cerrado, quien no tiene sesión no crea un
         // registro: ni con el formulario a la vista ni con un envío hecho a
         // mano. Quien ya se registró sí entra: viene a completar sus datos. El
-        // de expositores no se cierra aquí: lo cierra su enlace.
-        if (!$deExpositores && $yo === null && !$formulario->recibeRegistros()) {
+        // de expositores no se cierra aquí: lo cierra su enlace. Y el equipo
+        // registra igual, por su propia dirección.
+        if (!$deExpositores && !$porEquipo && $yo === null && !$formulario->recibeRegistros()) {
             Respuesta::vista('publico/registro-cerrado', [
                 'titulo'   => 'Registro cerrado',
                 'pantalla' => 'registro',
                 'mensajeRegistro' => $formulario->mensajeRegistro(),
+                'puedeRegistrar'  => Guardia::puede('operador'),
+                'esAdministrador' => Guardia::puede('administrador'),
             ]);
         }
 
@@ -307,9 +338,15 @@ final class Publico
             if ($yo !== null) {
                 $valores['correo'] = (string) $yo['correo'];
             }
+            // El equipo no manda propuestas de exposición: su pantalla no trae
+            // la sección, y un envío hecho a mano no la agrega. Con el perfil
+            // Expositor, la persona la envía después desde «Mi exposición».
+            if ($porEquipo) {
+                $valores['expositor'] = false;
+            }
 
             $errores = $this->validarRegistro(
-                $valores, $peticion, $yo !== null, $suPropuesta['documentos'], $formulario, $actual
+                $valores, $peticion, $yo !== null, $suPropuesta['documentos'], $formulario, $actual, $porEquipo
             );
 
             // Un correo ya registrado no se puede tocar desde aquí.
@@ -323,26 +360,53 @@ final class Publico
             // Para corregir sus datos hay que demostrar que se controla ese
             // buzón, que es exactamente para lo que está el acceso por código.
             if (!$errores && $yo === null
-                && Persona::porCorreo((int) $evento['id'], (string) $valores['correo']) !== null) {
-                $errores['correo'] = 'Ese correo ya tiene un registro en este evento. '
-                    . 'Entra con tu código de acceso para verlo o corregirlo.';
-                $errores['ofrecer_acceso'] = '1';
+                && ($yaRegistrada = Persona::porCorreo((int) $evento['id'], (string) $valores['correo'])) !== null) {
+                if ($porEquipo) {
+                    // El equipo no tiene nada que comprobar con un código: la
+                    // persona ya está, y lo que sirve es ir a su ficha.
+                    $errores['correo'] = 'Ese correo ya está registrado en este evento.';
+                    $existente = $yaRegistrada;
+                } else {
+                    $errores['correo'] = 'Ese correo ya tiene un registro en este evento. '
+                        . 'Entra con tu código de acceso para verlo o corregirlo.';
+                    $errores['ofrecer_acceso'] = '1';
+                }
+            }
+
+            // La identificación, lo mismo. Persona::registrar() también la
+            // rechaza, pero con un texto para la persona —«entra con el correo
+            // que usaste»— que al equipo no le sirve.
+            if ($porEquipo && !$errores && Persona::normalizarDocumento((string) $valores['documento']) !== ''
+                && ($yaRegistrada = Persona::porDocumento((int) $evento['id'], (string) $valores['documento'])) !== null) {
+                $errores['documento'] = 'Esa identificación ya está registrada en este evento, con otro correo.';
+                $existente = $yaRegistrada;
             }
 
             if (!$errores) {
-                Limite::exigir('preregistro_ip', $peticion->ip());
-                // Se anota el intento aunque salga bien: aquí el abuso consiste
-                // en registrar muchas veces con éxito, no en fallar.
-                Limite::registrar('preregistro_ip', $peticion->ip());
+                if ($porEquipo) {
+                    // Por cuenta del equipo y no por dirección: en la puerta, la
+                    // sede entera sale por la misma, y el tope del público lo
+                    // gastarían los asistentes que se registran desde su teléfono.
+                    $quien = 'usuario:' . (int) (Guardia::usuarioActual()['id'] ?? 0);
+                    Limite::exigir('registro_equipo', $quien);
+                    Limite::registrar('registro_equipo', $quien);
+                } else {
+                    Limite::exigir('preregistro_ip', $peticion->ip());
+                    // Se anota el intento aunque salga bien: aquí el abuso consiste
+                    // en registrar muchas veces con éxito, no en fallar.
+                    Limite::registrar('preregistro_ip', $peticion->ip());
+                }
                 try {
-                    $resultado = Persona::registrar((int) $evento['id'], $valores, $tipo);
+                    $resultado = Persona::registrar((int) $evento['id'], $valores, $tipo, $porEquipo
+                        ? ['por' => 'equipo', 'registro_publico' => $formulario->estadoRegistro()] : []);
                     $personaId = (int) $resultado['id'];
                     $propuestaId = $this->guardarPropuesta($personaId, $valores, $peticion);
 
                     // La contraseña solo se toca si se escribió una. Dejar el
                     // campo en blanco al corregir los datos conserva la que ya
-                    // había, que es lo que espera cualquiera.
-                    $clave = $peticion->campo('clave');
+                    // había, que es lo que espera cualquiera. La del equipo no
+                    // trae el campo: la contraseña la elige la persona.
+                    $clave = $porEquipo ? '' : $peticion->campo('clave');
                     if ($clave !== '') {
                         Persona::ponerClave($personaId, $clave);
                     }
@@ -357,6 +421,32 @@ final class Publico
                     }
                     if ($propuestaId !== null) {
                         $avisos = array_merge($avisos, $this->guardarDocumentos($propuestaId, $peticion));
+                    }
+
+                    // Registrada por el equipo: su carnet le llega al correo, y
+                    // el equipo vuelve al formulario, vacío para la siguiente,
+                    // con lo que sigue para esta —acreditar su ingreso, su ficha—.
+                    // Si el correo no sale, se dice: con la persona delante, hay
+                    // otra forma de dejarla entrar.
+                    if ($porEquipo) {
+                        $enviado = Correo::carnetEmitido(
+                            (string) $valores['correo'],
+                            (string) $valores['nombre'],
+                            (string) $evento['nombre'],
+                            Url::absoluta('/carnet'),
+                            Autenticacion::activo('qr') ? Credencial::urlAcceso($personaId) : '',
+                            true
+                        );
+                        $mensaje = 'Registramos a ' . trim((string) $valores['nombre'])
+                            . ($enviado
+                                ? ' y le enviamos su carnet a ' . $valores['correo'] . '.'
+                                : ', pero el correo con su carnet no salió. Su ingreso se acredita igual, '
+                                  . 'con «Acreditar su ingreso».');
+                        if ($avisos) {
+                            $mensaje .= ' ' . implode(' ', $avisos);
+                        }
+                        Respuesta::redirigir($ruta . '?registrada=' . $personaId, $mensaje,
+                            $enviado && !$avisos ? 'ok' : 'warn');
                     }
 
                     // Queda con sesión abierta: acaba de demostrar que controla
@@ -407,12 +497,39 @@ final class Publico
             $peticion->archivo('hoja_vida') !== null || $peticion->archivo('exposicion') !== null
         );
 
+        // Para el equipo, la persona que acaba de registrar, con lo que sigue
+        // para ella: acreditar su ingreso y su ficha. Solo una de este evento.
+        $registrada = null;
+        if ($porEquipo && !$peticion->esPost() && ctype_digit($peticion->query('registrada'))) {
+            $recien = Persona::porId((int) $peticion->query('registrada'));
+            if ($recien !== null && (int) $recien['evento_id'] === (int) $evento['id']) {
+                $registrada = [
+                    'id'         => (int) $recien['id'],
+                    'nombre'     => (string) $recien['nombre'],
+                    'entidad'    => (string) $recien['entidad'],
+                    'rol'        => (string) $recien['rol'],
+                    'credencial' => Credencial::dePersona((int) $recien['id']),
+                ];
+            }
+        }
+
         Respuesta::vista('publico/registro', [
-            'titulo'        => $yo === null
+            'titulo'        => $porEquipo ? 'Registrar a una persona' : ($yo === null
                 ? ($deExpositores ? 'Registro de expositores' : 'Registro')
-                : ($completo ? 'Mis datos' : 'Completa tu registro'),
-            // El de expositores no marca nada en el menú: no está en él.
-            'pantalla'      => $deExpositores ? 'registro-expositores' : 'registro',
+                : ($completo ? 'Mis datos' : 'Completa tu registro')),
+            // El de expositores no marca nada en el menú: no está en él. El del
+            // equipo, Registros, que es donde está su botón.
+            'pantalla'      => $porEquipo ? 'admin-registros' : ($deExpositores ? 'registro-expositores' : 'registro'),
+            'porEquipo'     => $porEquipo,
+            'estadoRegistro' => $formulario->estadoRegistro(),
+            'registrada'    => $registrada,
+            'existente'     => $existente === null ? null : [
+                'id'       => (int) $existente['id'],
+                'nombre'   => (string) $existente['nombre'],
+                // Creó su acceso y no llenó el formulario: lo completa ella al
+                // entrar, también con el registro cerrado.
+                'completo' => Persona::registroCompleto($existente),
+            ],
             'accion'        => $ruta,
             'deExpositores' => $deExpositores,
             'tienePropuesta' => $suPropuesta['propuesta'] !== [],
@@ -431,7 +548,8 @@ final class Publico
             'jornadas'      => Evento::jornadas((int) $evento['id']),
             'yaRegistrado'  => $yo !== null,
             'completo'      => $completo,
-            'pideClave'     => Autenticacion::activo('clave'),
+            // La contraseña la elige la persona, nunca el equipo por ella.
+            'pideClave'     => !$porEquipo && Autenticacion::activo('clave'),
             'claveMinima'   => Autenticacion::claveMinima(),
             'tieneClave'    => $yo !== null && Persona::tieneClave($yo),
             'foto'          => $yo !== null && Persona::tieneFoto($yo)
@@ -593,6 +711,7 @@ final class Publico
      * porque un envío puede llegar sin pasar por ninguna pantalla.
      *
      * @param array<string, mixed> $yaSubidos los adjuntos que esta persona ya tiene
+     * @param bool $porEquipo lo llena el equipo: sin contraseña, y la autorización la da la persona de viva voz
      */
     private function validarRegistro(
         array $v,
@@ -600,7 +719,8 @@ final class Publico
         bool $identificado,
         array $yaSubidos,
         Formulario $f,
-        array $actual
+        array $actual,
+        bool $porEquipo = false
     ): array {
         $errores = [];
         $deAntes = static fn(string $clave): string => (string) ($actual[$clave] ?? '');
@@ -716,7 +836,11 @@ final class Publico
         // persona escribió algo: en blanco significa «no la cambies», y para
         // quien se registra por primera vez significa que entrará por otro
         // método —que es legítimo mientras haya alguno más.
-        if (Autenticacion::activo('clave')) {
+        //
+        // Al equipo no se le pide nunca: no es su contraseña. Aunque sea la
+        // única puerta del evento, la persona la pone con el enlace de «Olvidé
+        // mi contraseña», que le llega a su correo.
+        if (!$porEquipo && Autenticacion::activo('clave')) {
             $clave = $peticion->campo('clave');
             $minima = Autenticacion::claveMinima();
 
@@ -736,7 +860,9 @@ final class Publico
         }
 
         if (!$identificado && !$peticion->marcado('habeas')) {
-            $errores['habeas'] = 'Debes autorizar el tratamiento de datos para continuar.';
+            $errores['habeas'] = $porEquipo
+                ? 'Pregúntale si autoriza el tratamiento de sus datos y márcalo: sin su autorización no se registra.'
+                : 'Debes autorizar el tratamiento de datos para continuar.';
         }
 
         return $errores;

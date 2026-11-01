@@ -5253,6 +5253,255 @@ comprobar('cambiarlo lleva al panel, donde está el botón', $guardarSinColumnas
 comprobar('y el registro sigue abierto, como estaba', $portadaSinColumnas && $registroSinColumnas);
 
 /* =========================================================================
+   21 · El equipo registra con el registro cerrado
+   -------------------------------------------------------------------------
+   Desde la 3.18. Cerrado es para el público: el operador de acceso y el
+   administrador siguen registrando a quien llegue sin registro, desde
+   /admin/registros/nuevo. Sin abrir la sesión de la persona en su navegador,
+   sin ponerle contraseña, con su carnet al correo y su nombre en la bitácora.
+   ========================================================================= */
+titulo('El equipo registra con el registro cerrado');
+
+$pdo->exec("DELETE FROM {$P}intento");
+$intentos = static fn(string $accion): int => (int) $pdo->query("SELECT COUNT(*) FROM {$P}intento WHERE accion = "
+    . $pdo->quote($accion))->fetchColumn();
+$idUsuario = static fn(string $correo): int => (int) $pdo->query("SELECT id FROM {$P}usuario WHERE correo = "
+    . $pdo->quote($correo))->fetchColumn();
+$ultimaBitacora = static fn(int $personaId): array => $pdo->query("SELECT * FROM {$P}bitacora
+    WHERE accion = 'registro' AND entidad_id = $personaId ORDER BY id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC) ?: [];
+$altaEquipo = 'action="' . $base . '/admin/registros/nuevo"';
+$enlaceEquipo = 'href="' . $base . '/admin/registros/nuevo"';
+$idOperador = $idUsuario('puerta@narino.gov.co');
+$idJefa = $idUsuario('aerazo@narino.gov.co');
+
+$html = $ponerRegistro('cerrado');
+comprobar('al cerrar, el aviso dice que el equipo sí registra', $estadoRegistro() === 'cerrado'
+    && str_contains($html, 'nadie nuevo se registra por su cuenta; el equipo sí'));
+$html = $jefa->get('/admin/configuracion/registro');
+comprobar('y la opción «Cerrado» lo explica en Configuración', str_contains($html, 'El operador de acceso y el administrador sí'));
+
+// ---- Dónde está la opción ----------------------------------------------------------
+$html = $jefa->get('/registro');
+comprobar('el registro cerrado le ofrece al administrador registrar a una persona, y dónde se reabre',
+    str_contains($html, 'data-registro-cerrado') && str_contains($html, 'data-registro-equipo')
+    && str_contains($html, $enlaceEquipo) && str_contains($html, '#estado-registro'));
+$html = $operadorRegistro->get('/registro');
+comprobar('al operador de acceso también, sin el enlace a Configuración, que no es suyo',
+    str_contains($html, 'data-registro-cerrado') && str_contains($html, $enlaceEquipo) && !str_contains($html, '#estado-registro'));
+$html = (new Cliente($BASE))->get('/registro');
+comprobar('al público, no', str_contains($html, 'data-registro-cerrado') && !str_contains($html, 'data-registro-equipo')
+    && !str_contains($html, '/admin/registros/nuevo'));
+comprobar('la portada se lo recuerda al equipo, y al público no',
+    str_contains($operadorRegistro->get('/'), 'data-registro-equipo') && !str_contains((new Cliente($BASE))->get('/'), 'data-registro-equipo'));
+comprobar('Registros tiene el botón para el operador y para el administrador',
+    str_contains($operadorRegistro->get('/admin/registros'), $enlaceEquipo) && str_contains($jefa->get('/admin/registros'), $enlaceEquipo));
+$html = $operadorRegistro->post('/admin/escaner/buscar', ['q' => 'Nadie Que Se Llame Así']);
+comprobar('y el escáner del equipo, también cuando la búsqueda no encuentra a nadie',
+    str_contains($html, 'data-registrar-persona') && str_contains($html, 'data-registrar-sin-resultado'));
+comprobar('el panel dice que con el registro cerrado registra el equipo',
+    str_contains($jefa->get('/admin'), 'El registro público está cerrado: solo el equipo registra a personas nuevas'));
+
+// ---- El formulario del equipo -------------------------------------------------------
+$html = $operadorRegistro->get('/admin/registros/nuevo');
+comprobar('el operador de acceso abre el formulario con el registro cerrado', $operadorRegistro->codigo === 200
+    && str_contains($html, 'Registrar a una persona') && str_contains($html, 'data-registro-equipo="cerrado"')
+    && str_contains($html, $altaEquipo) && str_contains($html, 'name="nombre"') && !str_contains($html, 'data-registro-cerrado'));
+comprobar('sin contraseña ni propuesta de exposición, con la autorización dicha por la persona',
+    !str_contains($html, 'name="clave"') && !str_contains($html, 'name="expositor"')
+    && str_contains($html, 'La persona autoriza el tratamiento de sus datos') && str_contains($html, 'Registrar y enviar su carnet'));
+
+// El correo, a la bitácora de la aplicación, para leer el carnet que le llega.
+$modoCorreoAntes = leerConfig($RAIZ)['modo_correo'] ?? null;
+ajustarConfig($RAIZ, ['modo_correo' => 'registro']);
+$antes = $personas();
+$preregistroAntes = $intentos('preregistro_ip');
+$html = $operadorRegistro->subir('/admin/registros/nuevo', ['correo' => 'Llego.Sin.Registro@Narino.gov.co',
+    'nombre' => 'Llegó Sin Registro', 'tipo_documento' => 'CC', 'documento' => '1088776655', 'rol' => 'participante',
+    'entidad' => 'Alcaldía de Ipiales', 'telefono' => '3009876543', 'habeas' => '1',
+    // Lo que la pantalla no ofrece, mandado a mano: no se guarda.
+    'clave' => 'una clave puesta por el equipo', 'clave2' => 'una clave puesta por el equipo',
+    'expositor' => '1', 'tema' => 'Una charla que no se pidió', 'categoria' => 'Gobierno digital',
+    'detalle' => str_repeat('Detalle de una propuesta que el equipo no puede mandar. ', 2)],
+    ['foto' => ['nombre' => 'foto.jpg', 'tipo' => 'image/jpeg', 'contenido' => $jpg]]);
+$walkin = $personaPorCorreo('llego.sin.registro@narino.gov.co');
+$idWalkin = (int) ($walkin['id'] ?? 0);
+comprobar('registra a la persona con el registro cerrado, con su carnet y su foto',
+    $personas() === $antes + 1 && $idWalkin > 0 && ($walkin['documento_huella'] ?? null) !== null
+    && (string) ($walkin['foto'] ?? '') !== '' && ($walkin['entidad'] ?? '') === 'Alcaldía de Ipiales'
+    && (int) $pdo->query("SELECT COUNT(*) FROM {$P}credencial WHERE persona_id = $idWalkin")->fetchColumn() === 1);
+comprobar('sin contraseña y sin propuesta, aunque se mandaran a mano', ($walkin['clave_hash'] ?? 'x') === ''
+    && (int) $pdo->query("SELECT COUNT(*) FROM {$P}propuesta WHERE persona_id = $idWalkin")->fetchColumn() === 0);
+comprobar('vuelve al formulario vacío, con la recién registrada y lo que sigue para ella',
+    str_contains($html, 'toast--ok') && str_contains($html, 'Registramos a Llegó Sin Registro y le enviamos su carnet')
+    && str_contains($html, 'data-registrada="' . $idWalkin . '"') && preg_match('#href="[^"]*/c/[a-f0-9]{32}"#', $html) === 1
+    && str_contains($html, 'href="' . $base . '/admin/registros/' . $idWalkin . '"') && !str_contains($html, 'value="Llegó Sin Registro"'));
+$operadorRegistro->get('/carnet', false);
+comprobar('no abre la sesión de la persona en el navegador del equipo',
+    in_array($operadorRegistro->codigo, [302, 303], true) && str_contains($operadorRegistro->cabecera('Location'), '/entrar'),
+    $operadorRegistro->codigo . ' → ' . $operadorRegistro->cabecera('Location'));
+$correoWalkin = $ultimoCorreo();
+comprobar('su carnet le llega al correo, dicho como lo que es: la registró el equipo',
+    str_contains($correoWalkin, 'llego.sin.registro@narino.gov.co') && str_contains($correoWalkin, 'El equipo del evento te registró'),
+    mb_substr($correoWalkin, 0, 200));
+$entrada = $ultimaBitacora($idWalkin);
+$detalle = json_decode((string) ($entrada['detalle'] ?? ''), true) ?: [];
+comprobar('la bitácora dice quién la registró, y que el registro estaba cerrado',
+    (int) ($entrada['usuario_id'] ?? 0) === $idOperador && ($detalle['por'] ?? '') === 'equipo'
+    && ($detalle['registro_publico'] ?? '') === 'cerrado');
+comprobar('no gasta el tope del público por dirección, sino el de su cuenta',
+    $intentos('preregistro_ip') === $preregistroAntes && $intentos('registro_equipo') === 1);
+preg_match('#href="[^"]*/c/([a-f0-9]{32})"#', $html, $mAcreditar);
+$html = $operadorRegistro->get('/c/' . ($mAcreditar[1] ?? 'x'));
+comprobar('«Acreditar su ingreso» lleva a su ficha de acreditación', $operadorRegistro->codigo === 200
+    && str_contains($html, 'Llegó Sin Registro') && str_contains($html, 'Escanear el siguiente'));
+
+// ---- Lo que ya estaba ------------------------------------------------------------------
+$antes = $personas();
+$html = $operadorRegistro->subir('/admin/registros/nuevo', ['correo' => 'llego.sin.registro@narino.gov.co',
+    'nombre' => 'Otra Persona Con Ese Correo', 'tipo_documento' => 'CC', 'documento' => '1011223344',
+    'rol' => 'participante', 'habeas' => '1'], []);
+comprobar('un correo ya registrado no crea a nadie ni toca a nadie: lleva a su ficha', $personas() === $antes
+    && str_contains($html, 'Ese correo ya está registrado en este evento') && str_contains($html, 'data-existente="' . $idWalkin . '"')
+    && ($personaPorCorreo('llego.sin.registro@narino.gov.co')['nombre'] ?? '') === 'Llegó Sin Registro');
+$html = $operadorRegistro->subir('/admin/registros/nuevo', ['correo' => 'otro.correo.misma.cedula@narino.gov.co',
+    'nombre' => 'Misma Cédula Otro Correo', 'tipo_documento' => 'CC', 'documento' => '1088776655',
+    'rol' => 'participante', 'habeas' => '1'], []);
+comprobar('una identificación ya registrada, tampoco', $personas() === $antes
+    && str_contains($html, 'Esa identificación ya está registrada en este evento') && str_contains($html, 'data-existente="' . $idWalkin . '"'));
+$idAMediasCierre = (int) ($personaPorCorreo('a.medias.cierre@narino.gov.co')['id'] ?? 0);
+$pdo->exec("UPDATE {$P}persona SET nombre = '', documento_cifrado = NULL, documento_huella = NULL WHERE id = $idAMediasCierre");
+$html = $operadorRegistro->subir('/admin/registros/nuevo', ['correo' => 'a.medias.cierre@narino.gov.co',
+    'nombre' => 'Quien Solo Creó su Acceso', 'tipo_documento' => 'CC', 'documento' => '1099887766',
+    'rol' => 'participante', 'habeas' => '1'], []);
+comprobar('a quien solo creó su acceso se le dice que entre y lo complete ella', $personas() === $antes
+    && str_contains($html, 'no terminó su registro') && str_contains($html, 'data-existente="' . $idAMediasCierre . '"'));
+$html = $operadorRegistro->subir('/admin/registros/nuevo', ['correo' => 'sin.autorizacion@narino.gov.co',
+    'nombre' => 'Sin Su Autorización', 'tipo_documento' => 'CC', 'documento' => '1022334455', 'rol' => 'participante'], []);
+comprobar('sin la autorización de la persona no se registra', $personas() === $antes
+    && str_contains($html, 'Pregúntale si autoriza el tratamiento de sus datos'));
+$html = $operadorRegistro->subir('/admin/registros/nuevo', ['correo' => 'colado.staff@narino.gov.co',
+    'nombre' => 'Perfil Que No Se Ofrece', 'tipo_documento' => 'CC', 'documento' => '1033445566', 'rol' => 'staff',
+    'habeas' => '1'], []);
+comprobar('ni con un perfil que solo pone un administrador desde la ficha', $personas() === $antes
+    && str_contains($html, 'Perfil no válido'));
+
+// ---- El administrador, y un navegador con las dos sesiones -------------------------------
+// Con el correo de antes, que en este punto de la prueba no llega a ningún
+// servidor: la persona queda registrada y el aviso dice que el correo no salió.
+ajustarConfig($RAIZ, ['modo_correo' => $modoCorreoAntes]);
+$jefa->get('/admin/registros/nuevo');
+$html = $jefa->subir('/admin/registros/nuevo', ['correo' => 'registrada.por.jefa@narino.gov.co', 'nombre' => 'Registrada por la Jefa',
+    'tipo_documento' => 'CC', 'documento' => '1044556677', 'rol' => 'prensa', 'habeas' => '1'], []);
+$porJefa = $personaPorCorreo('registrada.por.jefa@narino.gov.co');
+$entrada = $ultimaBitacora((int) ($porJefa['id'] ?? 0));
+comprobar('el administrador también registra, con el perfil que elija de la lista',
+    ($porJefa['rol'] ?? '') === 'prensa' && (int) ($entrada['usuario_id'] ?? 0) === $idJefa);
+comprobar('si el correo con el carnet no sale, queda registrada y el aviso lo dice',
+    str_contains($html, 'toast--warn') && str_contains($html, 'pero el correo con su carnet no salió')
+    && str_contains($html, 'data-registrada="' . (int) ($porJefa['id'] ?? 0) . '"'));
+comprobar('y el panel lo cuenta en la bitácora con nombre', str_contains($jefa->get('/admin'),
+    'registró a una persona con el registro público cerrado'));
+
+// $puerta tiene la sesión del operador desde la configuración del formulario;
+// aquí abre además la del Staff con su QR. Es el teléfono de alguien del equipo
+// que también se registró: el formulario del equipo no puede ser «Mis datos» ni
+// guardar encima de su registro.
+$tokenStaff = (string) $pdo->query("SELECT acceso_token FROM {$P}persona WHERE id = $idStaff")->fetchColumn();
+$puerta->get('/entrar/qr/' . $tokenStaff);
+$staffAntes = $pdo->query("SELECT nombre, correo FROM {$P}persona WHERE id = $idStaff")->fetch(PDO::FETCH_ASSOC);
+$html = $puerta->get('/registro');
+$conLasDos = str_contains($html, 'Mis datos') && str_contains($html, 'value="' . htmlspecialchars((string) $staffAntes['correo']) . '"');
+$puerta->get('/admin/registros', false);
+comprobar('un navegador con la sesión del Staff y la del operador', $conLasDos && $puerta->codigo === 200,
+    ($conLasDos ? 'con' : 'sin') . ' sesión de asistente; equipo ' . $puerta->codigo);
+$html = $puerta->get('/admin/registros/nuevo');
+comprobar('con las dos sesiones en el navegador, el formulario es para otra persona, no «Mis datos»',
+    $puerta->codigo === 200 && str_contains($html, 'Registrar a una persona') && !str_contains($html, 'Mis datos</h1>')
+    && !str_contains($html, 'value="' . htmlspecialchars((string) $staffAntes['correo']) . '"'));
+$puerta->subir('/admin/registros/nuevo', ['correo' => 'desde.dos.sesiones@narino.gov.co', 'nombre' => 'Desde Dos Sesiones',
+    'tipo_documento' => 'CC', 'documento' => '1055667788', 'rol' => 'participante', 'habeas' => '1'], []);
+$staffDespues = $pdo->query("SELECT nombre, correo FROM {$P}persona WHERE id = $idStaff")->fetch(PDO::FETCH_ASSOC);
+comprobar('registra a la nueva y deja intacto el registro de quien tiene la sesión',
+    ($personaPorCorreo('desde.dos.sesiones@narino.gov.co')['nombre'] ?? '') === 'Desde Dos Sesiones' && $staffDespues === $staffAntes);
+$html = $puerta->get('/registro');
+comprobar('y su sesión de asistente sigue siendo la suya: «Mis datos» es su registro', $puerta->codigo === 200
+    && str_contains($html, 'Mis datos') && str_contains($html, 'value="' . htmlspecialchars((string) $staffAntes['correo']) . '"')
+    && !str_contains($html, 'desde.dos.sesiones@'));
+
+// ---- Quién no -------------------------------------------------------------------------------
+$antes = $personas();
+$anonimo = new Cliente($BASE);
+$anonimo->get('/admin/registros/nuevo', false);
+comprobar('sin sesión del equipo lleva al acceso del equipo', in_array($anonimo->codigo, [302, 303], true)
+    && str_contains($anonimo->cabecera('Location'), '/admin/entrar'), $anonimo->codigo . ' → ' . $anonimo->cabecera('Location'));
+$anonimo->get('/entrar');
+$anonimo->subir('/admin/registros/nuevo', ['correo' => 'anonimo.cerrado@narino.gov.co', 'nombre' => 'Sin Sesión del Equipo',
+    'tipo_documento' => 'CC', 'documento' => '1066778899', 'rol' => 'participante', 'habeas' => '1'], [], false);
+comprobar('y un envío hecho a mano sin ella no crea a nadie', $personas() === $antes, (string) $anonimo->codigo);
+$soloStaff = new Cliente($BASE);
+$soloStaff->get('/entrar/qr/' . (string) $pdo->query("SELECT acceso_token FROM {$P}persona WHERE id = $idStaff")->fetchColumn());
+$html = $soloStaff->get('/acreditar');
+comprobar('el Staff acredita en la puerta, pero su pantalla no ofrece registrar personas',
+    $soloStaff->codigo === 200 && str_contains($html, 'Escanear el carnet') && !str_contains($html, 'data-registrar-persona'));
+$soloStaff->get('/admin/registros/nuevo', false);
+comprobar('ni puede abrir el formulario del equipo', in_array($soloStaff->codigo, [302, 303], true)
+    && str_contains($soloStaff->cabecera('Location'), '/admin/entrar'), (string) $soloStaff->codigo);
+
+// El tope de la cuenta: doscientos por hora, de sobra para una fila en la puerta.
+$llave = (string) (leerConfig($RAIZ)['llave_cifrado'] ?? '');
+$huellaTope = hash_hmac('sha256', 'registro_equipo|usuario:' . $idOperador, $llave);
+$pdo->exec("INSERT INTO {$P}intento (huella, accion, creado_en)
+    SELECT " . $pdo->quote($huellaTope) . ", 'registro_equipo', NOW() FROM {$P}persona LIMIT 1");
+$pdo->exec("INSERT INTO {$P}intento (huella, accion, creado_en)
+    SELECT huella, accion, creado_en FROM {$P}intento WHERE huella = " . $pdo->quote($huellaTope));
+for ($i = 0; $i < 7; $i++) {
+    $pdo->exec("INSERT INTO {$P}intento (huella, accion, creado_en)
+        SELECT huella, accion, creado_en FROM {$P}intento WHERE huella = " . $pdo->quote($huellaTope));
+}
+$operadorRegistro->get('/admin/registros/nuevo');
+$operadorRegistro->subir('/admin/registros/nuevo', ['correo' => 'pasado.del.tope@narino.gov.co', 'nombre' => 'Pasado del Tope',
+    'tipo_documento' => 'CC', 'documento' => '1077889900', 'rol' => 'participante', 'habeas' => '1'], [], false);
+comprobar('con doscientos registros en una hora, la cuenta espera', $operadorRegistro->codigo === 429
+    && $personas() === $antes, (string) $operadorRegistro->codigo);
+$pdo->exec("DELETE FROM {$P}intento WHERE huella = " . $pdo->quote($huellaTope));
+
+// ---- Abierto, también ----------------------------------------------------------------------
+$ponerRegistro('abierto');
+$html = $operadorRegistro->get('/admin/registros/nuevo');
+$operadorRegistro->subir('/admin/registros/nuevo', ['correo' => 'con.registro.abierto@narino.gov.co', 'nombre' => 'Con el Registro Abierto',
+    'tipo_documento' => 'CC', 'documento' => '1088990011', 'rol' => 'participante', 'habeas' => '1'], []);
+$abiertoDetalle = json_decode((string) ($ultimaBitacora((int) ($personaPorCorreo('con.registro.abierto@narino.gov.co')['id'] ?? 0))['detalle'] ?? ''), true) ?: [];
+comprobar('con el registro abierto el equipo registra igual, sin el aviso de cerrado',
+    str_contains($html, 'data-registro-equipo="abierto"') && !str_contains($html, 'El registro público está cerrado.')
+    && ($abiertoDetalle['registro_publico'] ?? '') === 'abierto' && ($abiertoDetalle['por'] ?? '') === 'equipo');
+
+// ---- El rol consulta: ve los registros, no registra -----------------------------------------
+$jefa->get('/admin/organizadores');
+$jefa->post('/admin/organizadores/rol', ['usuario' => (string) $idOperador, 'rol' => 'consulta']);
+$consulta = new Cliente($BASE);
+$consulta->get('/admin/entrar');
+$consulta->post('/admin/entrar', ['correo' => 'puerta@narino.gov.co', 'clave' => 'una clave mia y bien larga']);
+$html = $consulta->get('/admin/registros');
+comprobar('con el rol consulta, Registros no trae el botón', $consulta->codigo === 200
+    && str_contains($html, 'Registros y asistencia') && !str_contains($html, $enlaceEquipo));
+$consulta->get('/admin/registros/nuevo', false);
+$codigoConsulta = $consulta->codigo;
+$antes = $personas();
+$consulta->get('/admin/registros');
+$consulta->subir('/admin/registros/nuevo', ['correo' => 'por.consulta@narino.gov.co', 'nombre' => 'Registrada por Consulta',
+    'tipo_documento' => 'CC', 'documento' => '1099001122', 'rol' => 'participante', 'habeas' => '1'], [], false);
+comprobar('y su rol no abre el formulario ni registra a mano', $codigoConsulta === 403 && $consulta->codigo === 403
+    && $personas() === $antes, $codigoConsulta . ' / ' . $consulta->codigo);
+$ponerRegistro('cerrado');
+$html = $consulta->get('/registro');
+comprobar('con el registro cerrado, se le dice quién registra', str_contains($html, 'data-registro-cerrado')
+    && str_contains($html, 'les corresponde al operador de acceso') && !str_contains($html, $enlaceEquipo));
+$jefa->post('/admin/organizadores/rol', ['usuario' => (string) $idOperador, 'rol' => 'operador']);
+$ponerRegistro('abierto');
+comprobar('el operador vuelve a su rol y el registro queda abierto', $estadoRegistro() === 'abierto'
+    && (string) $pdo->query("SELECT rol FROM {$P}usuario WHERE id = $idOperador")->fetchColumn() === 'operador');
+
+/* =========================================================================
    Resultado
    ========================================================================= */
 echo "\n" . str_repeat('─', 62) . "\n";

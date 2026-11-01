@@ -8,7 +8,9 @@ los tokens de la API con que otros sistemas consultan los registros.
 
 Todo lo de aquí está en **Administración → Eventos**, **QR por día**, **Expositores**,
 **Registros** y **Configuración**, y exige el rol **administrador** salvo donde se diga otra
-cosa. Imprimir carnets y acreditar lo comparten el equipo y el Staff.
+cosa. Imprimir carnets y acreditar lo comparten el equipo y el Staff. Registrar a quien llega
+sin registro, también con el registro cerrado, lo hacen el operador de acceso y el
+administrador (9.10).
 
 ---
 
@@ -490,6 +492,12 @@ que el cifrado evita.
 Cada búsqueda queda en la bitácora con cuántos resultados dio: es una consulta de datos
 personales hecha a mano.
 
+Si la búsqueda no encuentra a nadie, la persona no está registrada. Desde la 3.18, el equipo
+—operador de acceso o administrador— la registra ahí mismo con «¿No está registrada?
+Regístrala ›», también con el registro cerrado, y al guardar tiene a mano **Acreditar su
+ingreso** (9.10).
+El Staff no registra: se lo pide a alguien del equipo.
+
 ---
 
 ## 8. La verificación en dos pasos del equipo
@@ -806,7 +814,7 @@ y su propio botón, **Guardar el estado del registro**, que no toca los campos n
 |---|---|---|
 | **Abierto** (de fábrica) | La portada ofrece registrarse y el menú tiene *Registro*, como siempre | Sí: desde la portada, el menú o el enlace |
 | **Oculto** | La portada, el menú y la pantalla de entrada ya no lo ofrecen | Solo quien tenga el enlace `…/registro` |
-| **Cerrado** | La portada dice que el registro está cerrado, y `…/registro` también | Nadie: ni con el formulario, ni con el enlace, ni creando un acceso |
+| **Cerrado** | La portada dice que el registro está cerrado, y `…/registro` también | Nadie por su cuenta: ni con el formulario, ni con el enlace, ni creando un acceso. El equipo sí (9.10) |
 
 **Quien ya se registró no pierde nada** con ninguno de los tres: entra con su correo, ve su
 carnet, corrige sus datos y, si solo había creado su acceso, termina su registro.
@@ -832,8 +840,43 @@ público esté cerrado. Para cerrarlo a él, genera un enlace nuevo y no lo env�
 Mientras no esté abierto, el **panel** lo recuerda en *Pendientes*, y cada cambio queda en la
 bitácora: quién abrió, ocultó o cerró el registro.
 
-**Para registrar a alguien con el registro cerrado**, pásalo a *Oculto*, envíale el enlace del
-formulario y vuelve a cerrarlo cuando se haya registrado.
+**Para registrar a alguien con el registro cerrado**, lo hace el equipo: ver 9.10. No hace falta
+abrirlo ni ocultarlo.
+
+### 9.10 Registrar a una persona desde el equipo
+
+Desde la 3.18, el **operador de acceso** y el **administrador** registran a quien llegue sin
+registro, **también con el registro público cerrado**: se cierra para el público, no para el
+equipo. Es el mismo formulario, con los campos de *Configuración → Registro*, y está en:
+
+- *Registros* → **Registrar persona**;
+- *Escanear carnet* → **Registrar a una persona**, y en «¿No está registrada? Regístrala ›» cuando
+  una búsqueda no encuentra a nadie;
+- la página de registro cerrado y la portada, que a quien es del equipo le muestran el botón.
+
+Se llena **con la persona delante**. Cambia lo que tiene que cambiar cuando quien escribe no es
+ella:
+
+- **No abre su sesión en tu navegador.** Al guardar vuelves al formulario vacío, listo para la
+  siguiente, con una tarjeta de la que acabas de registrar: **Acreditar su ingreso** —su ficha
+  de acreditación, para sellar el ingreso del día— y **Ver su ficha**.
+- **Su carnet le llega al correo**, con un texto que dice que la registró el equipo. Si el correo
+  no sale, el aviso lo dice: su ingreso se acredita igual.
+- **No pide contraseña.** La elige la persona con «Olvidé mi contraseña», o entra con el código
+  del correo o con su QR de acceso, como cualquiera.
+- **No trae la propuesta de exposición.** Si va a exponer, regístrala con el perfil *Expositor*:
+  su propuesta la envía ella después, desde «Mi exposición».
+- **La autorización de datos es de la persona:** pregúntale antes de marcarla. La caracterización
+  es opcional: pregúntale si quiere darla.
+- **Si el correo o la identificación ya están registrados**, no se crea nada ni se toca a nadie: el
+  aviso enlaza a la ficha de esa persona. Si solo había creado su acceso, que entre con su correo
+  y lo complete ella: lo puede hacer con el registro cerrado.
+- **Los perfiles son los del formulario.** Staff y Organizador los pone un administrador desde la
+  ficha, como siempre.
+
+La bitácora dice quién registró a cada persona y si el registro público estaba cerrado. El rol
+**consulta** ve los registros pero no registra, y una persona con perfil **Staff** acredita en la
+puerta pero tampoco: registrar es del operador de acceso y del administrador.
 
 ---
 

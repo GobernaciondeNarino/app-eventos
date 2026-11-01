@@ -16,6 +16,9 @@ guiones('qr-lector.js', 'escaner.js');
 
 $esStaff = ($acreditador['tipo'] ?? 'equipo') === 'staff';
 $rutaBuscar = $esStaff ? '/acreditar/buscar' : '/admin/escaner/buscar';
+// Registrar a quien llega sin registro es del equipo —operador de acceso o
+// administrador—, no del Staff: acreditador() solo devuelve al equipo con ese rol.
+$puedeRegistrar = !$esStaff && $acreditador !== null;
 ?>
 <div class="view view--medium split" style="align-items:start">
 
@@ -74,6 +77,11 @@ $rutaBuscar = $esStaff ? '/acreditar/buscar' : '/admin/escaner/buscar';
         <?php if (isset($encontradas)): ?>
           <?php if (!$encontradas): ?>
             <div class="empty">Nadie coincide con «<?= e((string) $busqueda) ?>»</div>
+            <?php if ($puedeRegistrar): ?>
+              <p class="help" style="margin:0" data-registrar-sin-resultado>
+                ¿No está registrada? <a href="<?= e(u('/admin/registros/nuevo')) ?>">Regístrala ›</a>
+              </p>
+            <?php endif; ?>
           <?php else: ?>
             <div class="stack stack--2">
               <?php foreach ($encontradas as $p): ?>
@@ -94,6 +102,17 @@ $rutaBuscar = $esStaff ? '/acreditar/buscar' : '/admin/escaner/buscar';
         <?php endif; ?>
       </div>
     </form>
+
+    <?php if ($puedeRegistrar): ?>
+      <!-- Quien llega sin registro: el equipo lo registra aquí mismo, también
+           con el registro público cerrado. -->
+      <div class="card" data-registrar-persona>
+        <div class="card__body row row--between">
+          <span class="help" style="margin:0">¿Llegó alguien sin registro?</span>
+          <a class="btn btn--sm" href="<?= e(u('/admin/registros/nuevo')) ?>">Registrar a una persona</a>
+        </div>
+      </div>
+    <?php endif; ?>
   </div>
 
   <div class="phone">

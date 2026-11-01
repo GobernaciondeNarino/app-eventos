@@ -25,7 +25,7 @@ registra gente, se sella asistencia, se aprueban exposiciones y se exportan repo
 | **Autenticación** | Cinco formas de entrar: correo, QR personal, contraseña, WhatsApp y SMS. Se puede crear el acceso con solo correo y contraseña. El equipo, con contraseña y segundo factor. Quien olvida su contraseña la recupera con un enlace al correo, y un administrador puede enviárselo desde el panel |
 | **Códigos QR** | Generador **y lector** propios, verificados uno contra otro y contra una librería de referencia |
 | **API** | Consulta en JSON de expositores, participantes y demás perfiles, con filtros en la dirección y un token por cada sistema que consulta, que se crea y se revoca en Configuración → API. Solo lee, y nunca entrega la identificación ni la caracterización; la fotografía, como enlace, solo a un token con ese permiso |
-| **Pruebas** | 902 comprobaciones de extremo a extremo, 160 de actualización desde la 1.0.0, 149 en navegador, y 641 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy y formulario de registro |
+| **Pruebas** | 943 comprobaciones de extremo a extremo, 160 de actualización desde la 1.0.0, 149 en navegador, y 641 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy y formulario de registro |
 
 ---
 
@@ -178,8 +178,8 @@ proceso, y no ofrece la opción que borra tablas.
 | Pantalla | Para qué |
 |---|---|
 | Panel | Indicadores, ingresos por jornada, cobertura territorial, pendientes |
-| Escanear carnet | Acreditar a alguien cuyo código de puerta falló; búsqueda a mano por identificación, nombre o correo |
-| Registros | Listado con filtros y exportación a CSV; desde la ficha se asigna el perfil **Staff** |
+| Escanear carnet | Acreditar a alguien cuyo código de puerta falló; búsqueda a mano por identificación, nombre o correo, y registrar ahí mismo a quien no está registrado |
+| Registros | Listado con filtros y exportación a CSV; desde la ficha se asigna el perfil **Staff**. **Registrar persona**: el operador de acceso y el administrador registran a quien llega sin registro, también con el registro público cerrado |
 | Carnets | Todos los del evento, para imprimirlos en tanda: una cara por persona, con el QR |
 | QR por día | Un código por jornada, imprimible a página completa y regenerable. Al eliminar un día, los siguientes se renumeran: el 2 pasa a ser el 1 |
 | Expositores | Hoja de revisión por propuesta: los datos completos de quien la presenta, sus dos documentos para bajar, y aprobar, devolver o rechazar. Se le avisa por correo, con los cambios y las observaciones. Aparte, quienes se registraron como expositores y todavía no han enviado su propuesta |
@@ -187,8 +187,8 @@ proceso, y no ofrece la opción que borra tablas.
 | Eventos | Varios eventos a la vez; el activo es el que ven los asistentes |
 | Configuración | Cinco pestañas. **Registro**: si el registro público está abierto, oculto o cerrado, los campos del formulario (obligatorio, opcional u oculto), las opciones de cada lista y el banner. **Registro de expositores**: el formulario privado de los expositores, con su enlace y su propia configuración. **Identidad**: colores, tipografía y logo, con revisión de contraste. **Acceso y correo**: las formas de entrar y el envío de correo. **Mi cuenta**: restablecer el código QR del segundo factor y cambiar la contraseña, para todo el equipo |
 
-**Roles:** `administrador` ⊃ `operador` ⊃ `consulta`. El operador sella ingresos pero no
-exporta datos sensibles ni toca la configuración.
+**Roles:** `administrador` ⊃ `operador` ⊃ `consulta`. El operador sella ingresos y registra a
+quien llega sin registro, pero no exporta datos sensibles ni toca la configuración.
 
 ---
 
@@ -380,7 +380,7 @@ el enrutado, las cookies, los testigos y los guardias, que es donde suelen estar
 Incluye 19 comprobaciones en el bloque específico de seguridad y otras tantas repartidas por
 los guardias de cada pantalla.
 
-Estado actual: **902 de 902** de extremo a extremo, **78** del asistente de instalación,
+Estado actual: **943 de 943** de extremo a extremo, **78** del asistente de instalación,
 **160** de actualización de una instalación en producción por siete caminos, **46** del
 segundo factor —los vectores del RFC 6238 y el reloj del servidor corrido—, **64** de la
 configuración de los formularios de registro, **22** del hash de contraseñas,

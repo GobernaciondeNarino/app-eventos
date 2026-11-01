@@ -182,6 +182,11 @@ $enrutador->post('/admin/escaner/buscar', [Escaneo::class, 'buscar'], 'acreditar
 $enrutador->get('/admin/registros', [Admin::class, 'registros'], 'admin:consulta');
 $enrutador->get('/admin/registros/exportar', [Admin::class, 'exportar'], 'admin:consulta');
 
+// El equipo registra a una persona: el formulario público, para quien llega sin
+// registro. Sirve también con el registro público cerrado, que se cierra para el
+// público y no para el equipo. Ver Publico::registroPorEquipo().
+$enrutador->ambos('/admin/registros/nuevo', [Publico::class, 'registroPorEquipo'], 'admin:operador');
+
 // Ficha de una persona. Ver los datos de alguien queda en la bitácora, igual
 // que la pantalla de acreditación.
 $enrutador->get('/admin/registros/{persona:num}', [Admin::class, 'ficha'], 'admin:consulta');

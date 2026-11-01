@@ -1,6 +1,7 @@
 <?php
 /**
- * Formulario de registro. Abierto al público, siempre.
+ * Formulario de registro. Abierto al público, salvo que la organización lo
+ * cierre (Configuración → Registro, desde la 3.17).
  *
  * Qué campos lleva y qué opciones trae cada lista lo decide Configuración →
  * Registro, evento por evento (App\Modelos\Formulario).
@@ -18,11 +19,22 @@
  * @var bool $reelegir @var string $perfilFijo
  * @var \App\Modelos\Formulario $formulario @var array $actual
  * @var array $faltantes  lo que le falta a su perfil, si ya está registrado
+ *
+ * Y desde la 3.18 la llena también el equipo —operador de acceso o
+ * administrador— por alguien que llega sin registro (Publico::registroPorEquipo):
+ * con $porEquipo, sin contraseña ni propuesta de exposición, con los textos
+ * dichos a quien registra a otra persona.
+ * @var bool $porEquipo @var string $estadoRegistro
+ * @var array|null $registrada  la que el equipo acaba de registrar, con su credencial
+ * @var array|null $existente   de quién son el correo o la identificación repetidos
  */
 defined('EVENTOS_TIC') || exit;
 
 use App\Nucleo\Documento;
 
+$porEquipo = $porEquipo ?? false;
+$registrada = $registrada ?? null;
+$existente = $existente ?? null;
 $f = $formulario;
 /** El asterisco de los obligatorios, y el atributo que lee el aviso de registro incompleto. */
 $req = static fn(string $campo): string => $f->obligatorio($campo) ? ' <span class="req">*</span>' : '';
@@ -37,6 +49,9 @@ if (($valores['correo'] ?? '') === '' && isset($_GET['correo'])) {
 
 $v = static fn(string $clave, string $porDefecto = ''): string => (string) ($valores[$clave] ?? $porDefecto);
 $err = static fn(string $clave): string => (string) ($errores[$clave] ?? '');
+// En el equipo de quien registra, el navegador ofrecería sus propios datos —su
+// correo, su nombre— para los de la persona: ahí no se autocompleta.
+$auto = static fn(string $valor): string => $porEquipo ? 'off' : $valor;
 // En el de expositores, «Voy a exponer» viene marcado para quien todavía no
 // tiene una propuesta: a eso llegó por ese enlace. Si el envío volvió con
 // errores, manda lo que se envió.
@@ -68,7 +83,7 @@ guiones('foto.js', 'preregistro.js', 'claves.js', 'registro-incompleto.js');
       enctype="multipart/form-data" novalidate data-registro>
   <?= testigo() ?>
 
-  <?php if ($banner !== null): ?>
+  <?php if ($banner !== null && !$porEquipo): ?>
     <!-- El banner lo pone el evento desde Configuración → Registro. -->
     <div class="registro-banner">
       <?php if ($banner['imagen'] !== ''): ?>
@@ -85,6 +100,74 @@ guiones('foto.js', 'preregistro.js', 'claves.js', 'registro-incompleto.js');
     </div>
   <?php endif; ?>
 
+  <?php if ($porEquipo):
+    $palabras = $f->obligatoriosEnPalabras();
+    $ultima = array_pop($palabras);
+  ?>
+    <!-- El equipo registra a alguien que llega sin registro. No abre su sesión
+         en este equipo: su carnet le llega al correo. -->
+    <div class="stack stack--2" data-registro-equipo="<?= e($estadoRegistro) ?>">
+      <span class="kicker">Equipo · Nuevo registro</span>
+      <h1>Registrar a una persona</h1>
+      <p class="help">
+        Para quien llega sin registro: llénalo con ella. Son obligatorios
+        <?= e(implode(', ', $palabras) . ' y ' . $ultima) ?>. Su carnet le llega al correo, y su
+        sesión no se abre en este equipo.
+      </p>
+    </div>
+
+    <?php if ($registrada !== null): ?>
+      <!-- La que se acaba de registrar, con lo que sigue para ella. El
+           formulario de abajo ya está vacío para la siguiente. -->
+      <section class="card" data-registrada="<?= e((string) $registrada['id']) ?>">
+        <div class="card__head">
+          <span>Recién registrada</span>
+          <span class="tag <?= e(claseRol($registrada['rol'])) ?>"><?= e(etiquetaRol($registrada['rol'])) ?></span>
+        </div>
+        <div class="card__body stack stack--3">
+          <div class="stack" style="gap:2px">
+            <strong style="font-size:17px;color:var(--c-title)"><?= e($registrada['nombre']) ?></strong>
+            <span class="help" style="margin:0"><?= e($registrada['entidad'] !== '' ? $registrada['entidad'] : 'Independiente') ?></span>
+          </div>
+          <div class="row">
+            <?php if ($registrada['credencial'] !== null): ?>
+              <a class="btn btn--sm btn--primary" href="<?= e(u('/c/' . $registrada['credencial']['token'])) ?>">Acreditar su ingreso</a>
+            <?php endif; ?>
+            <a class="btn btn--sm" href="<?= e(u('/admin/registros/' . $registrada['id'])) ?>">Ver su ficha</a>
+          </div>
+          <p class="help" style="margin:0">Para registrar a otra persona, llena el formulario de abajo.</p>
+        </div>
+      </section>
+    <?php endif; ?>
+
+    <?php if ($estadoRegistro !== 'abierto'): ?>
+      <div class="notice<?= $estadoRegistro === 'cerrado' ? ' notice--warn' : '' ?>">
+        <span class="notice__icon" aria-hidden="true"><?= $estadoRegistro === 'cerrado' ? '▲' : '◆' ?></span>
+        <span>
+          <?= $estadoRegistro === 'cerrado'
+              ? '<strong>El registro público está cerrado.</strong> El público ya no se puede registrar solo; el equipo sí, desde aquí.'
+              : '<strong>El registro público está oculto.</strong> El público solo se registra con el enlace; el equipo, desde aquí.' ?>
+        </span>
+      </div>
+    <?php endif; ?>
+
+    <?php if ($existente !== null): ?>
+      <!-- El correo o la identificación ya son de alguien: lo que sirve es su
+           ficha, para acreditarla o corregir lo que haga falta. -->
+      <div class="notice notice--warn" data-existente="<?= e((string) $existente['id']) ?>">
+        <span class="notice__icon" aria-hidden="true">▲</span>
+        <span>
+          <?php if ($existente['completo']): ?>
+            Ya está registrada<?= $existente['nombre'] !== '' ? ': <strong>' . e($existente['nombre']) . '</strong>' : '' ?>.
+          <?php else: ?>
+            Ya creó su acceso con ese correo, pero no terminó su registro: que entre con su correo y lo
+            complete, también con el registro cerrado.
+          <?php endif; ?>
+          <a href="<?= e(u('/admin/registros/' . $existente['id'])) ?>">Ver su ficha ›</a>
+        </span>
+      </div>
+    <?php endif; ?>
+  <?php else: ?>
   <div class="stack stack--2">
     <span class="kicker"><?= $deExpositores ? 'Expositores · Datos y propuesta' : 'Fase 01 · Datos del participante' ?></span>
     <h1><?= $yaRegistrado
@@ -122,6 +205,7 @@ guiones('foto.js', 'preregistro.js', 'claves.js', 'registro-incompleto.js');
       <span>Para tener tu perfil completo te falta <?= e(enumerar($faltantes)) ?>.</span>
     </div>
   <?php endif; ?>
+  <?php endif; /* $porEquipo */ ?>
 
   <?php if ($erroresVisibles !== []): ?>
     <!-- Sin JavaScript esto es todo el aviso; con él, además se abre la
@@ -129,7 +213,7 @@ guiones('foto.js', 'preregistro.js', 'claves.js', 'registro-incompleto.js');
     <div class="notice notice--danger" role="alert">
       <span class="notice__icon" aria-hidden="true">▲</span>
       <span>
-        <strong>Tu registro no fue guardado.</strong>
+        <strong><?= $porEquipo ? 'El registro no fue guardado.' : 'Tu registro no fue guardado.' ?></strong>
         <?= e($err('general') !== '' ? $err('general') : 'Revisa los campos marcados en rojo y vuelve a enviarlo.') ?>
       </span>
     </div>
@@ -158,15 +242,16 @@ guiones('foto.js', 'preregistro.js', 'claves.js', 'registro-incompleto.js');
         <label class="label" for="correo">Correo electrónico <span class="req">*</span></label>
         <input class="input<?= $err('correo') ? ' is-invalid' : '' ?>" type="email" id="correo" name="correo"
                value="<?= e($v('correo')) ?>" placeholder="nombre@entidad.gov.co"
-               autocomplete="email" inputmode="email" <?= $yaRegistrado ? 'readonly' : 'required' ?>>
+               autocomplete="<?= $auto('email') ?>" inputmode="email" <?= $yaRegistrado ? 'readonly' : 'required' ?>>
         <?php if ($err('correo')): ?><span class="error"><?= e($err('correo')) ?></span><?php endif; ?>
         <?php if ($yaRegistrado): ?><span class="help">El correo no se puede cambiar: es tu forma de entrar.</span><?php endif; ?>
+        <?php if ($porEquipo): ?><span class="help">Ahí le llega su carnet y es con lo que entra: revísalo con ella.</span><?php endif; ?>
       </div>
 
       <div class="field">
         <label class="label" for="nombre">Nombre completo <span class="req">*</span></label>
         <input class="input<?= $err('nombre') ? ' is-invalid' : '' ?>" id="nombre" name="nombre"
-               value="<?= e($v('nombre')) ?>" autocomplete="name"
+               value="<?= e($v('nombre')) ?>" autocomplete="<?= $auto('name') ?>"
                placeholder="Ej. María Fernanda Zambrano" maxlength="160" required>
         <?php if ($err('nombre')): ?><span class="error"><?= e($err('nombre')) ?></span><?php endif; ?>
       </div>
@@ -199,7 +284,7 @@ guiones('foto.js', 'preregistro.js', 'claves.js', 'registro-incompleto.js');
         <div class="field">
           <label class="label" for="entidad">Entidad u organización<?= $req('entidad') ?></label>
           <input class="input<?= $err('entidad') ? ' is-invalid' : '' ?>" id="entidad" name="entidad" value="<?= e($v('entidad')) ?>"
-                 autocomplete="organization" placeholder="Ej. Alcaldía de Ipiales" maxlength="160" <?= $exige('entidad') ?>>
+                 autocomplete="<?= $auto('organization') ?>" placeholder="Ej. Alcaldía de Ipiales" maxlength="160" <?= $exige('entidad') ?>>
           <?php if ($err('entidad')): ?><span class="error"><?= e($err('entidad')) ?></span><?php endif; ?>
         </div>
       <?php endif; ?>
@@ -210,7 +295,7 @@ guiones('foto.js', 'preregistro.js', 'claves.js', 'registro-incompleto.js');
         <div class="field">
           <label class="label" for="telefono">Teléfono de contacto<?= $req('telefono') ?></label>
           <input class="input input--mono<?= $err('telefono') ? ' is-invalid' : '' ?>" id="telefono" name="telefono"
-                 type="tel" value="<?= e($v('telefono')) ?>" autocomplete="tel" placeholder="+57 300 000 0000" <?= $exige('telefono') ?>>
+                 type="tel" value="<?= e($v('telefono')) ?>" autocomplete="<?= $auto('tel') ?>" placeholder="+57 300 000 0000" <?= $exige('telefono') ?>>
           <?php if ($err('telefono')): ?><span class="error"><?= e($err('telefono')) ?></span><?php endif; ?>
         </div>
         <?php endif; ?>
@@ -303,9 +388,15 @@ guiones('foto.js', 'preregistro.js', 'claves.js', 'registro-incompleto.js');
 
       <div class="stack stack--3">
         <p class="help" style="margin:0">
-          Aparecerá en tu carnet digital y en el impreso. Puedes <strong>tomarla en el
-          momento con la cámara</strong> o <strong>elegir una de tu galería</strong>; después
-          arrástrala para centrar la cara y usa la barra para acercarla.
+          <?php if ($porEquipo): ?>
+            Aparecerá en su carnet digital y en el impreso. Puedes <strong>tomarla en el
+            momento con la cámara</strong> de este equipo; después arrástrala para centrar la
+            cara y usa la barra para acercarla.
+          <?php else: ?>
+            Aparecerá en tu carnet digital y en el impreso. Puedes <strong>tomarla en el
+            momento con la cámara</strong> o <strong>elegir una de tu galería</strong>; después
+            arrástrala para centrar la cara y usa la barra para acercarla.
+          <?php endif; ?>
         </p>
 
         <div class="row">
@@ -346,7 +437,8 @@ guiones('foto.js', 'preregistro.js', 'claves.js', 'registro-incompleto.js');
         <?php endif; ?>
 
         <p class="help" style="margin:0">
-          La foto solo la ves tú y el equipo organizador. No viaja en ningún código QR.
+          <?= $porEquipo ? 'La foto solo la ven la persona y el equipo organizador.' : 'La foto solo la ves tú y el equipo organizador.' ?>
+          No viaja en ningún código QR.
         </p>
       </div>
     </div>
@@ -406,9 +498,16 @@ guiones('foto.js', 'preregistro.js', 'claves.js', 'registro-incompleto.js');
     <div class="card__body stack stack--5<?= $abrirOpcional ? '' : ' hidden' ?>" id="bloque-opcional">
       <p class="help">
         Nos permite reportar cobertura territorial y enfoque diferencial.
-        <?= $caracterizacionExige
-            ? 'Los marcados con * son obligatorios; el resto puedes omitirlo.'
-            : 'Puedes omitirla por completo.' ?>
+        <?php if ($porEquipo): ?>
+          Son datos sensibles: pregúntale si quiere darlos.
+          <?= $caracterizacionExige
+              ? 'Los marcados con * son obligatorios; el resto puede omitirlo.'
+              : 'Puede omitirlos por completo.' ?>
+        <?php else: ?>
+          <?= $caracterizacionExige
+              ? 'Los marcados con * son obligatorios; el resto puedes omitirlo.'
+              : 'Puedes omitirla por completo.' ?>
+        <?php endif; ?>
       </p>
 
       <div class="grid-2">
@@ -506,7 +605,7 @@ guiones('foto.js', 'preregistro.js', 'claves.js', 'registro-incompleto.js');
         <div><a class="btn btn--sm" href="<?= e(u('/exposicion')) ?>">Ir a «Mi exposición» ›</a></div>
       </div>
     </section>
-  <?php elseif ($f->visible('expositor')): ?>
+  <?php elseif ($f->visible('expositor') && !$porEquipo): ?>
   <section class="card">
     <div class="card__head">
       <span>Fase 03 · Perfil expositor</span>
@@ -700,9 +799,18 @@ guiones('foto.js', 'preregistro.js', 'claves.js', 'registro-incompleto.js');
                  style="margin-top:3px;width:18px;height:18px;accent-color:var(--c-accent)"
                  data-rotulo="La autorización de tratamiento de datos">
           <span class="help" style="flex:1">
-            Autorizo el tratamiento de mis datos personales por parte de la Gobernación de
-            Nariño para la gestión de este evento, conforme a la Ley 1581 de 2012 y a la
-            política de tratamiento de datos de la entidad. <span class="req">*</span>
+            <?php if ($porEquipo): ?>
+              <!-- La autorización es de la persona, no de quien escribe: se le
+                   pregunta, y se marca solo si dice que sí. -->
+              La persona autoriza el tratamiento de sus datos personales por parte de la
+              Gobernación de Nariño para la gestión de este evento, conforme a la Ley 1581 de
+              2012 y a la política de tratamiento de datos de la entidad. Pregúntaselo antes de
+              marcarlo. <span class="req">*</span>
+            <?php else: ?>
+              Autorizo el tratamiento de mis datos personales por parte de la Gobernación de
+              Nariño para la gestión de este evento, conforme a la Ley 1581 de 2012 y a la
+              política de tratamiento de datos de la entidad. <span class="req">*</span>
+            <?php endif; ?>
           </span>
         </label>
         <?php if ($err('habeas')): ?><span class="error"><?= e($err('habeas')) ?></span><?php endif; ?>
@@ -713,8 +821,10 @@ guiones('foto.js', 'preregistro.js', 'claves.js', 'registro-incompleto.js');
   <div class="row row--between" style="padding-top:4px">
     <span class="help mono">Los campos con <span class="req">*</span> son obligatorios.</span>
     <div class="row">
-      <a class="btn" href="<?= e(u($yaRegistrado ? '/carnet' : '/')) ?>">Cancelar</a>
-      <button class="btn btn--primary" type="submit"><?= $yaRegistrado ? 'Guardar cambios' : 'Completar registro' ?></button>
+      <a class="btn" href="<?= e(u($porEquipo ? '/admin/registros' : ($yaRegistrado ? '/carnet' : '/'))) ?>">Cancelar</a>
+      <button class="btn btn--primary" type="submit"><?= $porEquipo
+          ? 'Registrar y enviar su carnet'
+          : ($yaRegistrado ? 'Guardar cambios' : 'Completar registro') ?></button>
     </div>
   </div>
 </form>
@@ -733,7 +843,7 @@ guiones('foto.js', 'preregistro.js', 'claves.js', 'registro-incompleto.js');
       <button class="modal__close" type="button" data-cerrar-modal aria-label="Cerrar">&times;</button>
     </div>
     <div class="modal__body">
-      <h2 id="titulo-incompleto" style="font-size:22px;margin:0">Tu registro no fue guardado</h2>
+      <h2 id="titulo-incompleto" style="font-size:22px;margin:0"><?= $porEquipo ? 'El registro no fue guardado' : 'Tu registro no fue guardado' ?></h2>
       <p id="texto-incompleto" style="margin:0">
         Por favor registra los datos completos. Falta o hay que corregir:
       </p>

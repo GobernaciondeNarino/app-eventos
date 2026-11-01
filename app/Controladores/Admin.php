@@ -130,7 +130,7 @@ final class Admin
         $registro = \App\Modelos\Formulario::delEvento($eventoId)->estadoRegistro();
         if ($registro !== 'abierto') {
             $lista[] = ['texto' => $registro === 'cerrado'
-                            ? 'El registro público está cerrado: nadie nuevo se puede registrar'
+                            ? 'El registro público está cerrado: solo el equipo registra a personas nuevas'
                             : 'El registro público está oculto: solo se registra quien tenga el enlace',
                         'ruta' => '/admin/configuracion/registro#estado-registro', 'tipo' => ''];
         }
@@ -200,6 +200,8 @@ final class Admin
             // la cédula de cada asistente. El operador sí la necesita: es lo
             // que compara contra el documento físico al acreditar.
             'puedeVerDocumento' => Guardia::puede('operador'),
+            // Registrar a una persona: el mismo rol que el guardia de la ruta.
+            'puedeRegistrar' => Guardia::puede('operador'),
         ]);
     }
 

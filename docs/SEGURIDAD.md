@@ -817,8 +817,8 @@ Registro** (`evt_evento_formulario.registro_estado`). Cerrar no es esconder el b
 - **Lo comprueba el servidor en cada puerta** por donde se crea una persona: el formulario
   —también `/preregistro`, la dirección de los correos viejos— en `Publico::registro()`, y
   «Crear mi acceso» en `Acceso::crearCuenta()`. Un envío hecho a mano, con un testigo válido,
-  recibe la página de registro cerrado y no crea a nadie. Son las dos únicas que crean una
-  persona; el acceso por código nunca crea cuentas.
+  recibe la página de registro cerrado y no crea a nadie. Son las dos únicas puertas del público
+  que crean una persona; el acceso por código nunca crea cuentas. La tercera es del equipo (abajo).
 - **Quien ya se registró no pierde el acceso.** El cierre solo mira a quien llega sin sesión: con
   la suya, `/registro` sigue siendo «Mis datos», y quien solo había creado su acceso termina su
   registro. El correo de quien tiene sesión sigue sin poder cambiarse desde el formulario.
@@ -836,6 +836,34 @@ Registro** (`evt_evento_formulario.registro_estado`). Cerrar no es esconder el b
   como estaba: el estado se lee con un valor por omisión y no se puede guardar hasta actualizar
   la base. Volver a la versión anterior también lo deja abierto, porque esa versión no sabe
   cerrarlo.
+
+### El equipo registra a una persona
+
+Desde la 3.18, el operador de acceso y el administrador registran a quien llega sin registro en
+`/admin/registros/nuevo`, también con el registro público cerrado. Es el mismo formulario y la
+misma validación del público (`Publico::formularioDeRegistro()` con `$porEquipo`), con estas
+diferencias, cada una por una razón:
+
+- **El guardia es `admin:operador`**, en `app/rutas.php`: sesión del equipo completa —segundo
+  factor, contraseña propia, cuenta activa— y rol operador o administrador. El rol consulta recibe
+  403, y una persona con perfil Staff, que no tiene sesión del equipo, va al acceso del equipo.
+  Testigo CSRF como cualquier POST.
+- **No abre la sesión de la persona** en el navegador del equipo, ni mira la que ese navegador
+  tenga abierta: si la mirara, el formulario sería «Mis datos» de quien tiene la sesión y se
+  guardaría encima de su registro. Siempre crea a alguien nuevo.
+- **Un correo o una identificación ya registrados no se tocan**: el formulario lo dice y enlaza a la
+  ficha. El equipo no tiene cómo demostrar que controla ese buzón, así que no corrige registros
+  ajenos desde aquí.
+- **No pone contraseña** —ni la que llegue en un envío hecho a mano—: la elige la persona. Tampoco
+  propuesta de exposición, ni perfiles que solo pone un administrador (Staff, Organizador): se
+  valida contra la misma lista del público.
+- **La autorización de datos la da la persona**, de viva voz; la casilla lo dice así y sin ella no
+  se registra.
+- **Tope por cuenta, no por dirección**: `registro_equipo`, doscientos por hora por cuenta del
+  equipo. No gasta el `preregistro_ip` del público, que en la puerta comparte la dirección de la
+  sede.
+- **Bitácora**: la acción `registro` lleva `por: equipo`, el estado del registro público y la
+  cuenta que registró, y el panel lo cuenta con su nombre.
 
 ### El enlace privado del formulario de expositores
 
@@ -1077,7 +1105,7 @@ conviene decirlo con claridad en la pantalla de privacidad.
 ## 6. Verificación
 
 ```bash
-php pruebas/extremo-a-extremo.php      # 902 comprobaciones sobre un servidor real
+php pruebas/extremo-a-extremo.php      # 943 comprobaciones sobre un servidor real
 php pruebas/instalacion.php            # el asistente, y qué se ve cuando falla
 php pruebas/actualizacion.php          # subir desde la 1.0.0 por cada camino, sin perder nada
 php pruebas/claves.php                 # parámetros de Argon2id y rehash
@@ -1152,6 +1180,12 @@ Lo que comprueban las de seguridad, concretamente:
   se registró entra, corrige sus datos y termina su registro; el formulario de expositores sigue
   con su enlace; el mensaje para el público sale escapado; solo un administrador lo cambia; y
   sin las columnas nuevas el registro sigue abierto, como estaba.
+- Con el registro cerrado, el operador de acceso y el administrador registran desde
+  `/admin/registros/nuevo` sin abrir la sesión de la persona, sin contraseña ni propuesta aunque
+  lleguen a mano, sin perfiles de administrador y sin tocar un correo o una identificación ya
+  registrados; un navegador con sesión de asistente y del equipo registra a otra persona y deja
+  intacta la suya; el rol consulta recibe 403, el Staff y quien no tiene sesión van al acceso del
+  equipo; no gasta el tope del público por dirección, y pasado el de su cuenta responde 429.
 
 ---
 

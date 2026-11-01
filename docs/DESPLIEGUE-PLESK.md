@@ -448,6 +448,10 @@ restauró no es una copia.
    mensaje para el público. Ningún registro cambia, y el registro queda **abierto**, como
    estaba, hasta que un administrador lo cambie en **Configuración → Registro**. Ver 7.9.
 
+   La 3.18 no toca la base de datos ni `config/`. Con el registro público cerrado, el operador
+   de acceso y el administrador siguen registrando a quien llegue sin registro, desde
+   **Registros → Registrar persona** o desde **Escanear carnet**. Ver 7.10.
+
    Si el usuario de la base de datos no tiene permiso de `ALTER` —pasa en algunos
    alojamientos—, la actualización automática no puede hacerse: lo anota en el registro,
    vuelve a intentarlo cada cinco minutos y la plataforma sigue funcionando. Para hacerlo a
@@ -981,6 +985,68 @@ registro.** Si vuelves atrás con el registro cerrado u oculto, queda abierto ot
 subas de nuevo la 3.17. Si prefieres quitar las columnas, en phpMyAdmin y después de volver a
 los archivos anteriores: `ALTER TABLE evt_evento_formulario DROP COLUMN registro_mensaje, DROP
 COLUMN registro_estado;`.
+
+### 7.10 La 3.18: el equipo registra con el registro cerrado, sin tocar registros ni configuración
+
+**Qué agrega.** Con el registro público cerrado —u oculto, o abierto—, el **operador de acceso**
+y el **administrador** registran a quien llegue sin registro, en `…/admin/registros/nuevo`. Se
+llega desde **Registros → Registrar persona**, desde **Escanear carnet** y desde la página de
+registro cerrado, que al equipo le muestra el botón. Es el mismo formulario, sin abrir la sesión
+de la persona en el equipo de quien registra, sin contraseña y con el carnet al correo de la
+persona. Al guardar, vuelve al formulario vacío con **Acreditar su ingreso** para la recién
+registrada. El rol consulta y el Staff no registran. El detalle está en
+`docs/ADMINISTRAR-EVENTOS.md` (9.10).
+
+**Qué cambia aunque nadie toque nada.** El público no ve nada nuevo. El equipo ve el botón
+**Registrar persona** en Registros y **Registrar a una persona** en Escanear carnet. Cambian
+unos textos: el aviso del panel con el registro cerrado («solo el equipo registra a personas
+nuevas»), la explicación de **Cerrado** en Configuración → Registro, y la página de registro
+cerrado cuando la abre alguien del equipo.
+
+**Qué no cambia.** La base de datos —ni tablas ni columnas: la versión del esquema sigue en
+1.14.0—, `config/config.php`, `almacen/`, los registros, las fotos, los carnets y sus códigos
+QR, el estado del registro y el formulario con su configuración.
+
+**Qué archivos cambian** —súbelos todos juntos: la ruta nueva, el formulario y el tope de la
+cuenta van en archivos distintos, y sin `app/Nucleo/Limite.php` el tope sería de diez registros
+cada quince minutos—:
+
+| Archivo | Para qué |
+|---|---|
+| `app/Controladores/Publico.php` | El formulario del equipo, y el botón en la página de registro cerrado |
+| `app/Vistas/publico/registro.php` | El formulario con los textos para quien registra a otra persona |
+| `app/Vistas/publico/registro-cerrado.php`, `app/Vistas/publico/inicio.php` | El botón para el equipo con el registro cerrado |
+| `app/Vistas/admin/registros.php`, `app/Vistas/admin/escaner.php`, `app/Controladores/Admin.php` | Los botones en Registros y en Escanear carnet, y el aviso del panel |
+| `app/Vistas/admin/config-registro.php`, `app/Controladores/Configuracion.php` | La explicación de **Cerrado** y el aviso al cerrarlo |
+| `app/Modelos/Persona.php`, `app/Nucleo/Bitacora.php` | Quién registró, en la bitácora |
+| `app/Nucleo/Correo.php` | El correo del carnet dice que la registró el equipo |
+| `app/Nucleo/Limite.php` | El tope por cuenta del equipo: doscientos registros por hora |
+| `app/rutas.php` | La dirección `/admin/registros/nuevo`, para operador de acceso y administrador |
+| `index.php`, `herramientas/instalar.php`, `herramientas/correo.php` | El número de versión |
+
+**Cómo subirla:**
+
+1. Haz la copia de seguridad de siempre (punto 1 de arriba): **la base de datos y `config/`**.
+   Descarga además, tal como están en el servidor, los archivos de la tabla.
+2. Sube **todos** los archivos de la tabla —o la versión completa—, **sin tocar `config/` ni
+   `almacen/`**. Si producción todavía no tiene la 3.17, sube la versión completa: la primera
+   visita agrega las columnas que falten (ver 7.9).
+3. Abre `/admin`: no debe haber aviso de «base de datos atrasada».
+4. Compruébalo:
+   - en **Registros** aparece **Registrar persona**, y en **Escanear carnet**, **Registrar a una
+     persona**;
+   - ábrelo: es el formulario de registro, sin contraseña. No hace falta cerrar el registro para
+     probarlo, porque funciona igual en los tres estados;
+   - si quieres guardar uno, registra a alguien del equipo que vaya a asistir y no esté
+     registrado todavía, con su correo y su permiso: es un registro real y no hay que borrarlo
+     después. La plataforma no borra personas una por una, así que en producción evita los
+     registros de mentira. Al guardar, vuelve al formulario vacío con la tarjeta **Recién
+     registrada**, y el carnet le llega a su correo.
+
+**Volver atrás:** sube otra vez los archivos que descargaste en el paso 1. No hay nada que
+deshacer en la base. Lo único que deja de existir es el formulario del equipo: con el registro
+cerrado, volvería a hacer falta pasarlo a *Oculto* y enviar el enlace para registrar a alguien.
+Las personas registradas por el equipo siguen ahí como cualquier otra.
 
 ---
 

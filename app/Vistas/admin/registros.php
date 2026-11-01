@@ -10,6 +10,7 @@
  * @var array{en_filtro: int, con_ingreso: int, completos: int, a_medias: int, entidades: int} $resumen
  * @var App\Nucleo\Paginacion $paginacion @var App\Nucleo\Orden $orden
  * @var array $consulta  los filtros con los nombres del formulario, para los enlaces
+ * @var bool $puedeRegistrar  operador de acceso o administrador (3.18)
  */
 defined('EVENTOS_TIC') || exit;
 
@@ -28,6 +29,10 @@ guiones('registros.js');
       <h1>Registros y asistencia</h1>
     </div>
     <div class="row no-print">
+      <?php if (!empty($puedeRegistrar)): ?>
+        <?php /* Funciona también con el registro público cerrado: se cierra para el público, no para el equipo. */ ?>
+        <a class="btn btn--sm btn--primary" href="<?= e(u('/admin/registros/nuevo')) ?>" data-registrar-persona>Registrar persona</a>
+      <?php endif; ?>
       <?php /* Exporta todo lo que deja el filtro, en el orden de la tabla: no solo la página. */ ?>
       <a class="btn btn--sm" href="<?= e(u('/admin/registros/exportar', $conOrden)) ?>">Exportar CSV</a>
       <?php if ($puedeVerSensibles): ?>

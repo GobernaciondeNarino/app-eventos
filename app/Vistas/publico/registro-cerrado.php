@@ -9,8 +9,13 @@
  *
  * @var string     $mensajeRegistro  lo que escribió la organización, o ''
  * @var array|null $usuario          el equipo también puede abrir esta página
+ * @var bool       $puedeRegistrar   operador de acceso o administrador: registra igual (3.18)
+ * @var bool       $esAdministrador  el que abre, oculta o cierra el registro
  */
 defined('EVENTOS_TIC') || exit;
+
+$puedeRegistrar = $puedeRegistrar ?? false;
+$esAdministrador = $esAdministrador ?? false;
 ?>
 <div class="view view--narrow stack stack--5" style="max-width:520px;margin:auto" data-registro-cerrado>
 
@@ -41,14 +46,32 @@ defined('EVENTOS_TIC') || exit;
   </section>
 
   <?php if ($usuario !== null): ?>
-    <!-- Alguien del equipo que abrió el formulario para revisarlo. -->
-    <div class="notice">
-      <span class="notice__icon" aria-hidden="true">◆</span>
-      <span>
-        Eres del equipo: el registro se abre, se oculta o se cierra en
-        <a href="<?= e(u('/admin/configuracion/registro')) ?>#estado-registro">Configuración → Registro</a>.
-      </span>
-    </div>
+    <!-- Alguien del equipo. Cerrado para el público, no para el equipo: el
+         operador de acceso y el administrador siguen registrando a quien llegue
+         sin registro. -->
+    <section class="card">
+      <div class="card__head"><span>Eres del equipo</span></div>
+      <div class="card__body stack stack--4">
+        <?php if ($puedeRegistrar): ?>
+          <p class="help" style="margin:0">
+            Con el registro cerrado, el operador de acceso y el administrador siguen registrando a
+            quien llegue sin registro. Lo llenas con la persona y su carnet le llega al correo.
+          </p>
+          <a class="btn btn--block" href="<?= e(u('/admin/registros/nuevo')) ?>" data-registro-equipo>Registrar a una persona</a>
+        <?php else: ?>
+          <p class="help" style="margin:0">
+            Registrar a quien llegue sin registro les corresponde al operador de acceso y al
+            administrador.
+          </p>
+        <?php endif; ?>
+        <?php if ($esAdministrador): ?>
+          <p class="help" style="margin:0">
+            El registro se abre, se oculta o se cierra en
+            <a href="<?= e(u('/admin/configuracion/registro')) ?>#estado-registro">Configuración → Registro</a>.
+          </p>
+        <?php endif; ?>
+      </div>
+    </section>
   <?php endif; ?>
 
   <p class="text-center">

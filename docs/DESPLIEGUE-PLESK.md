@@ -1158,6 +1158,11 @@ caracterización abierta y la página puesta en *Departamento y municipio*.
   municipio* en **Configuración → Registro**.
 - El día en que ya se le pidió queda en los datos de su sesión, en una columna que ya existe.
 
+Además, **los avisos flotantes** —«Actualizamos tus datos», «Bienvenido»…— salen centrados y
+del ancho de su texto. Hasta ahora la animación de entrada les quitaba el centrado: empezaban en
+la mitad de la pantalla, y en el celular uno largo salía en una columna angosta a la derecha,
+encima del botón de guardar.
+
 **Qué no cambia.** La base de datos —ninguna tabla ni columna nueva—, `config/`, `almacen/`, los
 registros y si el municipio es obligatorio u opcional, que sigue siendo lo que diga
 **Configuración → Registro**.
@@ -1171,14 +1176,15 @@ registros y si el municipio es obligatorio u opcional, que sigue siendo lo que d
 | `app/Controladores/Carnet.php` | Al abrir el carnet |
 | `app/Controladores/Publico.php` | Al abrir la portada; *Mis datos* anota que ya lo vio |
 | `app/Vistas/publico/registro.php` | La caracterización abierta, el enlace al municipio y la indicación junto a él |
+| `assets/css/base.css`, `assets/css/components.css` | Los avisos flotantes, centrados y del ancho de su texto |
 | `index.php`, `herramientas/instalar.php`, `herramientas/correo.php` | El número de versión |
 
 **Cómo subirla:**
 
 1. Descarga, tal como están en el servidor, los archivos de la tabla, por si hay que volver atrás.
 2. Súbelos **todos juntos**, sin tocar `config/` ni `almacen/`. `Publico.php` y `registro.php`
-   traen también lo de la 3.18.2: si producción no la tiene, sube con ellos los de la 7.12, o la
-   versión completa.
+   traen también lo de la 3.18.2, y `components.css` lo de la 3.18.1: si producción no las
+   tiene, sube con ellos los de la 7.11 y la 7.12, o la versión completa.
 3. Con una cuenta de prueba **sin municipio**, entra con su QR de acceso: tiene que llegar a
    *Mis datos*, en el municipio, con el aviso. Pulsa *Mi carnet*: tiene que abrir el carnet.
    Elige el municipio, guarda, y vuelve a entrar: tiene que ir directo al carnet.

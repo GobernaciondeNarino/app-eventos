@@ -328,6 +328,17 @@ function titulo(t) {
     await p2.waitForSelector('[data-foto-lienzo]:not([hidden])', { timeout: 5000 });
     await p2.locator('button[type=submit]', { hasText: 'Guardar cambios' }).click();
     await p2.waitForLoadState('networkidle');
+    // Hasta la 3.19 la animación de entrada le quitaba el centrado: el aviso
+    // empezaba en la mitad de la pantalla y uno largo salía en una columna
+    // angosta a la derecha, encima del botón de guardar.
+    const aviso = await p2.evaluate(() => {
+      const t = document.querySelector('.toast');
+      if (!t) return null;
+      const r = t.getBoundingClientRect();
+      return { texto: t.innerText.trim(), izquierda: Math.round(r.left), derecha: Math.round(innerWidth - r.right) };
+    });
+    comprobar('el aviso de «guardado» sale centrado y dentro de la pantalla',
+      !!aviso && Math.abs(aviso.izquierda - aviso.derecha) <= 2 && aviso.izquierda >= 0, JSON.stringify(aviso));
     const cambiada = await colorDe('.carnet__photo img');
     comprobar('al cambiar la foto, el carnet enseña la nueva, no la que el navegador tenía guardada',
       esAzul(cambiada), cambiada ? cambiada.join(',') : 'sin imagen');

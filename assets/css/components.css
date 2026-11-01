@@ -675,7 +675,11 @@ a.paginas__num:hover, .paginas__paso:hover { border-color: var(--c-accent); colo
   background: var(--c-surface); border: 1px solid var(--c-accent); color: var(--c-accent);
   padding: 12px 20px; font-family: var(--f-mono); font-size: 12.5px;
   letter-spacing: .06em; z-index: 70; box-shadow: 0 0 30px var(--a-22);
-  animation: riseIn .2s ease both; max-width: calc(100vw - 32px); text-align: center;
+  animation: toastIn .2s ease both; text-align: center;
+  /* El ancho de su texto, hasta el de la pantalla. Sin «max-content», con
+     left: 50% el navegador le daba solo media pantalla, y un aviso largo salía
+     en una columna angosta. */
+  width: max-content; max-width: calc(100vw - 32px); max-width: min(560px, calc(100vw - 32px));
 }
 /* En el móvil, por encima de la barra de íconos y no encima de ella. */
 @media (max-width: 900px) {

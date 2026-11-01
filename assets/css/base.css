@@ -71,6 +71,11 @@ option { background: var(--c-surface); color: var(--c-title); }
 
 /* ---- Animaciones --------------------------------------------------------- */
 @keyframes riseIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+/* La de los avisos flotantes conserva su centrado (translateX(-50%)): con
+   riseIn, que termina en «transform: none», el aviso quedaba con el borde
+   izquierdo en el centro de la pantalla, y en el celular salía en una columna
+   angosta a la derecha, encima del botón de guardar. */
+@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
 @keyframes scanline { 0% { top: 10%; } 100% { top: 86%; } }
 @keyframes blip { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
 @keyframes spin { to { transform: rotate(360deg); } }

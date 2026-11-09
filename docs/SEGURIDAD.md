@@ -789,6 +789,47 @@ Desde la 3.14, otros sistemas consultan en JSON quiénes se registraron (`/api/v
     la API lo rechaza desde la consulta siguiente y sus enlaces de fotografía dejan de servir;
     la bitácora conserva quién lo creó y quién lo eliminó.
 
+### Los certificados
+
+Desde la 3.21, cada persona descarga su certificado en PDF y cualquiera lo verifica con su
+código (`App\Controladores\Certificados`, `App\Modelos\Certificado`):
+
+1. **Cada quien, los suyos.** «Mi certificado» y la descarga exigen la sesión de la persona. La
+   dirección de descarga lleva el código, y si no es de uno de sus certificados responde 404 —el
+   mismo que si no existiera—. Mientras un administrador no los abre en Configuración →
+   Certificados, no se emite ni se descarga nada.
+2. **El código** tiene doce caracteres de un alfabeto de 31 —sin 0/O ni 1/I/L, para teclearlo sin
+   dudas—: unos 59 bits al azar (`random_int`), con llave única en la base. Es lo único que lleva
+   el QR, además de la dirección.
+3. **La verificación es pública** (`/v` y `/v/<código>`) y muestra solo lo que el certificado ya
+   dice: el nombre, de qué es, el evento, las horas y la fecha de expedición. Nunca el documento,
+   el correo ni el teléfono. La página lleva `noindex`, y los códigos que no existen cuentan para
+   un límite por IP —20 en cinco minutos la bloquean quince—, aunque con 59 bits no se adivinan.
+4. **Lo que dice se calcula al descargarlo**, con los registros de ese momento: si se quita un
+   ingreso registrado a mano o se retira la aprobación de una exposición, el certificado deja de
+   verificarse. No se guarda el PDF ni sus textos: en el servidor no quedan archivos con datos
+   personales por los certificados.
+5. **El PDF lo escribe la plataforma** (`App\Nucleo\Pdf`), sin bibliotecas de terceros. No lleva
+   JavaScript, formularios ni enlaces, y los textos van como cadenas hexadecimales: un nombre con
+   paréntesis, barras o etiquetas no puede alterar la estructura del archivo. Sale con
+   `Cache-Control: no-store` y una CSP propia —`default-src 'none'; object-src 'self'`—, porque la
+   general de las páginas, con `object-src 'none'` y sin marcos, deja en blanco el visor de PDF
+   del navegador.
+6. **Las imágenes** —el fondo, el del nombre y la firma— siguen las reglas del banner: el tipo
+   por el contenido, regeneradas enteras con GD, sin SVG, con nombre del servidor en
+   `almacen/logos`. Solo el administrador las ve, por una dirección con guardia: una de ellas es
+   una firma. Se borran al reemplazarlas, al quitarlas y al eliminar el evento.
+7. **El ingreso registrado a mano** lo hace solo un administrador, desde la ficha y para una
+   jornada que ya llegó: queda en `asistencia` con `via = 'manual'` y quién lo hizo. Solo esos se
+   pueden quitar; los del código del día y del escáner son el registro de lo que pasó en la
+   puerta.
+8. **Queda en la bitácora** quién abrió o cerró los certificados (`certificados_estado`), quién
+   cambió su configuración (`certificados_configurados`), cada descarga, de la persona o del
+   equipo (`certificado_descargado`), y cada ingreso registrado o quitado a mano
+   (`asistencia_sellada` con `via` manual, `asistencia_manual_quitada`). El código no.
+9. **La tipografía** es Montserrat, con licencia SIL Open Font License 1.1, incrustada como
+   subconjunto; la licencia viaja con las fuentes en `app/Recursos/fuentes/OFL.txt`.
+
 ### El carnet para imprimir o descargar
 
 Desde la 3.15, **Tu carnet** (`/carnet/imprimir`) ofrece **Descargar imágenes**: el frente y el
@@ -1130,7 +1171,7 @@ conviene decirlo con claridad en la pantalla de privacidad.
 | Finalidad determinada | Acreditación, control de asistencia y reportes de cobertura del evento |
 | Datos sensibles con tratamiento reforzado | Tabla aparte, nunca obligatorios —ni siquiera por configuración—, exportación con rol administrador y auditada |
 | Minimización | De fábrica, solo nombre y documento son obligatorios. Cada evento puede pedir menos —el documento puede quedar opcional u oculto— y ocultar lo que no necesite |
-| Circulación restringida | El QR no expone datos; el intercambio comparte cuatro campos y el teléfono es opcional. La API entrega una lista cerrada de campos, nunca los sensibles, y el contacto y la fotografía solo con un token que lo permita |
+| Circulación restringida | El QR no expone datos; el intercambio comparte cuatro campos y el teléfono es opcional. La API entrega una lista cerrada de campos, nunca los sensibles, y el contacto y la fotografía solo con un token que lo permita. La verificación de un certificado muestra solo lo que el certificado ya dice, sin el documento |
 | Derecho de supresión | El intercambio de contactos guarda `revocado_en`. **Falta** el procedimiento para la persona completa |
 | Seguridad | Cifrado del documento, control de acceso por rol, auditoría de lecturas sensibles |
 
@@ -1139,7 +1180,7 @@ conviene decirlo con claridad en la pantalla de privacidad.
 ## 6. Verificación
 
 ```bash
-php pruebas/extremo-a-extremo.php      # 1012 comprobaciones sobre un servidor real
+php pruebas/extremo-a-extremo.php      # 1086 comprobaciones sobre un servidor real
 php pruebas/instalacion.php            # el asistente, y qué se ve cuando falla
 php pruebas/actualizacion.php          # subir desde la 1.0.0 por cada camino, sin perder nada
 php pruebas/claves.php                 # parámetros de Argon2id y rehash
@@ -1151,6 +1192,7 @@ php pruebas/foto.php                   # la foto del carnet y encuadres manipula
 php pruebas/documentos.php             # PDF y PPTX disfrazados de otra cosa
 php pruebas/proxy-y-limites.php        # la IP real detrás del proxy
 php pruebas/qr-php-contra-js.php       # el generador de QR del servidor
+php pruebas/pdf.php                    # el PDF de los certificados: fuente, PNG, archivo y textos
 python3 pruebas/qr-contra-referencia.py
 node pruebas/pantallas.js              # escritorio
 ANCHO=390 node pruebas/pantallas.js    # móvil
@@ -1212,6 +1254,13 @@ Lo que comprueban las de seguridad, concretamente:
   404 en JSON; deja de servir al quitar el permiso —y al volver a darlo hay enlaces nuevos, los
   viejos no reviven—, al revocar el token y cuando la persona cambia de foto. Ver la foto no
   cuenta como consulta del token.
+- Los certificados cerrados no se ven ni se descargan; abiertos, cada persona descarga solo
+  los suyos —el código de otra persona responde 404— y los PDF salen sin caché compartida, con
+  la tabla de referencias bien armada. La verificación pública no muestra el documento ni el
+  correo, no se deja indexar, y tras veinte códigos que no existen la IP espera. Un certificado
+  cuyo ingreso se quitó, o el de un expositor cuando se apagan esos certificados, deja de
+  verificarse. La firma la ve solo el administrador, y un operador no configura los
+  certificados ni registra ingresos a mano.
 - Un filtro mal escrito o con un valor inválido responde 400, no la lista entera.
 - Pasado el tope de un token, 429 solo para ese token; tras veinte tokens inventados desde una
   dirección, 429 para esos intentos mientras un token vigente desde la misma dirección sigue

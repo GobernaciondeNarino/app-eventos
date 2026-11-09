@@ -636,6 +636,16 @@ final class Evento
             }
         }
 
+        // Las imágenes de sus certificados (3.21): el fondo, el del nombre y
+        // la firma, que de un evento eliminado no le sirven a nadie.
+        $imagenesCertificado = [];
+        try {
+            $fila = Bd::fila('SELECT fondo_imagen, texto_imagen, firma_imagen FROM {evento_certificado} WHERE evento_id = ?', [$id]);
+            $imagenesCertificado = array_values(array_filter((array) $fila, static fn($v): bool => (string) $v !== ''));
+        } catch (\Throwable) {
+            // una base sin la tabla todavía: no hay imágenes que borrar
+        }
+
         // Y lo mismo con los adjuntos de los expositores, que además son datos
         // personales de los de verdad: una hoja de vida trae teléfono,
         // dirección y trayectoria laboral.
@@ -661,6 +671,9 @@ final class Evento
         }
         foreach ($banners as $banner) {
             Imagen::borrarBanner($banner);
+        }
+        foreach ($imagenesCertificado as $imagen) {
+            Imagen::borrarParaCertificado((string) $imagen);
         }
 
         Bitacora::registrar('evento_eliminado', 'evento', $id, [

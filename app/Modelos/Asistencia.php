@@ -82,7 +82,7 @@ final class Asistencia
     public static function historial(int $personaId, int $eventoId): array
     {
         return Bd::filas(
-            'SELECT d.numero, d.fecha, a.registrado_en, a.via
+            'SELECT d.id AS jornada_id, d.numero, d.fecha, a.registrado_en, a.via
                FROM {evento_dia} d
           LEFT JOIN {asistencia} a ON a.evento_dia_id = d.id AND a.persona_id = ?
               WHERE d.evento_id = ?

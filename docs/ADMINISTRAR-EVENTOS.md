@@ -3,8 +3,8 @@
 Qué se puede cambiar una vez creado, quién puede tocar qué, y qué no tiene vuelta atrás:
 eventos y jornadas, las propuestas de los expositores, el perfil Staff, la impresión de
 carnets, la acreditación en la puerta, la verificación en dos pasos del equipo, la
-recuperación de contraseñas, el formulario de registro, cómo se recorren los listados largos y
-los tokens de la API con que otros sistemas consultan los registros.
+recuperación de contraseñas, el formulario de registro, cómo se recorren los listados largos,
+los tokens de la API con que otros sistemas consultan los registros y los certificados.
 
 Todo lo de aquí está en **Administración → Eventos**, **QR por día**, **Expositores**,
 **Registros** y **Configuración**, y exige el rol **administrador** salvo donde se diga otra
@@ -1091,3 +1091,89 @@ con el alcance de contacto. La fotografía y la caracterización, solo a un toke
 
 Quién creó, revocó o eliminó cada token, quién lo volvió a ver y quién le incluyó o le quitó la
 fotografía o la caracterización, queda en la bitácora del panel.
+
+## 13. Los certificados
+
+Desde la 3.21, cada persona que asistió descarga su certificado en PDF desde la plataforma, en
+**Mi certificado**. No hay que enviar nada a nadie: cada quien entra y lo baja.
+
+- **Asistencia.** Lo recibe quien registró su ingreso en al menos una jornada —con el código de
+  la entrada, con el escáner del equipo o a mano desde su ficha (13.4)—. Dice a qué jornadas
+  asistió y, si se configuraron, cuántas horas suman.
+- **Asistencia completa.** Quien estuvo en **todas** las jornadas recibe el suyo con un **sello
+  dorado** de «Asistencia completa», el texto «asistió a las dos jornadas…» y la suma de las horas
+  de todo el evento. Es el valor agregado de quedarse los dos días, y la persona lo ve también en
+  su pantalla. Con un evento de una sola jornada no hay sello: todos los que fueron son iguales.
+- **Participación como conferencista.** Cada expositor con su propuesta **aprobada** recibe uno
+  por exposición, con el título, aunque no haya escaneado el código de la entrada. Si además
+  registró su ingreso, tiene también el de asistencia.
+
+### 13.1 Antes de abrirlos
+
+En **Configuración → Certificados**:
+
+1. **Quién certifica.** Por omisión, «La Gobernación de Nariño, a través de la Secretaría TIC,
+   Innovación y Gobierno Abierto,»; la plataforma le agrega «certifica que» y, debajo, el nombre.
+2. **El evento, como se nombra en el texto**, con su artículo: «la Cumbre Tecnológica IA Nariño
+   2026». Vacío, el texto dice «el evento Cumbre…», que vale para cualquier nombre.
+3. **La ciudad**: «…que se realizó en San Juan de Pasto…» y «Se expide en San Juan de Pasto el…».
+4. **Las horas de cada jornada.** Vacías, el certificado no habla de horas.
+5. **Quién firma**: nombre, cargo y, si quieres, la imagen de su firma. Mejor en PNG con fondo
+   transparente; si es una firma escaneada en JPG con fondo blanco, el blanco se vuelve
+   transparente solo. Sin nombre, el certificado sale sin firma.
+6. **El diseño**: el color del título y del nombre, el **fondo de la hoja** —carta horizontal,
+   lo ideal 3300 × 2550 px; con menos de 2400 px de ancho se ve bien en pantalla pero impreso
+   pierde nitidez— y el **fondo del nombre**, la imagen ancha del recuadro donde va el nombre, en
+   PNG con fondo transparente. Sin imágenes, la hoja sale en blanco con un marco del color
+   principal y el nombre del evento arriba.
+
+Guarda y pulsa **Ver un ejemplo**: descarga un certificado con datos inventados y la marca de
+agua «EJEMPLO · SIN VALIDEZ», en sus tres versiones —asistencia completa, una jornada y
+expositor—. Para ver el de una persona de verdad, ábrela en **Registros** y pulsa **PDF** en su
+tarjeta de certificados: funciona aunque estén cerrados.
+
+### 13.2 Abrirlos y cerrarlos
+
+Arriba de la misma pestaña, elige **Disponibles** y guarda el estado. Desde ese momento:
+
+- «Mi certificado» aparece en el menú de cada persona —en el celular, segundo en la barra de
+  abajo, en el lugar de «Mi ingreso», que pasa a la hoja de «más»—, y su carnet avisa que el
+  certificado está listo;
+- la primera vez que alguien abre «Mi certificado», su certificado se **emite**: recibe su
+  código, y la fecha de expedición es la de ese día.
+
+Arriba se ve cuántas personas tienen derecho, cuántas con asistencia completa, cuántos
+expositores y cuántos ya lo descargaron.
+
+**Cerrados** otra vez, salen del menú y no se descargan, pero los que ya se emitieron se siguen
+verificando: un certificado que alguien ya entregó no deja de ser auténtico porque se cerró la
+descarga.
+
+### 13.3 La verificación
+
+Cada certificado lleva un **código** de doce letras y números —«K7M2-9QXR-HT4P»: sin la O ni el
+0, la I ni el 1, para que no se confundan— y un **QR** que lleva a `…/v/` con ese código. Quien
+recibe el certificado —una universidad, una empresa— lo comprueba ahí sin cuenta: la página
+dice si es auténtico, a nombre de quién, de qué y cuándo se expidió. No muestra el documento ni
+el correo. También se puede escribir el código a mano en `…/v`.
+
+Lo que dice el certificado se calcula al descargarlo, con los registros de ese momento. Si
+después se quita un ingreso que se había registrado a mano, o se retira la aprobación de una
+exposición, ese certificado deja de verificarse: la página dice que ya no es válido.
+
+### 13.4 Quien estuvo y no escaneó el código
+
+Sin ingreso no hay certificado de asistencia, y pasado el día el escáner ya no deja sellarlo.
+Para eso, en la ficha de la persona (**Registros**), la tarjeta **Ingresos** tiene un botón
+**Registrar** en cada jornada que ya llegó y en la que no tiene ingreso: lo registra a mano,
+después de confirmar, y cuenta para su certificado. Solo el administrador lo ve.
+
+Un ingreso registrado a mano se puede **Quitar** desde el mismo lugar; los del código de la
+entrada y los del escáner no, porque son el registro de lo que pasó en la puerta. Las dos cosas
+quedan en la bitácora con quién las hizo.
+
+### 13.5 Si alguien no puede entrar
+
+Desde su ficha, el operador de acceso y el administrador descargan su certificado con el botón
+**PDF** de la tarjeta **Certificados** y se lo envían por otro medio. Queda en la bitácora que lo
+descargó el equipo.

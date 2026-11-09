@@ -198,6 +198,154 @@ final class Imagen
         }
     }
 
+    /**
+     * Las tres imágenes del certificado (3.21), con las reglas del banner: el
+     * tipo por el contenido, la imagen regenerada entera, sin SVG y con el
+     * nombre puesto aquí.
+     *
+     *   · 'fondo': la hoja entera. Sale en JPEG —el PDF la lleva tal cual— y a lo
+     *     sumo de 2400 px de ancho, que impreso en carta da unos 220 puntos por
+     *     pulgada: más solo haría pesar cada certificado.
+     *   · 'texto': el recuadro donde va el nombre. PNG, para conservar la
+     *     transparencia de las esquinas.
+     *   · 'firma': PNG también. Si llega sin transparencia —una firma escaneada
+     *     en JPG—, el papel blanco se vuelve transparente: si no, sobre el
+     *     fondo quedaría un rectángulo blanco.
+     *
+     * @return array{0: string, 1: string} [nombreArchivo, tipoMime]
+     * @throws \DomainException con un texto que se le puede enseñar a la persona
+     */
+    public static function guardarParaCertificado(array $archivo, int $eventoId, string $ranura): array
+    {
+        $reglas = [
+            'fondo' => ['minimo' => 800, 'maximo' => 2400, 'que' => 'El fondo'],
+            'texto' => ['minimo' => 300, 'maximo' => 1800, 'que' => 'El fondo del texto'],
+            'firma' => ['minimo' => 120, 'maximo' => 900, 'que' => 'La firma'],
+        ][$ranura] ?? null;
+        if ($reglas === null) {
+            throw new \DomainException('Imagen de certificado desconocida.');
+        }
+        self::validarSubida($archivo, $reglas['que']);
+
+        $finfo = new \finfo(FILEINFO_MIME_TYPE);
+        $tipoReal = (string) $finfo->file($archivo['tmp_name']);
+        if (!isset(self::TIPOS[$tipoReal])) {
+            throw new \DomainException($reglas['que'] . ' tiene que ser JPG, PNG o WEBP.');
+        }
+        if (!function_exists('imagecreatefromstring')) {
+            throw new \DomainException(
+                'Este servidor no tiene la extensión GD de PHP, que es la que procesa las '
+                . 'imágenes. Pídele al área de sistemas que la active.'
+            );
+        }
+        $original = @imagecreatefromstring((string) file_get_contents($archivo['tmp_name']));
+        if ($original === false) {
+            throw new \DomainException('La imagen está dañada o no se pudo leer. Prueba con otra.');
+        }
+        $imagen = self::enderezar($original, $archivo['tmp_name'], $tipoReal);
+        if ($imagen !== $original) {
+            imagedestroy($original);
+        }
+
+        $ancho = imagesx($imagen);
+        $alto = imagesy($imagen);
+        if ($ancho < $reglas['minimo']) {
+            imagedestroy($imagen);
+            throw new \DomainException($reglas['que'] . ' es muy pequeño: usa una imagen de al menos '
+                . $reglas['minimo'] . ' px de ancho' . ($ranura === 'fondo' ? ' (mejor 2400 o más, para que se imprima nítido)' : '') . '.');
+        }
+
+        $escala = min(1.0, $reglas['maximo'] / $ancho);
+        $nuevoAncho = max(1, (int) round($ancho * $escala));
+        $nuevoAlto = max(1, (int) round($alto * $escala));
+        $transparente = $ranura !== 'fondo';
+
+        $destino = imagecreatetruecolor($nuevoAncho, $nuevoAlto);
+        if ($transparente) {
+            imagealphablending($destino, false);
+            imagesavealpha($destino, true);
+            imagefill($destino, 0, 0, imagecolorallocatealpha($destino, 0, 0, 0, 127));
+        } else {
+            // El fondo va siempre en JPEG: lo transparente queda sobre blanco.
+            imagefill($destino, 0, 0, imagecolorallocate($destino, 255, 255, 255));
+            imagealphablending($destino, true);
+        }
+        imagecopyresampled($destino, $imagen, 0, 0, 0, 0, $nuevoAncho, $nuevoAlto, $ancho, $alto);
+        imagedestroy($imagen);
+
+        if ($ranura === 'firma' && !self::tieneTransparencia($destino)) {
+            self::blancoATransparente($destino);
+        }
+
+        $directorio = RAIZ . '/almacen/logos';
+        if (!is_dir($directorio)) {
+            @mkdir($directorio, 0750, true);
+        }
+        $nombre = 'certificado-' . $ranura . '-' . $eventoId . '-' . bin2hex(random_bytes(6)) . ($transparente ? '.png' : '.jpg');
+        $ruta = $directorio . '/' . $nombre;
+        $escrita = $transparente ? imagepng($destino, $ruta, 7) : imagejpeg($destino, $ruta, 88);
+        imagedestroy($destino);
+        if (!$escrita) {
+            throw new \DomainException('No se pudo guardar la imagen en el servidor. Revisa los permisos de almacen/logos.');
+        }
+        @chmod($ruta, 0640);
+
+        return [$nombre, $transparente ? 'image/png' : 'image/jpeg'];
+    }
+
+    /** Borra una imagen del certificado y lo que el PDF guardó de ella. */
+    public static function borrarParaCertificado(string $nombre): void
+    {
+        $nombre = basename($nombre);
+        if ($nombre !== '' && str_starts_with($nombre, 'certificado-')) {
+            @unlink(RAIZ . '/almacen/logos/' . $nombre);
+            @unlink(RAIZ . '/almacen/logos/' . $nombre . '.cache');
+        }
+    }
+
+    /** ¿Hay algún píxel que no sea opaco? Se mira una muestra, no la imagen entera. */
+    private static function tieneTransparencia(\GdImage $imagen): bool
+    {
+        $ancho = imagesx($imagen);
+        $alto = imagesy($imagen);
+        $paso = max(1, (int) floor(min($ancho, $alto) / 60));
+        for ($y = 0; $y < $alto; $y += $paso) {
+            for ($x = 0; $x < $ancho; $x += $paso) {
+                if (((imagecolorat($imagen, $x, $y) >> 24) & 0x7F) > 0) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * El papel de una firma escaneada, transparente. Lo muy claro desaparece,
+     * lo oscuro queda, y en medio un degradado para que el trazo no quede con
+     * el borde aserrado.
+     */
+    private static function blancoATransparente(\GdImage $imagen): void
+    {
+        imagealphablending($imagen, false);
+        imagesavealpha($imagen, true);
+        $ancho = imagesx($imagen);
+        $alto = imagesy($imagen);
+        for ($y = 0; $y < $alto; $y++) {
+            for ($x = 0; $x < $ancho; $x++) {
+                $c = imagecolorat($imagen, $x, $y);
+                $r = ($c >> 16) & 0xFF;
+                $g = ($c >> 8) & 0xFF;
+                $b = $c & 0xFF;
+                $luz = 0.299 * $r + 0.587 * $g + 0.114 * $b;
+                // 0 (opaco) por debajo de 150; 127 (transparente) por encima de 225.
+                $alfa = (int) round(max(0.0, min(1.0, ($luz - 150) / 75)) * 127);
+                if ($alfa > 0) {
+                    imagesetpixel($imagen, $x, $y, imagecolorallocatealpha($imagen, $r, $g, $b, $alfa));
+                }
+            }
+        }
+    }
+
     /* =====================================================================
        Interno
        ===================================================================== */

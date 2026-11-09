@@ -108,7 +108,10 @@ final class Bitacora
             'acceso_correcto'    => "$quien inició sesión" . (($detalle['via'] ?? '') === 'correo' ? ' con un código del correo' : ''),
             'acceso_fallido'     => 'Intento de acceso fallido',
             'acceso_cerrado'     => "$quien cerró sesión",
-            'asistencia_sellada' => "$quien registró un ingreso" . (isset($detalle['dia']) ? ' del día ' . $detalle['dia'] : ''),
+            'asistencia_sellada' => "$quien registró " . (($detalle['via'] ?? '') === 'manual' ? 'a mano, desde la ficha, ' : '')
+                . 'un ingreso' . (isset($detalle['dia']) ? ' del día ' . $detalle['dia'] : ''),
+            'asistencia_manual_quitada' => "$quien quitó un ingreso registrado a mano"
+                . (isset($detalle['dia']) ? ' (día ' . $detalle['dia'] . ')' : ''),
             'checkin_propio'     => 'Un asistente registró su ingreso' . (isset($detalle['dia']) ? ' del día ' . $detalle['dia'] : ''),
             'registro'           => ($detalle['por'] ?? '') === 'equipo'
                 ? "$quien registró a una persona"
@@ -182,6 +185,14 @@ final class Bitacora
             // Una línea por token y por día, no por consulta (TokenApi::anotarCaracterizacion()).
             'api_caracterizacion' => 'La API entregó la caracterización'
                 . (isset($detalle['nombre']) ? ' con el token de «' . $detalle['nombre'] . '»' : ''),
+            // Los certificados (3.21).
+            'certificado_descargado' => (($detalle['por'] ?? '') === 'equipo'
+                    ? "$quien descargó el certificado de una persona" : 'Un asistente descargó su certificado')
+                . (($detalle['tipo'] ?? '') === 'expositor' ? ' de participación como conferencista' : ' de asistencia'),
+            'certificados_configurados' => "$quien cambió la configuración de los certificados",
+            'certificados_estado' => ($detalle['estado'] ?? '') === 'abierto'
+                ? "$quien abrió los certificados: cada persona con derecho ya descarga el suyo"
+                : "$quien cerró los certificados",
             'usuario_restablecido' => 'Se restableció el acceso de una cuenta administradora',
             'segundo_factor_retirado' => 'Se retiró el segundo factor de una cuenta',
             'segundo_factor_activado' => "$quien activó la verificación en dos pasos",

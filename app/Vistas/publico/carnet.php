@@ -6,6 +6,7 @@
  * @var array $historial @var array $persona @var array $tema @var array $dispositivos
  * @var array|null $exposicion  la propuesta de quien expone ([] si no la ha enviado); null si no expone
  * @var array $faltantes  lo que le falta a su perfil para estar completo
+ * @var array|null $certificado  con los certificados abiertos (3.21): ['cuantos' => n, 'completa' => bool]
  */
 defined('EVENTOS_TIC') || exit;
 
@@ -24,6 +25,26 @@ $talla = static function (string $texto, int $corto, int $largo): string {
 guiones('carnet.js');
 ?>
 <div class="view view--medium split--reverse">
+
+  <?php if (($certificado ?? null) !== null): ?>
+    <!-- Con los certificados abiertos el evento ya pasó: lo primero que se ve
+         al entrar, también en el celular —donde el carnet ocupa la pantalla—,
+         es el camino a descargarlo (3.21). Va dentro de la rejilla, en una
+         fila de lado a lado: .main centra un solo bloque, y un segundo bloque
+         suelto se ponía al lado del carnet en vez de encima. -->
+    <a class="notice notice--ok no-print" href="<?= e(u('/certificado')) ?>"
+       style="text-decoration:none;color:inherit;grid-column:1 / -1" data-aviso-certificado>
+      <span class="notice__icon" aria-hidden="true">★</span>
+      <span class="stack" style="gap:4px">
+        <strong><?= $certificado['cuantos'] > 0
+            ? ($certificado['completa'] ? 'Tu certificado de asistencia completa está listo' : 'Tu certificado está listo')
+            : 'Los certificados ya están disponibles' ?></strong>
+        <span class="help" style="margin:0"><?= $certificado['cuantos'] > 0
+            ? 'Descárgalo en PDF desde «Mi certificado». Ir a Mi certificado ›'
+            : 'No encontramos tu ingreso en el evento. Mira los detalles en «Mi certificado» ›' ?></span>
+      </span>
+    </a>
+  <?php endif; ?>
 
   <!-- ================= La credencial ================= -->
   <div class="carnet-wrap">

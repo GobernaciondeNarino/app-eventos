@@ -26,6 +26,9 @@ final class Enrutador
         'token' => '[a-f0-9]{16,64}',
         'slug'  => '[a-z0-9\-]{1,60}',
         'texto' => '[^/]{1,120}',
+        // El código de un certificado, como va impreso: «K7M2-9QXR-HT4P», o
+        // sin guiones y en minúsculas, que es como lo teclea la gente.
+        'codigo' => '[A-Za-z0-9\-]{6,24}',
     ];
 
     /**

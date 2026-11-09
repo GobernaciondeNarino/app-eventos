@@ -378,7 +378,9 @@ final class Instalador
             'openssl'   => ['Cifrado del documento y de los tokens', true],
             'json'      => ['Serialización interna', true],
             'fileinfo'  => ['Verificar el tipo real de los archivos subidos', true],
-            'gd'        => ['Reducir el logo y las fotos del carnet', false],
+            'gd'        => ['Reducir el logo y las fotos del carnet, y las imágenes del certificado', false],
+            // El PDF de los certificados va comprimido (3.21).
+            'zlib'      => ['Generar los certificados en PDF', false],
             'zip'       => ['Comprobar que un PPTX es de verdad una presentación', false],
             'sodium'    => ['Cifrado moderno; sin él se usa AES-GCM', false],
         ] as $extension => [$para, $obligatoria]) {

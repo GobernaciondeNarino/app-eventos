@@ -1193,6 +1193,110 @@ function titulo(t) {
   await visitante.close();
 
   /* =====================================================================
+     Certificados (3.21)
+     ---------------------------------------------------------------------
+     El administrador los abre y, desde la ficha que se abre en el diálogo
+     de Registros, le registra a mano a María el ingreso de una jornada.
+     En el celular de María aparece «Mi certificado» en la barra de abajo;
+     lo descarga en PDF y lo comprueba con su código. Al final todo vuelve
+     a como estaba: cerrados y sin el ingreso a mano.
+     ===================================================================== */
+  titulo('Certificados');
+
+  if (!TOKEN) {
+    comprobar('hay un token de asistente para la prueba de certificados (corre antes extremo-a-extremo.php)', false);
+  } else {
+    const escritorio = await navegador.newContext({ viewport: { width: 1440, height: 1000 } });
+    const pa = await escritorio.newPage();
+    const erroresCert = [];
+    pa.on('pageerror', e => erroresCert.push(e.message));
+    await pa.goto(BASE + '/admin/entrar', { waitUntil: 'networkidle' });
+    await pa.fill('#correo', ADMIN.correo);
+    await pa.fill('#clave', ADMIN.clave);
+    await Promise.all([pa.waitForNavigation(), pa.click('button[type=submit]')]);
+
+    const ponerEstado = async estado => {
+      await pa.goto(BASE + '/admin/configuracion/certificados', { waitUntil: 'networkidle' });
+      await pa.check('input[name="estado"][value="' + estado + '"]');
+      pa.once('dialog', d => d.accept());
+      await Promise.all([pa.waitForNavigation(), pa.click('button:has-text("Guardar el estado")')]);
+      return pa.locator('[data-estado-certificados]').getAttribute('data-estado-certificados');
+    };
+    comprobar('el administrador abre los certificados, con la confirmación', await ponerEstado('abierto') === 'abierto');
+
+    // La ficha de María, en el diálogo de Registros.
+    await pa.goto(BASE + '/admin/registros?q=mzambrano', { waitUntil: 'networkidle' });
+    await pa.locator('[data-ficha]').first().click();
+    await pa.waitForSelector('#modal-ficha [data-ficha-contenido]');
+    const marcar = pa.locator('#modal-ficha [data-asistencia-manual="marcar"]').first();
+    const habiaQueMarcar = await marcar.count() > 0;
+    let diaManual = '';
+    if (habiaQueMarcar) {
+      diaManual = await marcar.locator('xpath=ancestor::*[@data-jornada-ficha][1]').getAttribute('data-jornada-ficha');
+      let pregunta = '';
+      pa.once('dialog', d => { pregunta = d.message(); d.accept(); });
+      await marcar.click();
+      await pa.waitForSelector('#modal-ficha [data-jornada-ficha="' + diaManual + '"] [data-asistencia-manual="quitar"]');
+      comprobar('desde la ficha registra a mano el ingreso de una jornada, preguntando antes, sin salir del diálogo',
+        pregunta.includes('cuenta para su certificado') && await pa.locator('#modal-ficha').isVisible(), pregunta);
+    } else {
+      comprobar('María ya tiene ingreso en todas las jornadas que llegaron: no hay nada que registrar a mano', true);
+    }
+    await pa.keyboard.press('Escape');
+
+    const celular = await navegador.newContext({
+      viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, acceptDownloads: true,
+    });
+    const pm = await celular.newPage();
+    pm.on('pageerror', e => erroresCert.push(e.message));
+    await pm.goto(BASE + '/entrar/qr/' + TOKEN, { waitUntil: 'networkidle' });
+    const barra = await barraMovil(pm);
+    comprobar('en el celular, «Mi certificado» queda segundo en la barra de abajo, con su propio ícono',
+      barra && barra.etiquetas[1] === 'Mi certificado' && barra.iconosDistintos, barra && barra.etiquetas.join(' · '));
+    comprobar('y el carnet avisa que el certificado está listo', await pm.locator('[data-aviso-certificado]').isVisible());
+
+    await pm.locator('.tabbar [aria-label="Mi certificado"]').click();
+    await pm.waitForSelector('[data-certificado]');
+    const sinDesborde = await pm.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
+    comprobar('«Mi certificado» se ve completo en 390 px, sin desbordar', sinDesborde
+      && await pm.locator('[data-descargar-certificado]').first().isVisible());
+    const [descarga] = await Promise.all([
+      pm.waitForEvent('download'),
+      pm.locator('[data-descargar-certificado]').first().click(),
+    ]);
+    const ruta = await descarga.path();
+    const inicio = ruta ? fs.readFileSync(ruta).subarray(0, 8).toString('latin1') : '';
+    comprobar('«Descargar certificado» baja el PDF con el nombre de María',
+      inicio === '%PDF-1.4' && /^Certificado-asistencia-Maria-Fernanda-Zambrano.*\.pdf$/.test(descarga.suggestedFilename()),
+      descarga.suggestedFilename() + ' ' + inicio);
+
+    const codigo = (await pm.locator('[data-codigo]').first().innerText()).trim();
+    const verificacion = await celular.newPage();
+    await verificacion.goto(BASE + '/v?codigo=' + encodeURIComponent(codigo.toLowerCase()), { waitUntil: 'networkidle' });
+    comprobar('su código, escrito en minúsculas, se verifica como auténtico',
+      await verificacion.locator('[data-verificacion="valido"]').isVisible()
+      && /MARÍA FERNANDA ZAMBRANO/.test(await verificacion.locator('[data-nombre]').innerText()), codigo);
+    await verificacion.close();
+
+    // Todo como estaba.
+    comprobar('al cerrarlos, sale de la barra', await ponerEstado('cerrado') === 'cerrado'
+      && !(await (async () => { await pm.goto(BASE + '/carnet', { waitUntil: 'networkidle' });
+        const b = await barraMovil(pm); return b && b.etiquetas.includes('Mi certificado'); })()));
+    if (habiaQueMarcar) {
+      await pa.goto(BASE + '/admin/registros?q=mzambrano', { waitUntil: 'networkidle' });
+      await pa.locator('[data-ficha]').first().click();
+      await pa.waitForSelector('#modal-ficha [data-asistencia-manual="quitar"]');
+      pa.once('dialog', d => d.accept());
+      await pa.locator('#modal-ficha [data-jornada-ficha="' + diaManual + '"] [data-asistencia-manual="quitar"]').click();
+      await pa.waitForSelector('#modal-ficha [data-jornada-ficha="' + diaManual + '"] [data-asistencia-manual="marcar"]');
+      comprobar('y el ingreso registrado a mano se quita desde la misma ficha', true);
+    }
+    comprobar('sin errores de JavaScript en todo el recorrido', erroresCert.length === 0, erroresCert.join(' | '));
+    await celular.close();
+    await escritorio.close();
+  }
+
+  /* =====================================================================
      Segundo factor: la hora del servidor contra la de este equipo
      ---------------------------------------------------------------------
      El aviso lo pinta segundo-factor.js. No se puede correr el reloj del

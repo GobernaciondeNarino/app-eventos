@@ -38,6 +38,8 @@ $iconos = [
     'llave'    => 'M14.5 9.5a3.5 3.5 0 1 1-3.4 4.4L4 20.5H2.5V18l6.6-6.6a3.5 3.5 0 0 1 5.4-1.9M16 8h.01',
     'ajustes'  => 'M4 6.5h9M17 6.5h3M4 12h3M11 12h9M4 17.5h11M19 17.5h1M15 4.5v4M9 10v4M17 15.5v4',
     'menu'     => 'M4 7h16M4 12h16M4 17h16',
+    // Una medalla con sus cintas: el certificado (3.21).
+    'certificado' => 'M12 14.5a5 5 0 1 0 0-10 5 5 0 0 0 0 10M9.2 13.7 7.8 20.5l4.2-2.1 4.2 2.1-1.4-6.8M12 7.5v4M10 9.5h4',
 ];
 
 /** Dibuja un icono del juego de arriba. */
@@ -73,6 +75,16 @@ if ($persona !== null) {
     // barra de abajo del celular, que muestra las cuatro primeras.
     if (\App\Modelos\Persona::esExpositor($persona)) {
         $grupoParticipante[] = ['clave' => 'exposicion', 'etiqueta' => 'Mi exposición', 'icono' => 'mic', 'ruta' => '/exposicion'];
+    }
+    // Con los certificados abiertos (3.21) el evento ya pasó: «Mi certificado»
+    // entra segundo, a la barra de abajo, y «Mi ingreso», que ya no tiene uso,
+    // sale de ella y queda en la hoja con el resto.
+    if (\App\Modelos\Certificado::abiertos(['id' => (int) $persona['evento_id']])) {
+        $ingreso = $grupoParticipante[1];
+        array_splice($grupoParticipante, 1, 1, [
+            ['clave' => 'certificado', 'etiqueta' => 'Mi certificado', 'icono' => 'certificado', 'ruta' => '/certificado'],
+        ]);
+        array_splice($grupoParticipante, 4, 0, [$ingreso]);
     }
 }
 

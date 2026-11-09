@@ -79,7 +79,28 @@ final class Carnet
                 ? (Persona::suPropuesta((int) $persona['id']) ?? []) : null,
             // Lo que le falta a su perfil, para invitarla a completarlo.
             'faltantes'    => Persona::faltantes($persona, Formulario::delEvento((int) $persona['evento_id'])),
+            // Con los certificados abiertos, el aviso para ir a descargarlo.
+            'certificado'  => self::avisoDeCertificado($persona),
         ]);
+    }
+
+    /**
+     * Si ya se pueden descargar los certificados: cuántos tiene y si alguno es
+     * de asistencia completa. Sin emitirlos: eso pasa en «Mi certificado».
+     *
+     * @return array{cuantos: int, completa: bool}|null
+     */
+    private static function avisoDeCertificado(array $persona): ?array
+    {
+        if (!\App\Modelos\Certificado::abiertos(['id' => (int) $persona['evento_id']])
+            || !\App\Modelos\Certificado::tieneNombre($persona)) {
+            return null;
+        }
+        $suyos = \App\Modelos\Certificado::dePersona($persona, false);
+        return [
+            'cuantos'  => count($suyos),
+            'completa' => (bool) array_filter($suyos, static fn(array $c): bool => !empty($c['asistencia']['completa']) && $c['tipo'] === 'asistencia'),
+        ];
     }
 
     /**

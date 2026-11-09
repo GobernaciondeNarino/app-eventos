@@ -15,7 +15,7 @@ use App\Nucleo\Bd;
  */
 final class Esquema
 {
-    public const VERSION = '1.15.0';
+    public const VERSION = '1.16.0';
 
     /**
      * Columnas que ya existen pero cambiaron de tipo.
@@ -569,6 +569,68 @@ final class Esquema
                 'llaves' => [
                     'PRIMARY KEY (id)',
                     'UNIQUE KEY uq_api_token (token_hash)',
+                ],
+            ],
+
+            // 1.16.0. Dos tablas nuevas y nada más: no se toca ninguna que ya
+            // exista. Sin ellas la plataforma funciona como en la 3.20, solo
+            // que sin certificados.
+            'evento_certificado' => [
+                'nota' => 'Los certificados de cada evento: si ya se pueden descargar, cómo se nombra el evento y quién certifica, la ciudad, las horas de cada jornada, la firma y las imágenes de fondo. Lo que no está guardado es el de fábrica.',
+                'columnas' => [
+                    'evento_id'       => 'INT UNSIGNED NOT NULL',
+                    // 'cerrado' —nadie los ve todavía— o 'abierto'. Texto y no
+                    // ENUM, como el estado del registro.
+                    'estado'          => "VARCHAR(12) NOT NULL DEFAULT 'cerrado'",
+                    // Con su artículo: «la Cumbre Tecnológica IA Nariño 2026».
+                    // Vacío, «el evento» y el nombre del evento.
+                    'nombre_evento'   => "VARCHAR(200) NOT NULL DEFAULT ''",
+                    // «La Gobernación de Nariño, a través de…»; se completa con
+                    // «certifica que». Vacío, el de fábrica.
+                    'entidad'         => "VARCHAR(300) NOT NULL DEFAULT ''",
+                    'ciudad'          => "VARCHAR(120) NOT NULL DEFAULT ''",
+                    // JSON: las horas de cada jornada, por el id de evento_dia
+                    // —que no cambia al renumerar los días—.
+                    'horas_json'      => 'TEXT NULL',
+                    'expositores'     => 'TINYINT(1) NOT NULL DEFAULT 1',
+                    'color'           => "VARCHAR(7) NOT NULL DEFAULT ''",
+                    'firma_nombre'    => "VARCHAR(160) NOT NULL DEFAULT ''",
+                    'firma_cargo'     => "VARCHAR(200) NOT NULL DEFAULT ''",
+                    // Las imágenes, como el banner: el nombre que les puso el
+                    // servidor dentro de almacen/logos. Se regeneran al subirlas.
+                    'firma_imagen'    => "VARCHAR(120) NOT NULL DEFAULT ''",
+                    'fondo_imagen'    => "VARCHAR(120) NOT NULL DEFAULT ''",
+                    'texto_imagen'    => "VARCHAR(120) NOT NULL DEFAULT ''",
+                    'actualizado_en'  => 'DATETIME NULL',
+                    'actualizado_por' => 'INT UNSIGNED NULL',
+                ],
+                'llaves' => [
+                    'PRIMARY KEY (evento_id)',
+                    'CONSTRAINT fk_certconf_evento FOREIGN KEY (evento_id) REFERENCES {evento} (id) ON DELETE CASCADE',
+                ],
+            ],
+
+            'certificado' => [
+                'nota' => 'Los certificados emitidos: uno de asistencia por persona y uno de participación por cada exposición aprobada. El código va impreso y en el QR, y con él cualquiera comprueba en /v, sin cuenta, que es auténtico. Lo que dice el certificado se calcula al descargarlo, así que aquí no se guarda.',
+                'columnas' => [
+                    'id'            => 'INT UNSIGNED NOT NULL AUTO_INCREMENT',
+                    'persona_id'    => 'INT UNSIGNED NOT NULL',
+                    // 'asistencia' o 'expositor'.
+                    'tipo'          => 'VARCHAR(20) NOT NULL',
+                    // La propuesta, en los de expositor; 0 en el de asistencia.
+                    // No es NULL a propósito: en la llave única, dos NULL no
+                    // chocan y una persona podría quedar con dos de asistencia.
+                    'referencia'    => 'INT UNSIGNED NOT NULL DEFAULT 0',
+                    'codigo'        => 'CHAR(12) NOT NULL',
+                    'emitido_en'    => 'DATETIME NOT NULL',
+                    'descargas'     => 'INT UNSIGNED NOT NULL DEFAULT 0',
+                    'descargado_en' => 'DATETIME NULL',
+                ],
+                'llaves' => [
+                    'PRIMARY KEY (id)',
+                    'UNIQUE KEY uq_certificado (persona_id, tipo, referencia)',
+                    'UNIQUE KEY uq_certificado_codigo (codigo)',
+                    'CONSTRAINT fk_certificado_persona FOREIGN KEY (persona_id) REFERENCES {persona} (id) ON DELETE CASCADE',
                 ],
             ],
 

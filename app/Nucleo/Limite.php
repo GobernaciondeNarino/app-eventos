@@ -60,6 +60,9 @@ final class Limite
         // La API: tokens que no existen, por IP. El tope de consultas de un
         // token válido va en su propia fila (App\Modelos\TokenApi).
         'api_token'          => [20, 300, 900],
+        // Códigos de certificado que no existen, por IP (3.21). Con doce letras
+        // no se adivinan, pero la página es pública y muestra un nombre.
+        'certificado_codigo' => [20, 300, 900],
         // Cada prueba de correo abre una conexión y puede esperar quince
         // segundos. Sin tope, el botón es una forma cómoda de tener ocupado al
         // servidor; y probar contra Google muchas veces seguidas hace que

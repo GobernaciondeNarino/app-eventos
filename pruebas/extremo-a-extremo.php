@@ -5976,6 +5976,544 @@ comprobar('el operador vuelve a su rol y el registro queda abierto', $estadoRegi
     && (string) $pdo->query("SELECT rol FROM {$P}usuario WHERE id = $idOperador")->fetchColumn() === 'operador');
 
 /* =========================================================================
+   Certificados (3.21)
+   -------------------------------------------------------------------------
+   Asistencia —completa o no—, participación de los expositores, la descarga,
+   el código que cualquiera verifica, el ingreso registrado a mano para quien
+   estuvo y no escaneó, y la base sin las tablas nuevas.
+   ========================================================================= */
+titulo('Certificados');
+
+$P = $BD['prefijo'];
+$pdo->exec("DELETE FROM {$P}intento");
+$cuenta = static fn(string $sql): int => (int) $pdo->query($sql)->fetchColumn();
+$idEventoCert = (int) $pdo->query("SELECT id FROM {$P}evento WHERE activo = 1")->fetchColumn();
+$personaCert = static fn(string $correo): array => $pdo->query("SELECT * FROM {$P}persona WHERE correo = "
+    . $pdo->quote($correo))->fetch(PDO::FETCH_ASSOC) ?: [];
+$entrarCon = static function (array $persona) use ($BASE, $pdo, $P): Cliente {
+    $id = (int) $persona['id'];
+    $pdo->exec("UPDATE {$P}persona SET acceso_token = '" . bin2hex(random_bytes(16)) . "' WHERE id = $id AND acceso_token IS NULL");
+    $cliente = new Cliente($BASE);
+    $cliente->get('/entrar/qr/' . (string) $pdo->query("SELECT acceso_token FROM {$P}persona WHERE id = $id")->fetchColumn(), false);
+    return $cliente;
+};
+// El texto de un PDF de la plataforma: los arreglos TJ de sus flujos, en 1252.
+$textoDelPdf = static function (string $pdf): string {
+    $salida = '';
+    $desde = 0;
+    while (preg_match('/<<([^<>]*)>>\nstream\n/', $pdf, $m, PREG_OFFSET_CAPTURE, $desde)) {
+        $inicio = $m[0][1] + strlen($m[0][0]);
+        $largo = preg_match('/\/Length (\d+)/', $m[1][0], $l) ? (int) $l[1] : 0;
+        $desde = $inicio + $largo;
+        if (!str_contains($m[1][0], '/FlateDecode') || str_contains($m[1][0], '/Image') || str_contains($m[1][0], '/Length1')) {
+            continue;
+        }
+        $contenido = @gzuncompress(substr($pdf, $inicio, $largo));
+        if (!is_string($contenido)) {
+            continue;
+        }
+        preg_match_all('/\[((?:<[0-9a-f]*>\s*-?\d*\s*)*)\]\s*TJ/', $contenido, $arreglos);
+        foreach ($arreglos[1] as $arreglo) {
+            preg_match_all('/<([0-9a-f]*)>/', $arreglo, $hex);
+            $salida .= implode('', array_map('hex2bin', $hex[1]));
+        }
+    }
+    return (string) mb_convert_encoding($salida, 'UTF-8', 'Windows-1252');
+};
+$sinEspacios = static fn(string $texto): string => (string) preg_replace('/\s+/u', '', $texto);
+$dice = static fn(string $texto, string $frase): bool => str_contains($sinEspacios($texto), $sinEspacios($frase));
+// La tabla de referencias: cada objeto empieza donde ella dice.
+$pdfBienArmado = static function (string $pdf): bool {
+    if (!str_starts_with($pdf, '%PDF-1.4') || !preg_match('/startxref\n(\d+)\n%%EOF\n$/', $pdf, $m)) {
+        return false;
+    }
+    $xref = (int) $m[1];
+    if (!preg_match('/^xref\n0 (\d+)\n/', substr($pdf, $xref, 40), $c)) {
+        return false;
+    }
+    $tabla = substr($pdf, $xref + strlen("xref\n0 {$c[1]}\n"), 20 * (int) $c[1]);
+    for ($i = 1; $i < (int) $c[1]; $i++) {
+        if (!str_starts_with(substr($pdf, (int) substr($tabla, 20 * $i, 10), 16), "$i 0 obj")) {
+            return false;
+        }
+    }
+    return true;
+};
+$fechaLarga = static function (string $iso): string {
+    $meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+    $t = strtotime($iso);
+    return date('j', $t) . ' de ' . $meses[(int) date('n', $t) - 1] . ' de ' . date('Y', $t);
+};
+$imagenDePrueba = static function (int $ancho, int $alto, string $formato, string $estilo) : string {
+    $im = imagecreatetruecolor($ancho, $alto);
+    if ($estilo === 'transparente') {
+        imagealphablending($im, false);
+        imagesavealpha($im, true);
+        imagefill($im, 0, 0, imagecolorallocatealpha($im, 0, 0, 0, 127));
+        imagefilledrectangle($im, 8, 8, $ancho - 9, $alto - 9, imagecolorallocatealpha($im, 230, 240, 252, 10));
+    } else {
+        imagefill($im, 0, 0, imagecolorallocate($im, 255, 255, 255));
+        $tinta = imagecolorallocate($im, 16, 41, 81);
+        if ($estilo === 'firma') {
+            imagesetthickness($im, 5);
+            imageline($im, 20, $alto - 30, $ancho - 20, 25, $tinta);
+        } else {
+            imagefilledrectangle($im, 0, 0, $ancho, (int) ($alto * 0.18), $tinta);
+        }
+    }
+    ob_start();
+    $formato === 'png' ? imagepng($im) : imagejpeg($im, null, 88);
+    imagedestroy($im);
+    return (string) ob_get_clean();
+};
+
+$jornadasCert = $pdo->query("SELECT id, numero, fecha FROM {$P}evento_dia WHERE evento_id = $idEventoCert ORDER BY fecha, numero")
+    ->fetchAll(PDO::FETCH_ASSOC);
+$cuantasJornadas = count($jornadasCert);
+$hoyCert = date('Y-m-d');
+// Una jornada que ya llegó, para registrar un ingreso a mano.
+$pasada = null;
+foreach ($jornadasCert as $j) {
+    if ($j['fecha'] <= $hoyCert) {
+        $pasada = $j;
+        break;
+    }
+}
+if ($pasada === null) {
+    $pdo->exec("UPDATE {$P}evento_dia SET fecha = '$hoyCert' WHERE id = " . (int) $jornadasCert[0]['id']);
+    $jornadasCert[0]['fecha'] = $hoyCert;
+    $pasada = $jornadasCert[0];
+    usort($jornadasCert, static fn(array $a, array $b): int => [$a['fecha'], $a['numero']] <=> [$b['fecha'], $b['numero']]);
+}
+$futura = null;
+foreach ($jornadasCert as $j) {
+    if ($j['fecha'] > $hoyCert) {
+        $futura = $j;
+    }
+}
+$primeraJornadaCert = (int) $jornadasCert[0]['id'];
+$horasDe = static fn(array $j): int => (int) $j['id'] === $primeraJornadaCert ? 8 : 6;
+
+$maria = $personaCert('mzambrano@narino.gov.co');
+$yulimar = $personaCert('yramirez@narino.gov.co');
+$paula = $personaCert('pmontenegro@narino.gov.co');
+$carlos = $personaCert('cbolanos@tumaco.gov.co');
+$sinCedula = $personaCert('sincedula@narino.gov.co');
+$aMedias = $personaCert('a.medias.cierre@narino.gov.co');
+$idsCert = implode(',', array_map(static fn(array $p): int => (int) ($p['id'] ?? 0), [$maria, $yulimar, $paula, $carlos, $sinCedula, $aMedias]));
+comprobar('las personas de la prueba de certificados están en el evento activo',
+    count(array_filter([$maria, $yulimar, $paula, $carlos, $sinCedula, $aMedias],
+        static fn(array $p): bool => (int) ($p['evento_id'] ?? 0) === $idEventoCert)) === 6 && $cuantasJornadas >= 2,
+    $cuantasJornadas . ' jornadas');
+// Cada quien con su caso: María, todas las jornadas; Yulimar, ninguna (se le
+// registra una a mano); Paula, ninguna; Carlos expone y no tiene ingresos;
+// sin cédula, una jornada.
+$pdo->exec("DELETE FROM {$P}asistencia WHERE persona_id IN ($idsCert)");
+foreach ($jornadasCert as $j) {
+    $pdo->exec("INSERT INTO {$P}asistencia (persona_id, evento_dia_id, via) VALUES ({$maria['id']}, {$j['id']}, 'qr_dia')");
+}
+$pdo->exec("INSERT INTO {$P}asistencia (persona_id, evento_dia_id, via) VALUES ({$sinCedula['id']}, {$jornadasCert[0]['id']}, 'qr_dia')");
+$pdo->exec("UPDATE {$P}persona SET nombre = 'Asistente Sin Cédula' WHERE id = {$sinCedula['id']}");
+$propuestaCarlos = (int) $pdo->query("SELECT id FROM {$P}propuesta WHERE persona_id = {$carlos['id']} ORDER BY id LIMIT 1")->fetchColumn();
+$pdo->exec("UPDATE {$P}propuesta SET estado = 'aprobada', titulo = 'Emprender TIC desde el Pacífico' WHERE id = $propuestaCarlos");
+$pdo->exec("DELETE FROM {$P}certificado");
+$pdo->exec("DELETE FROM {$P}evento_certificado");
+// El operador de acceso, con su propia sesión: la de la sección anterior se
+// cerró al cambiarle el rol.
+$operadorCert = new Cliente($BASE);
+$operadorCert->get('/admin/entrar');
+$operadorCert->post('/admin/entrar', ['correo' => 'puerta@narino.gov.co', 'clave' => 'una clave mia y bien larga']);
+
+// ---- Cerrados, que es como empiezan -------------------------------------------------------
+$telMaria = $entrarCon($maria);
+$html = $telMaria->get('/certificado');
+comprobar('sin abrirlos, «Mi certificado» dice que todavía no están, con sus ingresos y el valor de ir a todas',
+    $telMaria->codigo === 200 && str_contains($html, 'data-certificados-cerrados')
+    && str_contains($html, 'Tus ingresos') && str_contains($html, 'certificado de asistencia')
+    && !str_contains($html, 'data-descargar-certificado'));
+$html = $telMaria->get('/carnet');
+comprobar('ni el menú ni el carnet lo ofrecen', !str_contains($html, 'aria-label="Mi certificado"')
+    && !str_contains($html, 'data-aviso-certificado') && !str_contains($html, 'href="' . $base . '/certificado"'));
+$telMaria->get('/certificado/ABCDEFGHJKMN', false);
+comprobar('y descargar uno lleva a «Mi certificado»', $telMaria->codigo === 303
+    && str_ends_with($telMaria->cabecera('Location'), '/certificado'));
+comprobar('nada se emite mientras están cerrados', $cuenta("SELECT COUNT(*) FROM {$P}certificado") === 0);
+(new Cliente($BASE))->get('/certificado', false);
+$anonimo = new Cliente($BASE);
+$anonimo->get('/certificado', false);
+comprobar('sin sesión, «Mi certificado» pide entrar y vuelve', $anonimo->codigo === 303
+    && str_contains($anonimo->cabecera('Location'), '/entrar') && str_contains($anonimo->cabecera('Location'), 'certificado'));
+
+// ---- La configuración ----------------------------------------------------------------------
+$html = $jefa->get('/admin/configuracion/certificados');
+comprobar('Configuración → Certificados: la pestaña, el estado, el resumen y los campos',
+    $jefa->codigo === 200 && str_contains($html, 'aria-current="page">Certificados</a>')
+    && str_contains($html, 'data-estado-certificados="cerrado"') && str_contains($html, 'data-resumen="asistentes"')
+    && str_contains($html, 'name="nombre_evento"') && str_contains($html, 'name="horas[' . $jornadasCert[0]['id'] . ']"')
+    && str_contains($html, 'name="fondo_imagen"') && str_contains($html, 'name="texto_imagen"') && str_contains($html, 'name="firma_imagen"'));
+$resumenAsistencia = preg_match('/data-resumen="asistentes">([\d.]+)</', $html, $mr) ? (int) str_replace('.', '', $mr[1]) : -1;
+comprobar('el resumen cuenta a quienes tienen ingreso',
+    $resumenAsistencia === $cuenta("SELECT COUNT(DISTINCT a.persona_id) FROM {$P}asistencia a JOIN {$P}evento_dia d ON d.id = a.evento_dia_id WHERE d.evento_id = $idEventoCert"),
+    (string) $resumenAsistencia);
+$operadorCert->get('/admin/configuracion/certificados', false);
+$codigoOperador = $operadorCert->codigo;
+$operadorCert->post('/admin/configuracion/certificados/estado', ['estado' => 'abierto'], false);
+comprobar('un operador no configura ni abre los certificados', $codigoOperador === 403 && $operadorCert->codigo === 403
+    && $cuenta("SELECT COUNT(*) FROM {$P}evento_certificado") === 0);
+
+$fondo = $imagenDePrueba(1200, 927, 'jpg', 'fondo');
+$recuadro = $imagenDePrueba(880, 125, 'png', 'transparente');
+$firma = $imagenDePrueba(420, 140, 'jpg', 'firma');
+$horasCampos = [];
+foreach ($jornadasCert as $j) {
+    $horasCampos['horas[' . $j['id'] . ']'] = (string) $horasDe($j);
+}
+$datosCert = [
+    'nombre_evento' => 'la Cumbre Tecnológica IA Nariño 2026', 'entidad' => '', 'ciudad' => 'San Juan de Pasto',
+    'expositores' => '1', 'color' => '#102951',
+    'firma_nombre' => 'Nombre de Quien Firma', 'firma_cargo' => 'Secretario TIC, Innovación y Gobierno Abierto',
+] + $horasCampos;
+$jefa->get('/admin/configuracion/certificados');
+$html = $jefa->subir('/admin/configuracion/certificados', $datosCert, [
+    'fondo_imagen' => ['nombre' => 'fondo.jpg', 'tipo' => 'image/jpeg', 'contenido' => $fondo],
+    'texto_imagen' => ['nombre' => 'recuadro.png', 'tipo' => 'image/png', 'contenido' => $recuadro],
+    'firma_imagen' => ['nombre' => 'firma.jpg', 'tipo' => 'image/jpeg', 'contenido' => $firma],
+]);
+$conf = $pdo->query("SELECT * FROM {$P}evento_certificado WHERE evento_id = $idEventoCert")->fetch(PDO::FETCH_ASSOC) ?: [];
+comprobar('se guarda todo, con el aviso de ir a ver un ejemplo', str_contains($html, 'Certificados guardados')
+    && ($conf['nombre_evento'] ?? '') === 'la Cumbre Tecnológica IA Nariño 2026' && ($conf['ciudad'] ?? '') === 'San Juan de Pasto'
+    && ($conf['firma_nombre'] ?? '') === 'Nombre de Quien Firma' && ($conf['estado'] ?? '') === 'cerrado'
+    && ($conf['entidad'] ?? 'x') === '' && (int) ($conf['expositores'] ?? 0) === 1);
+$horasGuardadas = json_decode((string) ($conf['horas_json'] ?? ''), true) ?: [];
+comprobar('las horas, por el id de cada jornada', count($horasGuardadas) === $cuantasJornadas
+    && (float) ($horasGuardadas[(string) $jornadasCert[0]['id']] ?? 0) === 8.0);
+$rutaFondo = $RAIZ . '/almacen/logos/' . ($conf['fondo_imagen'] ?? '-');
+$rutaRecuadro = $RAIZ . '/almacen/logos/' . ($conf['texto_imagen'] ?? '-');
+$rutaFirma = $RAIZ . '/almacen/logos/' . ($conf['firma_imagen'] ?? '-');
+comprobar('las tres imágenes, regeneradas y con nombre del servidor en almacen/logos',
+    is_file($rutaFondo) && is_file($rutaRecuadro) && is_file($rutaFirma)
+    && str_starts_with((string) $conf['fondo_imagen'], 'certificado-fondo-' . $idEventoCert . '-')
+    && str_ends_with((string) $conf['fondo_imagen'], '.jpg') && str_ends_with((string) $conf['texto_imagen'], '.png')
+    && str_ends_with((string) $conf['firma_imagen'], '.png') && (getimagesize($rutaFondo)[2] ?? 0) === IMAGETYPE_JPEG);
+$firmaGuardada = imagecreatefrompng($rutaFirma);
+$alfaEsquina = (imagecolorat($firmaGuardada, 2, 2) >> 24) & 0x7F;
+$alfaTrazo = 127;
+for ($y = 0; $y < imagesy($firmaGuardada); $y++) {
+    $alfaTrazo = min($alfaTrazo, (imagecolorat($firmaGuardada, (int) (imagesx($firmaGuardada) / 2), $y) >> 24) & 0x7F);
+}
+comprobar('la firma en JPG con fondo blanco queda con el papel transparente y el trazo opaco',
+    $alfaEsquina === 127 && $alfaTrazo < 40, $alfaEsquina . ' / ' . $alfaTrazo);
+$jefa->get('/admin/configuracion/certificados/imagen/firma');
+$codigoFirmaJefa = $jefa->codigo;
+$tipoFirma = $jefa->cabecera('Content-Type');
+$telMaria->get('/admin/configuracion/certificados/imagen/firma', false);
+$curioso = new Cliente($BASE);
+$curioso->get('/admin/configuracion/certificados/imagen/firma', false);
+$operadorCert->get('/admin/configuracion/certificados/imagen/firma', false);
+comprobar('la firma la ve el administrador, y nadie más', $codigoFirmaJefa === 200 && $tipoFirma === 'image/png'
+    && $telMaria->codigo !== 200 && $curioso->codigo !== 200 && $operadorCert->codigo === 403,
+    $codigoFirmaJefa . ' / ' . $telMaria->codigo . ' / ' . $curioso->codigo . ' / ' . $operadorCert->codigo);
+
+// Lo que no sirve, con el resto guardado.
+$jefa->get('/admin/configuracion/certificados');
+$html = $jefa->subir('/admin/configuracion/certificados', ['horas[' . $jornadasCert[0]['id'] . ']' => '30'] + $datosCert, [
+    'fondo_imagen' => ['nombre' => 'fondo.png', 'tipo' => 'image/png', 'contenido' => 'no soy una imagen'],
+]);
+$conf2 = $pdo->query("SELECT * FROM {$P}evento_certificado WHERE evento_id = $idEventoCert")->fetch(PDO::FETCH_ASSOC) ?: [];
+comprobar('una imagen que no es imagen y 30 horas se rechazan, y el fondo anterior se conserva',
+    str_contains($html, 'Se guardó todo menos lo marcado abajo') && str_contains($html, 'tiene que ser JPG, PNG o WEBP')
+    && str_contains($html, 'van de 0 a 24') && ($conf2['fondo_imagen'] ?? '') === ($conf['fondo_imagen'] ?? '') && is_file($rutaFondo));
+$jefa->get('/admin/configuracion/certificados');
+$html = $jefa->subir('/admin/configuracion/certificados', $datosCert, [
+    'fondo_imagen' => ['nombre' => 'chico.jpg', 'tipo' => 'image/jpeg', 'contenido' => $imagenDePrueba(300, 200, 'jpg', 'fondo')],
+]);
+comprobar('un fondo muy pequeño también, con lo que debe medir', str_contains($html, 'al menos 800 px de ancho')
+    && is_file($rutaFondo));
+
+// Los ejemplos.
+$ejemplos = [];
+foreach (['completa', 'parcial', 'expositor'] as $caso) {
+    $pdfEjemplo = $jefa->get('/admin/configuracion/certificados/ejemplo?caso=' . $caso);
+    $ejemplos[$caso] = ['codigo' => $jefa->codigo, 'tipo' => $jefa->cabecera('Content-Type'), 'pdf' => $pdfEjemplo,
+                        'texto' => $textoDelPdf($pdfEjemplo), 'disposicion' => $jefa->cabecera('Content-Disposition')];
+}
+comprobar('los tres ejemplos son PDF bien armados, con datos inventados y la marca de agua',
+    count(array_filter($ejemplos, static fn(array $e): bool => $e['codigo'] === 200 && $e['tipo'] === 'application/pdf'
+        && $pdfBienArmado($e['pdf']) && str_contains($e['texto'], 'MARÍA FERNANDA ZAMBRANO ORTIZ')
+        && str_contains($e['texto'], 'EJEMPLO') && str_starts_with($e['disposicion'], 'inline'))) === 3);
+comprobar('el de asistencia completa lleva el sello; el de una jornada, no; el de expositor dice «participación»',
+    $dice($ejemplos['completa']['texto'], 'ASISTENCIA COMPLETA') && !$dice($ejemplos['parcial']['texto'], 'ASISTENCIA COMPLETA')
+    && $dice($ejemplos['parcial']['texto'], 'asistió a la jornada del')
+    && $dice($ejemplos['expositor']['texto'], 'CERTIFICADO DE PARTICIPACIÓN')
+    && $dice($ejemplos['expositor']['texto'], 'participó como conferencista en la Cumbre Tecnológica IA Nariño 2026'));
+comprobar('un ejemplo no emite certificados de verdad', $cuenta("SELECT COUNT(*) FROM {$P}certificado") === 0);
+
+// ---- Abrirlos -------------------------------------------------------------------------------
+$html = $jefa->post('/admin/configuracion/certificados/estado', ['estado' => 'abierto']);
+comprobar('al abrirlos, el aviso dice dónde los encuentra cada quien', str_contains($html, 'Certificados disponibles')
+    && str_contains($html, 'data-estado-certificados="abierto"'));
+$html = $jefa->get('/admin');
+comprobar('y la bitácora lo cuenta', str_contains($html, 'abrió los certificados')
+    && str_contains($html, 'cambió la configuración de los certificados'));
+
+$html = $telMaria->get('/carnet');
+comprobar('«Mi certificado» entra al menú, en la barra de abajo, y el carnet avisa que está listo',
+    str_contains($html, 'aria-label="Mi certificado"') && str_contains($html, 'data-aviso-certificado')
+    && str_contains($html, 'Tu certificado de asistencia completa está listo'));
+$html = $telMaria->get('/certificado');
+$codigoMaria = preg_match('#/certificado/([A-Z0-9]{12})"#', $html, $mc) ? $mc[1] : '';
+$cuantasEnLetras = [2 => 'dos', 3 => 'tres', 4 => 'cuatro', 5 => 'cinco', 6 => 'seis'][$cuantasJornadas] ?? (string) $cuantasJornadas;
+$horasMaria = 8 + 6 * ($cuantasJornadas - 1);
+comprobar('quien asistió a todas las jornadas tiene el de asistencia completa, con sus horas y su código',
+    $telMaria->codigo === 200 && str_contains($html, 'data-certificado="asistencia"') && str_contains($html, 'data-asistencia-completa')
+    && str_contains($html, 'asistió a las ' . $cuantasEnLetras . ' jornadas de la Cumbre Tecnológica IA Nariño 2026')
+    && str_contains($html, $horasMaria . ' horas') && strlen($codigoMaria) === 12
+    && str_contains($html, implode('-', str_split($codigoMaria, 4))));
+comprobar('al abrir «Mi certificado» se emite, una sola vez', $cuenta("SELECT COUNT(*) FROM {$P}certificado WHERE persona_id = {$maria['id']}") === 1);
+$telMaria->get('/certificado');
+comprobar('volver a abrirlo no emite otro', $cuenta("SELECT COUNT(*) FROM {$P}certificado WHERE persona_id = {$maria['id']}") === 1
+    && $cuenta("SELECT COUNT(*) FROM {$P}certificado WHERE codigo = '$codigoMaria'") === 1);
+
+$pdfMaria = $telMaria->get('/certificado/' . $codigoMaria);
+$textoMaria = $textoDelPdf($pdfMaria);
+comprobar('el PDF se descarga, sin caché compartida y con su nombre de archivo',
+    $telMaria->codigo === 200 && $telMaria->cabecera('Content-Type') === 'application/pdf'
+    && str_contains($telMaria->cabecera('Content-Disposition'), 'attachment; filename="Certificado-asistencia-Maria-Fernanda-Zambrano')
+    && str_contains($telMaria->cabecera('Cache-Control'), 'no-store') && $pdfBienArmado($pdfMaria));
+comprobar('dice lo que tiene que decir: título, quién certifica, el nombre, la cédula, las jornadas, las horas',
+    $dice($textoMaria, 'CERTIFICADO DE ASISTENCIA')
+    && $dice($textoMaria, 'La Gobernación de Nariño, a través de la Secretaría TIC, Innovación y Gobierno Abierto, certifica que')
+    && $dice($textoMaria, mb_strtoupper((string) $maria['nombre'])) && $dice($textoMaria, 'CC 1.085.234.567')
+    && $dice($textoMaria, 'asistió a las ' . $cuantasEnLetras . ' jornadas de la Cumbre Tecnológica IA Nariño 2026, que se realizó en San Juan de Pasto los días')
+    && $dice($textoMaria, 'con una intensidad de ' . $horasMaria . ' horas.')
+    && $dice($textoMaria, 'Se expide en San Juan de Pasto el ' . $fechaLarga($hoyCert) . '.'), mb_substr($textoMaria, 0, 300));
+comprobar('con el sello de asistencia completa, la firma y el código impreso',
+    $dice($textoMaria, 'ASISTENCIA COMPLETA') && $dice($textoMaria, $cuantasJornadas . '/' . $cuantasJornadas)
+    && $dice($textoMaria, 'Nombre de Quien Firma') && $dice($textoMaria, implode('-', str_split($codigoMaria, 4)))
+    && $dice($textoMaria, 'Código de verificación'));
+comprobar('con las fuentes incrustadas y el fondo dentro', substr_count($pdfMaria, '/FontFile2') === 4
+    && str_contains($pdfMaria, '/DCTDecode') && str_contains($pdfMaria, '/SMask') && str_contains($pdfMaria, '/WinAnsiEncoding'));
+$emision = $pdo->query("SELECT * FROM {$P}certificado WHERE codigo = '$codigoMaria'")->fetch(PDO::FETCH_ASSOC) ?: [];
+comprobar('la descarga se cuenta y queda en la bitácora', (int) ($emision['descargas'] ?? 0) === 1 && $emision['descargado_en'] !== null
+    && $cuenta("SELECT COUNT(*) FROM {$P}bitacora WHERE accion = 'certificado_descargado' AND entidad_id = {$maria['id']}") === 1);
+$telMaria->get('/certificado/' . strtolower(implode('-', str_split($codigoMaria, 4))));
+comprobar('el código también vale con guiones y en minúsculas', $telMaria->codigo === 200
+    && (int) $pdo->query("SELECT descargas FROM {$P}certificado WHERE codigo = '$codigoMaria'")->fetchColumn() === 2);
+$html = $jefa->get('/admin');
+comprobar('la bitácora dice que un asistente descargó su certificado', str_contains($html, 'Un asistente descargó su certificado de asistencia'));
+
+// ---- Cada caso ---------------------------------------------------------------------------
+$telYulimar = $entrarCon($yulimar);
+$html = $telYulimar->get('/certificado');
+comprobar('sin ingresos, «Mi certificado» lo explica y no emite nada', str_contains($html, 'data-sin-certificado')
+    && str_contains($html, 'comunícate con la organización')
+    && $cuenta("SELECT COUNT(*) FROM {$P}certificado WHERE persona_id = {$yulimar['id']}") === 0);
+
+// El ingreso a mano, desde la ficha.
+$html = $jefa->get('/admin/registros/' . $yulimar['id']);
+comprobar('la ficha ofrece registrar a mano el ingreso de una jornada que ya llegó',
+    str_contains($html, 'data-asistencia-manual="marcar"') && str_contains($html, 'data-certificados-ficha')
+    && str_contains($html, 'Sin certificado: no tiene ingresos registrados'));
+$operadorCert->post('/admin/registros/asistencia', ['persona' => (string) $yulimar['id'],
+    'jornada' => (string) $pasada['id'], 'accion' => 'marcar'], false);
+comprobar('un operador no registra ingresos a mano', $operadorCert->codigo === 403
+    && $cuenta("SELECT COUNT(*) FROM {$P}asistencia WHERE persona_id = {$yulimar['id']}") === 0);
+$html = $jefa->post('/admin/registros/asistencia', ['persona' => (string) $yulimar['id'],
+    'jornada' => (string) $pasada['id'], 'accion' => 'marcar']);
+comprobar('el administrador sí, y cuenta para el certificado', str_contains($html, 'registrado a mano')
+    && $cuenta("SELECT COUNT(*) FROM {$P}asistencia WHERE persona_id = {$yulimar['id']} AND via = 'manual'") === 1
+    && str_contains($html, 'data-asistencia-manual="quitar"'));
+$html = $jefa->post('/admin/registros/asistencia', ['persona' => (string) $yulimar['id'],
+    'jornada' => (string) $pasada['id'], 'accion' => 'marcar']);
+comprobar('dos veces no lo duplica', str_contains($html, 'ya tenía registrado el ingreso')
+    && $cuenta("SELECT COUNT(*) FROM {$P}asistencia WHERE persona_id = {$yulimar['id']}") === 1);
+if ($futura !== null) {
+    $html = $jefa->post('/admin/registros/asistencia', ['persona' => (string) $yulimar['id'],
+        'jornada' => (string) $futura['id'], 'accion' => 'marcar']);
+    comprobar('una jornada que todavía no llega no se registra a mano', str_contains($html, 'todavía no ha llegado')
+        && $cuenta("SELECT COUNT(*) FROM {$P}asistencia WHERE persona_id = {$yulimar['id']}") === 1);
+} else {
+    comprobar('una jornada que todavía no llega no se registra a mano (no hay ninguna futura: nada que probar)', true);
+}
+$html = $jefa->post('/admin/registros/asistencia', ['persona' => (string) $maria['id'],
+    'jornada' => (string) $jornadasCert[0]['id'], 'accion' => 'quitar']);
+comprobar('un ingreso del código del día no se quita desde la ficha', str_contains($html, 'Solo se quitan los ingresos registrados a mano')
+    && $cuenta("SELECT COUNT(*) FROM {$P}asistencia WHERE persona_id = {$maria['id']}") === $cuantasJornadas);
+$html = $jefa->get('/admin');
+comprobar('la bitácora dice que el ingreso se registró a mano', str_contains($html, 'registró a mano, desde la ficha, un ingreso del día ' . $pasada['numero']));
+
+$html = $telYulimar->get('/certificado');
+$codigoYulimar = preg_match('#/certificado/([A-Z0-9]{12})"#', $html, $mc) ? $mc[1] : '';
+comprobar('con una jornada de varias, el certificado es de esa jornada, sin sello, y dice el valor de ir a todas',
+    str_contains($html, 'data-certificado="asistencia"') && !str_contains($html, 'data-asistencia-completa')
+    && str_contains($html, '1 de ' . $cuantasJornadas . ' jornadas') && str_contains($html, 'Quienes estuvieron en todas reciben el de asistencia completa')
+    && strlen($codigoYulimar) === 12);
+$textoYulimar = $textoDelPdf($telYulimar->get('/certificado/' . $codigoYulimar));
+comprobar('y su PDF dice la jornada, con sus horas',
+    $dice($textoYulimar, 'asistió a la jornada del ' . $fechaLarga((string) $pasada['fecha']) . ' de la Cumbre Tecnológica IA Nariño 2026, que se realizó en San Juan de Pasto, con una intensidad de ' . $horasDe($pasada) . ' horas.')
+    && !$dice($textoYulimar, 'ASISTENCIA COMPLETA'), mb_substr($textoYulimar, 0, 300));
+
+// Con la identificación opcional, quien no la dio entra y tiene su certificado.
+$camposAntes = $pdo->query("SELECT campos FROM {$P}evento_formulario WHERE evento_id = $idEventoCert")->fetchColumn();
+$camposSin = (array) json_decode((string) ($camposAntes ?: '{}'), true);
+$camposSin['documento'] = 'opcional';
+$pdo->prepare("INSERT INTO {$P}evento_formulario (evento_id, campos) VALUES (?, ?) ON DUPLICATE KEY UPDATE campos = VALUES(campos)")
+    ->execute([$idEventoCert, json_encode($camposSin)]);
+$telSinCedula = $entrarCon($sinCedula);
+$telSinCedula->get('/certificado');
+$codigoSinCedula = (string) $pdo->query("SELECT codigo FROM {$P}certificado WHERE persona_id = {$sinCedula['id']}")->fetchColumn();
+$textoSinCedula = $textoDelPdf($telSinCedula->get('/certificado/' . $codigoSinCedula));
+$pdo->prepare("UPDATE {$P}evento_formulario SET campos = ? WHERE evento_id = ?")->execute([$camposAntes ?: null, $idEventoCert]);
+comprobar('sin identificación —con el evento que la deja opcional—, el certificado sale con el nombre y sin la línea del documento',
+    $telSinCedula->codigo === 200 && $dice($textoSinCedula, 'ASISTENTE SIN CÉDULA') && !preg_match('/\b(CC|TI|CE|PA)\s+[\d.]+/', $textoSinCedula),
+    $telSinCedula->codigo . ' · ' . mb_substr($textoSinCedula, 0, 160));
+
+$telPaula = $entrarCon($paula);
+$html = $telPaula->get('/certificado');
+comprobar('quien no asistió no tiene certificado', str_contains($html, 'data-sin-certificado'));
+$telPaula->get('/certificado/' . $codigoMaria);
+comprobar('ni puede bajar el de otra persona con su código: 404, como si no existiera', $telPaula->codigo === 404
+    && (int) $pdo->query("SELECT descargas FROM {$P}certificado WHERE codigo = '$codigoMaria'")->fetchColumn() === 2);
+
+$telCarlos = $entrarCon($carlos);
+$html = $telCarlos->get('/certificado');
+$codigoCarlos = preg_match('#/certificado/([A-Z0-9]{12})"#', $html, $mc) ? $mc[1] : '';
+comprobar('quien expuso con propuesta aprobada tiene el de participación, aunque no registrara ingreso',
+    str_contains($html, 'data-certificado="expositor"') && !str_contains($html, 'data-certificado="asistencia"')
+    && str_contains($html, 'Emprender TIC desde el Pacífico') && strlen($codigoCarlos) === 12);
+$textoCarlos = $textoDelPdf($telCarlos->get('/certificado/' . $codigoCarlos));
+comprobar('su PDF dice «participación» y el título de su exposición',
+    str_contains($telCarlos->cabecera('Content-Disposition'), 'Certificado-participacion-Carlos-Andres-Bolanos')
+    && $dice($textoCarlos, 'CERTIFICADO DE PARTICIPACIÓN')
+    && $dice($textoCarlos, 'participó como conferencista en la Cumbre Tecnológica IA Nariño 2026')
+    && $dice($textoCarlos, 'con la exposición «Emprender TIC desde el Pacífico»'), mb_substr($textoCarlos, 0, 300));
+
+$telAMedias = $entrarCon($aMedias);
+$telAMedias->get('/certificado', false);
+comprobar('quien no ha completado su registro va primero a «Mis datos», como con el carnet',
+    $telAMedias->codigo === 303 && str_ends_with($telAMedias->cabecera('Location'), '/registro')
+    && $cuenta("SELECT COUNT(*) FROM {$P}certificado WHERE persona_id = {$aMedias['id']}") === 0);
+
+// ---- La ficha y la descarga del equipo ------------------------------------------------------
+$html = $jefa->get('/admin/registros/' . $maria['id']);
+comprobar('la ficha muestra su certificado, con el código y las descargas', str_contains($html, 'data-certificado-ficha="asistencia"')
+    && str_contains($html, implode('-', str_split($codigoMaria, 4))) && str_contains($html, 'descargado 2 veces'));
+$pdfEquipo = $operadorCert->get('/admin/registros/' . $maria['id'] . '/certificado?tipo=asistencia&ref=0');
+comprobar('el operador lo descarga para quien no puede entrar', $operadorCert->codigo === 200
+    && $operadorCert->cabecera('Content-Type') === 'application/pdf'
+    && $dice($textoDelPdf($pdfEquipo), implode('-', str_split($codigoMaria, 4))));
+$html = $jefa->get('/admin');
+comprobar('y la bitácora dice que lo descargó el equipo', str_contains($html, 'descargó el certificado de una persona de asistencia'));
+$operadorCert->get('/admin/registros/' . $paula['id'] . '/certificado?tipo=asistencia&ref=0', false);
+comprobar('a quien no tiene derecho no se le genera desde la ficha', $operadorCert->codigo === 303
+    && $cuenta("SELECT COUNT(*) FROM {$P}certificado WHERE persona_id = {$paula['id']}") === 0);
+
+// ---- Verificar ------------------------------------------------------------------------------
+$verificador = new Cliente($BASE);
+$html = $verificador->get('/v/' . $codigoMaria);
+comprobar('el QR lleva a una página pública que dice que es auténtico, con el nombre y sin el documento',
+    $verificador->codigo === 200 && str_contains($html, 'data-verificacion="valido"')
+    && str_contains($html, mb_strtoupper((string) $maria['nombre'])) && str_contains($html, 'Asistencia completa: '
+    . $cuantasJornadas . ' de ' . $cuantasJornadas . ' jornadas') && !str_contains($html, '1.085.234.567')
+    && !str_contains($html, '1085234567') && !str_contains($html, (string) $maria['correo']));
+comprobar('y no se deja indexar', str_contains($html, '<meta name="robots" content="noindex, nofollow">'));
+$html = $verificador->get('/v?codigo=' . urlencode(strtolower(implode(' ', str_split($codigoMaria, 4)))));
+comprobar('escrito a mano —en minúsculas, con espacios— también se verifica', str_contains($html, 'data-verificacion="valido"'));
+$html = $verificador->get('/v');
+comprobar('sin código, el formulario para escribirlo', $verificador->codigo === 200 && str_contains($html, 'name="codigo"')
+    && !str_contains($html, 'data-verificacion'));
+$html = $verificador->get('/v/ABCDEFGHJKMN');
+comprobar('un código que no existe: 404, y cuenta para el límite', $verificador->codigo === 404
+    && str_contains($html, 'data-verificacion="no-existe"') && $cuenta("SELECT COUNT(*) FROM {$P}intento WHERE accion = 'certificado_codigo'") === 1);
+for ($i = 0; $i < 20; $i++) {
+    $verificador->get('/v/ABCDEFGHJK' . ['MN', 'MP', 'MQ', 'MR', 'MS', 'MT', 'MU', 'MV', 'MW', 'MX', 'MY', 'MZ', 'NA', 'NB', 'NC', 'ND', 'NE', 'NF', 'NG', 'NH'][$i]);
+}
+$verificador->get('/v/' . $codigoMaria);
+comprobar('después de veinte códigos que no existen, la IP espera', $verificador->codigo === 429);
+$pdo->exec("DELETE FROM {$P}intento WHERE accion = 'certificado_codigo'");
+
+// Si los registros cambian, el certificado deja de valer.
+$html = $jefa->post('/admin/registros/asistencia', ['persona' => (string) $yulimar['id'],
+    'jornada' => (string) $pasada['id'], 'accion' => 'quitar']);
+comprobar('el ingreso registrado a mano se puede quitar', str_contains($html, 'Se quitó el ingreso del día')
+    && $cuenta("SELECT COUNT(*) FROM {$P}asistencia WHERE persona_id = {$yulimar['id']}") === 0);
+$html = (new Cliente($BASE))->get('/v/' . $codigoYulimar);
+comprobar('y su certificado ya no se verifica como válido: se dice que cambió', str_contains($html, 'data-verificacion="sin-vigencia"')
+    && !str_contains($html, 'data-verificacion="valido"'));
+$telYulimar->get('/certificado/' . $codigoYulimar);
+comprobar('ni se descarga', $telYulimar->codigo === 404);
+$html = $jefa->get('/admin');
+comprobar('la bitácora dice quién lo quitó', str_contains($html, 'quitó un ingreso registrado a mano (día ' . $pasada['numero'] . ')'));
+
+// Sin certificados para los expositores.
+$jefa->get('/admin/configuracion/certificados');
+$jefa->subir('/admin/configuracion/certificados', array_diff_key($datosCert, ['expositores' => 1]), []);
+$html = $telCarlos->get('/certificado');
+comprobar('si se apagan los de expositores, Carlos ya no tiene el suyo y su código no verifica',
+    str_contains($html, 'data-sin-certificado') && str_contains((new Cliente($BASE))->get('/v/' . $codigoCarlos), 'data-verificacion="sin-vigencia"'));
+$jefa->get('/admin/configuracion/certificados');
+$jefa->subir('/admin/configuracion/certificados', $datosCert, []);
+comprobar('guardar sin imágenes nuevas no borra las que había', is_file($rutaFondo) && is_file($rutaFirma)
+    && (string) $pdo->query("SELECT fondo_imagen FROM {$P}evento_certificado WHERE evento_id = $idEventoCert")->fetchColumn() === $conf['fondo_imagen']);
+
+// ---- Cerrarlos ------------------------------------------------------------------------------
+$html = $jefa->post('/admin/configuracion/certificados/estado', ['estado' => 'cerrado']);
+comprobar('al cerrarlos, el aviso dice que los descargados se siguen verificando', str_contains($html, 'Certificados cerrados')
+    && str_contains($html, 'se siguen verificando'));
+$html = $telMaria->get('/carnet');
+comprobar('sale del menú y del carnet', !str_contains($html, 'aria-label="Mi certificado"') && !str_contains($html, 'data-aviso-certificado'));
+$telMaria->get('/certificado/' . $codigoMaria, false);
+comprobar('ya no se descarga', $telMaria->codigo === 303);
+comprobar('pero el que ya se descargó se sigue verificando', str_contains((new Cliente($BASE))->get('/v/' . $codigoMaria), 'data-verificacion="valido"'));
+
+// ---- Quitar las imágenes ----------------------------------------------------------------------
+$jefa->get('/admin/configuracion/certificados');
+$jefa->subir('/admin/configuracion/certificados', $datosCert + ['quitar_fondo' => '1', 'quitar_texto' => '1', 'quitar_firma' => '1'], []);
+$confSin = $pdo->query("SELECT * FROM {$P}evento_certificado WHERE evento_id = $idEventoCert")->fetch(PDO::FETCH_ASSOC) ?: [];
+// Lo borró el servidor, que es otro proceso: PHP recuerda el último archivo
+// que encontró y, sin esto, diría que la firma sigue ahí.
+clearstatcache();
+comprobar('quitar las imágenes las borra del disco', ($confSin['fondo_imagen'] ?? 'x') === '' && ($confSin['firma_imagen'] ?? 'x') === ''
+    && ($confSin['texto_imagen'] ?? 'x') === '' && !is_file($rutaFondo) && !is_file($rutaRecuadro)
+    && !is_file($rutaRecuadro . '.cache') && !is_file($rutaFirma) && !is_file($rutaFirma . '.cache'),
+    json_encode([$confSin['fondo_imagen'] ?? null, $confSin['texto_imagen'] ?? null, $confSin['firma_imagen'] ?? null,
+        is_file($rutaFondo), is_file($rutaRecuadro), is_file($rutaRecuadro . '.cache'), is_file($rutaFirma), is_file($rutaFirma . '.cache')]));
+$pdfSinFondo = $jefa->get('/admin/configuracion/certificados/ejemplo?caso=completa');
+comprobar('y sin fondo el certificado sale en blanco con su marco, el nombre del evento arriba y todo lo demás',
+    $jefa->codigo === 200 && $pdfBienArmado($pdfSinFondo) && !str_contains($pdfSinFondo, '/DCTDecode')
+    && $dice($textoDelPdf($pdfSinFondo), mb_strtoupper((string) $pdo->query("SELECT nombre FROM {$P}evento WHERE id = $idEventoCert")->fetchColumn()))
+    && $dice($textoDelPdf($pdfSinFondo), 'CERTIFICADO DE ASISTENCIA'));
+
+// ---- Sin las tablas de la 1.16.0 --------------------------------------------------------------
+// Si la base no pudo crearlas sola, la plataforma sigue como en la 3.20: sin
+// certificados, y la pantalla dice qué falta.
+@touch($RAIZ . '/almacen/registro/esquema-al-dia.php');
+$pdo->exec("DROP TABLE {$P}certificado");
+$pdo->exec("DROP TABLE {$P}evento_certificado");
+$html = $jefa->get('/admin/configuracion/certificados');
+$pantallaSinTablas = $jefa->codigo === 200 && str_contains($html, 'la base de datos tiene que ponerse al día')
+    && !str_contains($html, 'name="nombre_evento"');
+$htmlCarnet = $telMaria->get('/carnet');
+$carnetSinTablas = $telMaria->codigo === 200 && !str_contains($htmlCarnet, 'aria-label="Mi certificado"');
+$htmlMio = $telMaria->get('/certificado');
+$mioSinTablas = $telMaria->codigo === 200 && str_contains($htmlMio, 'data-certificados-cerrados');
+$verificador->get('/v/' . $codigoMaria);
+$verificarSinTablas = $verificador->codigo === 404;
+$htmlFicha = $jefa->get('/admin/registros/' . $maria['id']);
+$fichaSinTablas = $jefa->codigo === 200 && !str_contains($htmlFicha, 'data-certificados-ficha');
+$jefa->post('/admin/configuracion/certificados/estado', ['estado' => 'abierto'], false);
+$estadoSinTablas = $jefa->codigo === 303 && str_ends_with($jefa->cabecera('Location'), '/admin');
+$jefa->post('/admin/actualizar-esquema', []);
+comprobar('sin las tablas de la 1.16.0, Configuración dice qué falta y no ofrece el formulario', $pantallaSinTablas);
+comprobar('el carnet, «Mi certificado», la ficha y la verificación siguen funcionando, sin certificados',
+    $carnetSinTablas && $mioSinTablas && $fichaSinTablas && $verificarSinTablas);
+comprobar('abrirlos lleva al panel, donde está el botón', $estadoSinTablas, $jefa->codigo . ' → ' . $jefa->cabecera('Location'));
+comprobar('«Actualizar la base de datos» vuelve a crearlas, vacías',
+    $cuenta("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('{$P}certificado', '{$P}evento_certificado')") === 2
+    && $cuenta("SELECT COUNT(*) FROM {$P}certificado") === 0);
+$pdo->exec("DELETE FROM {$P}asistencia WHERE persona_id IN ($idsCert)");
+
+/* =========================================================================
    Resultado
    ========================================================================= */
 echo "\n" . str_repeat('─', 62) . "\n";

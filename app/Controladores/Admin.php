@@ -251,6 +251,11 @@ final class Admin
             'claveActiva'     => Autenticacion::activo('clave'),
             'enlaceClave'     => $parametros['enlaceClave'] ?? null,
             'urlAcceso'       => '',
+            // Sus certificados (3.21), sin emitirlos: mirar la ficha no le
+            // crea un código a nadie. Se emite al descargarlo.
+            'certificados'    => \App\Modelos\Certificado::hayTablas() && \App\Modelos\Certificado::tieneNombre($persona)
+                ? \App\Modelos\Certificado::dePersona($persona, false) : null,
+            'certificadosAbiertos' => \App\Modelos\Certificado::abiertos($evento),
         ];
 
         // El QR de acceso solo se pinta si un administrador lo pidió: es una

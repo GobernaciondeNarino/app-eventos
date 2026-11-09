@@ -19,13 +19,14 @@ registra gente, se sella asistencia, se aprueban exposiciones y se exportan repo
 
 | | Qué hay |
 |---|---|
-| **Interfaz** | 26 pantallas, diseño y formulario de registro configurables por evento, responsive. Los listados largos van por páginas y se ordenan desde el título de cada columna. En el celular, el menú es una barra de íconos abajo, como la de Instagram |
+| **Interfaz** | 29 pantallas, diseño y formulario de registro configurables por evento, responsive. Los listados largos van por páginas y se ordenan desde el título de cada columna. En el celular, el menú es una barra de íconos abajo, como la de Instagram |
 | **Backend** | PHP 8.1+ con PDO y MySQL/MariaDB, sin framework ni Composer |
 | **Instalación** | Asistente de seis pasos que crea, actualiza o anexa las tablas. Al subir una versión nueva, la base se pone al día sola en la primera visita |
 | **Autenticación** | Cinco formas de entrar: correo, QR personal, contraseña, WhatsApp y SMS. Se puede crear el acceso con solo correo y contraseña. El equipo, con contraseña y segundo factor. Quien olvida su contraseña la recupera con un enlace al correo, y un administrador puede enviárselo desde el panel |
 | **Códigos QR** | Generador **y lector** propios, verificados uno contra otro y contra una librería de referencia |
+| **Certificados** | En PDF, para cada quien asistió y para los expositores, en **Mi certificado**. Quien estuvo en todas las jornadas recibe el de asistencia completa, con un sello dorado y el total de horas. Cada uno lleva un código y un QR que lo verifican en una página pública. El PDF lo escribe la propia plataforma, sin bibliotecas |
 | **API** | Consulta en JSON de expositores, participantes y demás perfiles, con filtros en la dirección y un token por cada sistema que consulta, que se crea, se vuelve a copiar, se revoca y se elimina en Configuración → API. Solo lee, y nunca entrega la identificación; la fotografía, como enlace, y la caracterización, solo a un token con cada permiso |
-| **Pruebas** | 1012 comprobaciones de extremo a extremo, 160 de actualización desde la 1.0.0, 160 en navegador, y 641 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy y formulario de registro |
+| **Pruebas** | 1086 comprobaciones de extremo a extremo, 160 de actualización desde la 1.0.0, 170 en navegador, y 703 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy, formulario de registro y el PDF de los certificados |
 
 ---
 
@@ -89,7 +90,7 @@ hay que regenerarlos.
 
 | Quién | Entra con | Ve |
 |---|---|---|
-| Asistente | Su correo, su contraseña o su QR | Su carnet, su ingreso, sus contactos, la agenda |
+| Asistente | Su correo, su contraseña o su QR | Su carnet, su ingreso, sus contactos, la agenda y, cuando la organización los abre, su certificado |
 | **Staff** | Lo mismo: es un asistente con ese perfil | Además: acreditar en la puerta e imprimir los carnets del evento |
 | Equipo organizador | Cuenta propia, con contraseña y segundo factor | El panel, según su rol: consulta, operador o administrador |
 
@@ -127,6 +128,9 @@ Hay tres puertas, y las tres llevan al mismo sitio:
    sella la hora y muestra su historial.
 4. **Contactos** — al escanear el carnet de otra persona intercambian nombre, entidad, correo
    y —si lo autorizaron— teléfono. Exportable en `.vcf`.
+5. **Certificado** — al terminar, cuando la organización los abre, lo descarga en PDF desde
+   **Mi certificado**. Si estuvo en todas las jornadas, es de asistencia completa, con sello
+   dorado y el total de horas. Su código y su QR lo verifican en `…/v`.
 
 ### El equipo organizador
 
@@ -271,17 +275,20 @@ eventos/                        ← esto es lo que se sube al servidor
 ├── .htaccess                   reescritura, cabeceras y bloqueos
 ├── app/
 │   ├── rutas.php               toda la superficie expuesta, con su guardia
-│   ├── Esquema.php             las 21 tablas, fuente única
+│   ├── Esquema.php             las 23 tablas, fuente única
 │   ├── Datos.php               listas de fábrica del formulario de registro
 │   ├── ayudas.php              e(), u(), testigo()…
 │   ├── Nucleo/                 App, Peticion, Enrutador, Guardia, Bd, Sesion,
 │   │                           Csrf, Cripto, Limite, Bitacora, Qr, Tema, Correo, Totp,
-│   │                           Imagen y Documento (lo que sube el público)
+│   │                           Imagen y Documento (lo que sube el público), y Pdf,
+│   │                           Fuente y CertificadoPdf (el certificado, sin bibliotecas)
 │   ├── Controladores/          Publico, Acceso, Carnet, Escaneo, Contactos,
 │   │                           Admin, Configuracion, Cuenta, Medios, Instalador,
-│   │                           Api (la consulta en JSON)
+│   │                           Api (la consulta en JSON), Certificados
 │   ├── Modelos/                Evento, Persona, Credencial, Asistencia, Usuario,
-│   │                           Formulario (el registro de cada evento), TokenApi
+│   │                           Formulario (el registro de cada evento), TokenApi,
+│   │                           Certificado
+│   ├── Recursos/fuentes/       Montserrat para los certificados, con su licencia
 │   └── Vistas/                 PHP plano; parciales, publico/, admin/, instalar/
 ├── assets/                     css, js, tipografías, imágenes
 ├── config/                     config.php lo escribe el instalador
@@ -298,6 +305,9 @@ razones son concretas: la plataforma debe subirse por FTP a un alojamiento compa
 ejecutar nada previo, funcionar en sedes con internet restringido, no enviar la IP de los
 asistentes a terceros, y poder mantenerse dentro de cinco años sin arqueología de
 dependencias.
+
+Tampoco para los certificados: el PDF —con su fondo, la tipografía incrustada y el QR— lo
+escribe la propia plataforma (`app/Nucleo/Pdf.php`).
 
 Node y Python se usan solo para herramientas y pruebas, nunca en producción.
 
@@ -366,6 +376,9 @@ php pruebas/proxy-y-limites.php
 # El correo que llega al buzón
 php pruebas/correo.php
 
+# El PDF de los certificados: la fuente, los PNG, el archivo y los textos de cada caso
+php pruebas/pdf.php
+
 # Las pantallas en un navegador real
 node pruebas/pantallas.js                 # escritorio
 ANCHO=390 node pruebas/pantallas.js       # móvil
@@ -381,14 +394,14 @@ el enrutado, las cookies, los testigos y los guardias, que es donde suelen estar
 Incluye 19 comprobaciones en el bloque específico de seguridad y otras tantas repartidas por
 los guardias de cada pantalla.
 
-Estado actual: **1012 de 1012** de extremo a extremo, **78** del asistente de instalación,
+Estado actual: **1086 de 1086** de extremo a extremo, **78** del asistente de instalación,
 **160** de actualización de una instalación en producción por siete caminos, **46** del
 segundo factor —los vectores del RFC 6238 y el reloj del servidor corrido—, **64** de la
 configuración de los formularios de registro, **22** del hash de contraseñas,
 **19** del correo saliente, **19** de la dirección del visitante detrás del proxy, **21** de la
 fotografía del carnet, **61** de los adjuntos del expositor, **17** del saneado de logos SVG,
 **198** casos de QR idénticos entre PHP y JavaScript, **161** entre JavaScript y la referencia,
-**13** del lector de QR, **160** de interacción en navegador, y las 23 pantallas limpias en
+**13** del lector de QR, **62** del PDF de los certificados, **170** de interacción en navegador, y las 34 pantallas limpias en
 escritorio, tableta y móvil.
 
 Las pruebas nacieron de errores reales, y por eso cubren lo que cubren: una instalación que se
@@ -405,11 +418,11 @@ viendo fallar la prueba.
   delante, copias de seguridad, actualizaciones y problemas frecuentes.
 - [`docs/SEGURIDAD.md`](docs/SEGURIDAD.md) — revisión de seguridad: qué reduce riesgo, qué
   controles hay, hallazgos abiertos y cumplimiento de la Ley 1581 de 2012.
-- [`docs/ESQUEMA-DATOS.md`](docs/ESQUEMA-DATOS.md) — las 21 tablas con sus columnas y llaves,
+- [`docs/ESQUEMA-DATOS.md`](docs/ESQUEMA-DATOS.md) — las 23 tablas con sus columnas y llaves,
   generado desde `app/Esquema.php`.
 - [`docs/ADMINISTRAR-EVENTOS.md`](docs/ADMINISTRAR-EVENTOS.md) — crear, corregir, desactivar y
   eliminar eventos y jornadas, y qué se lleva por delante cada cosa; revisar propuestas y el
-  correo al expositor; y la Configuración, con el formulario de registro.
+  correo al expositor; la Configuración, con el formulario de registro; y los certificados.
 - [`docs/CORREO-Y-AUTENTICACION.md`](docs/CORREO-Y-AUTENTICACION.md) — las cinco formas de
   entrar, cómo se configura cada una, y el envío de correo de punta a punta.
 - [`docs/API.md`](docs/API.md) — la API de consulta: el token, cada consulta con sus filtros, la

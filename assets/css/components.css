@@ -150,6 +150,8 @@
 .tag--ok { border-color: rgba(var(--c-ok-rgb), .5); color: var(--c-ok); }
 .tag--danger { border-color: rgba(var(--c-danger-rgb), .5); color: var(--c-danger); }
 .tag--mute { border-color: var(--a-16); color: var(--c-muted); }
+/* El de la asistencia completa en los certificados (3.21): el dorado del sello. */
+.tag--oro { border-color: rgba(var(--c-warn-rgb), .6); color: var(--c-warn); background: rgba(var(--c-warn-rgb), .08); }
 
 /* ---- Lista de pasos -------------------------------------------------------- */
 .steps { display: flex; flex-direction: column; }
@@ -1043,6 +1045,21 @@ a.tabs__btn { text-decoration: none; display: inline-flex; align-items: center; 
 }
 
 .config-banner__vista { width: 100%; max-height: 220px; object-fit: cover; border: 1px solid var(--hair); }
+/* El fondo del certificado: la hoja entera, sin recortar, para ver qué queda libre. */
+.config-banner__vista--hoja { max-width: 520px; max-height: none; aspect-ratio: 11 / 8.5; object-fit: cover; }
+.config-imagen-certificado img:not(.config-banner__vista--hoja) { width: auto; max-width: 100%; object-fit: contain;
+  background: repeating-conic-gradient(rgba(127,127,127,.18) 0 25%, transparent 0 50%) 0 0 / 16px 16px; }
+
+/* ---- Certificados (3.21) --------------------------------------------------- */
+.certificado--completo { border-color: rgba(var(--c-warn-rgb), .55); }
+.certificado__texto {
+  margin: 0; padding: 14px 16px; border-left: 3px solid var(--c-accent); background: var(--a-04);
+  color: var(--c-text); line-height: 1.6; font-size: 14px;
+}
+.certificado__texto strong { color: var(--c-title); font-weight: 600; }
+.certificado--completo .certificado__texto { border-left-color: var(--c-warn); }
+.certificado__sello p { color: var(--c-text); line-height: 1.55; }
+.certificado__sello strong { color: var(--c-title); }
 
 /* El banner, arriba del formulario de registro. */
 .registro-banner { border: 1px solid var(--hair); background: var(--c-surface); overflow: hidden; }

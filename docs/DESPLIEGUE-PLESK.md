@@ -466,6 +466,12 @@ restauró no es una copia.
    copia cifrada de cada token nuevo, para volver a verlo, y el permiso de la caracterización.
    Ningún registro cambia, y los tokens que ya existen responden exactamente lo mismo. Ver 7.14.
 
+   La 3.21 agrega **dos tablas** —la configuración de los certificados de cada evento
+   (`evt_evento_certificado`) y los certificados emitidos (`evt_certificado`)— y nada más en la
+   base: no cambia ninguna tabla que ya exista ni ningún registro. Las crea solas la primera
+   visita. Los certificados quedan **cerrados** hasta que un administrador los abra en
+   **Configuración → Certificados**: nadie ve nada nuevo antes. Ver 7.15.
+
    Si el usuario de la base de datos no tiene permiso de `ALTER` —pasa en algunos
    alojamientos—, la actualización automática no puede hacerse: lo anota en el registro,
    vuelve a intentarlo cada cinco minutos y la plataforma sigue funcionando. Para hacerlo a
@@ -1269,6 +1275,100 @@ ninguna actualización. Con los archivos anteriores, la API deja de dar la carac
 tokens dejan de poder verse otra vez o eliminarse; todos siguen funcionando, también los creados
 con la 3.20. Si prefieres quitarlas, `ALTER TABLE evt_api_token DROP COLUMN token_cifrado, DROP
 COLUMN caracterizacion_desde;` en phpMyAdmin, después de volver a los archivos anteriores.
+
+### 7.15 La 3.21: los certificados, sin tocar registros ni configuración
+
+**Qué agrega.**
+
+- **Mi certificado.** Cada persona que registró su ingreso en al menos una jornada descarga su
+  certificado de asistencia en PDF. Quien estuvo en **todas** las jornadas recibe el de
+  **asistencia completa**: lleva un sello dorado, dice que asistió a todas y suma las horas de
+  todo el evento. Los expositores con propuesta aprobada reciben además uno de participación
+  como conferencistas, con el título de su exposición. Mientras están disponibles, «Mi
+  certificado» aparece en el menú —segundo en la barra de abajo del celular— y el carnet avisa
+  que está listo.
+- **Verificación.** Cada certificado lleva un código de doce letras y números y un QR que lleva
+  a `…/v/<código>`: una página pública que dice si es auténtico, a nombre de quién y de qué. No
+  muestra el documento ni el correo.
+- **Configuración → Certificados** (solo administrador): abrirlos o cerrarlos; quién certifica,
+  cómo se nombra el evento, la ciudad, las horas de cada jornada, quién firma —con la imagen de
+  su firma— y las imágenes: el fondo de la hoja y el del recuadro del nombre. Con **Ver un
+  ejemplo** se descarga uno con datos inventados y marca de agua.
+- **El ingreso registrado a mano.** En la ficha de una persona, el administrador registra el
+  ingreso de una jornada que ya pasó —para quien estuvo y no escaneó el código— o quita uno que
+  se registró así. Sin ingreso no hay certificado, y pasado el día el escáner ya no deja
+  sellarlo. Queda en la bitácora. Desde la misma ficha, el operador y el administrador
+  descargan el certificado de una persona para quien no puede entrar.
+
+El PDF lo escribe la propia plataforma, sin bibliotecas: no hay nada que instalar en el
+servidor. Usa la extensión `zlib` de PHP —viene en todos los PHP de Plesk— y GD, la misma de
+las fotos, para procesar las imágenes que se suben.
+
+**Qué cambia en la base de datos.** Solo se **crean** dos tablas nuevas (esquema 1.16.0),
+vacías: `evt_evento_certificado` y `evt_certificado`. Las crea la actualización automática en
+la primera visita; necesita el permiso `CREATE` del usuario de la base, el mismo con que se
+crearon las de la 3.12 y la 3.14. Si no lo tiene, el panel muestra el aviso de «base de datos
+atrasada» con el botón **Actualizar la base de datos**; mientras tanto la plataforma funciona
+como en la 3.20, sin certificados.
+
+**Qué no cambia.** `config/config.php`, `almacen/` —las imágenes que se suban para el
+certificado van a `almacen/logos`, junto al logo y el banner—, los registros, la asistencia y
+las propuestas. Ninguna persona ve nada nuevo mientras un administrador no abra los
+certificados.
+
+**Qué archivos cambian.** Son muchos y varios nuevos —entre ellos la carpeta
+`app/Recursos/fuentes/`, con la tipografía del certificado—, así que lo más seguro es **subir
+la versión completa**: todo menos `config/` y `almacen/`. Si se suben por FTP, en modo
+**binario**: las fuentes `.ttf` se dañan en modo texto. Para quien prefiera revisar uno por
+uno:
+
+| Archivo | Para qué |
+|---|---|
+| `app/Controladores/Certificados.php` *(nuevo)* | «Mi certificado», la descarga, la verificación pública, la configuración y el ingreso a mano |
+| `app/Modelos/Certificado.php` *(nuevo)* | Quién tiene derecho, el código, y lo que dice cada certificado |
+| `app/Nucleo/Pdf.php`, `app/Nucleo/Fuente.php`, `app/Nucleo/CertificadoPdf.php` *(nuevos)* | El PDF, la tipografía y el diseño de la hoja |
+| `app/Recursos/fuentes/` *(carpeta nueva)* | Montserrat en cuatro pesos y su licencia (`OFL.txt`) |
+| `app/Vistas/publico/certificado.php`, `app/Vistas/publico/certificado-verificar.php` *(nuevos)* | Las pantallas de «Mi certificado» y de verificar |
+| `app/Vistas/admin/config-certificados.php`, `app/Vistas/parciales/imagen-certificado.php` *(nuevos)* | La pestaña **Certificados** de Configuración |
+| `app/Esquema.php` | Las dos tablas nuevas, y la versión del esquema 1.16.0 |
+| `app/rutas.php`, `app/Nucleo/Enrutador.php` | Las direcciones nuevas y el formato del código |
+| `app/Vistas/parciales/navegacion.php`, `app/Vistas/parciales/pestanas-configuracion.php` | «Mi certificado» en el menú y la pestaña nueva |
+| `app/Controladores/Carnet.php`, `app/Vistas/publico/carnet.php` | El aviso de que el certificado está listo |
+| `app/Controladores/Admin.php`, `app/Vistas/admin/ficha-persona.php`, `app/Modelos/Asistencia.php` | Los certificados y el ingreso a mano en la ficha |
+| `app/Nucleo/Imagen.php`, `app/Modelos/Evento.php` | Las imágenes del certificado, y borrarlas con el evento |
+| `app/Nucleo/Respuesta.php`, `app/Nucleo/Limite.php`, `app/Nucleo/Bitacora.php` | La descarga del PDF, el límite de códigos por IP y la bitácora |
+| `app/Controladores/Instalador.php` | `zlib` en el diagnóstico |
+| `assets/css/components.css` | Los estilos de las pantallas nuevas |
+| `index.php`, `herramientas/instalar.php`, `herramientas/correo.php` | El número de versión |
+
+**Cómo subirla:**
+
+1. Haz la copia de seguridad de siempre (punto 1 de arriba): **la base de datos y `config/`**.
+   Descarga además la carpeta `app/` y `assets/` tal como están en el servidor.
+2. Sube la versión completa **sin tocar `config/` ni `almacen/`**.
+3. Abre cualquier página de la plataforma. En `/admin` no debe quedar ningún aviso de «base de
+   datos atrasada»; si queda, pulsa **Actualizar la base de datos** en ese aviso.
+4. Compruébalo, todavía con los certificados cerrados:
+   - el carnet de una persona y el menú se ven como antes, sin «Mi certificado»;
+   - en **Configuración → Certificados**, escribe la ciudad, el evento con su artículo («la
+     Cumbre Tecnológica IA Nariño 2026»), las horas de cada jornada y quién firma; sube el
+     fondo de la hoja y el del nombre, y guarda;
+   - pulsa **Ver un ejemplo**: descarga un certificado con datos inventados y la marca de agua
+     «EJEMPLO · SIN VALIDEZ». Revisa los textos y el diseño;
+   - abre la ficha de alguien que asistió y descarga su certificado con el botón **PDF**: es el
+     de verdad, aunque los certificados sigan cerrados. Escanea su QR con el teléfono: debe
+     decir «Certificado auténtico».
+5. Cuando todo esté bien, en la misma pestaña elige **Disponibles** y guarda el estado. Desde
+   ese momento, cada persona con derecho encuentra el suyo en **Mi certificado**.
+
+**Volver atrás:** sube otra vez las carpetas que descargaste en el paso 1. Las dos tablas
+pueden quedarse: la 3.20 no las usa ni las mira, y una base más nueva que el código no dispara
+ninguna actualización. Con los archivos anteriores desaparecen «Mi certificado», la página de
+verificación y la pestaña; los registros y la asistencia siguen intactos, incluidos los
+ingresos que se hayan registrado a mano. Si prefieres quitar las tablas, `DROP TABLE
+evt_certificado, evt_evento_certificado;` en phpMyAdmin, después de volver a los archivos
+anteriores; las imágenes que se hayan subido quedan en `almacen/logos` con nombres que empiezan
+por `certificado-`, y se pueden borrar a mano.
 
 ---
 

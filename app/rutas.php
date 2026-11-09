@@ -26,6 +26,7 @@ use App\Controladores\Acceso;
 use App\Controladores\Admin;
 use App\Controladores\Api;
 use App\Controladores\Carnet;
+use App\Controladores\Certificados;
 use App\Controladores\Configuracion;
 use App\Controladores\Contactos;
 use App\Controladores\Cuenta;
@@ -106,12 +107,23 @@ $enrutador->get('/c/{token:token}', [Escaneo::class, 'carnetAjeno']);
 $enrutador->post('/c/{token:token}/contacto', [Escaneo::class, 'guardarContacto'], 'asistente');
 $enrutador->post('/c/{token:token}/asistencia', [Escaneo::class, 'sellarAsistencia'], 'acreditar');
 
+// El QR de cada certificado (3.21). Pública: quien recibe un certificado —una
+// universidad, una empresa— lo comprueba sin cuenta. Sin código, un formulario
+// para escribirlo; los códigos que no existen cuentan para el límite por IP.
+$enrutador->get('/v', [Certificados::class, 'verificar']);
+$enrutador->get('/v/{codigo:codigo}', [Certificados::class, 'verificar']);
+
 /* =========================================================================
    Asistente identificado
    ========================================================================= */
 $enrutador->get('/carnet', [Carnet::class, 'ver'], 'asistente');
 $enrutador->get('/carnet/imprimir', [Carnet::class, 'imprimir'], 'asistente');
 $enrutador->post('/carnet/dispositivos', [Carnet::class, 'cerrarDispositivos'], 'asistente');
+
+// «Mi certificado»: los suyos y nada más. El código de la dirección tiene que
+// ser de uno de ellos; si no, 404, igual que si no existiera.
+$enrutador->get('/certificado', [Certificados::class, 'mio'], 'asistente');
+$enrutador->get('/certificado/{codigo:codigo}', [Certificados::class, 'descargar'], 'asistente');
 
 /* =========================================================================
    Acreditación — el equipo y el Staff
@@ -170,6 +182,13 @@ $enrutador->post('/admin/configuracion/api/foto', [Configuracion::class, 'fotoTo
 $enrutador->post('/admin/configuracion/api/caracterizacion', [Configuracion::class, 'caracterizacionTokenApi'], 'admin:administrador');
 $enrutador->post('/admin/configuracion/api/ver', [Configuracion::class, 'verTokenApi'], 'admin:administrador');
 $enrutador->post('/admin/configuracion/api/eliminar', [Configuracion::class, 'eliminarTokenApi'], 'admin:administrador');
+// Los certificados: textos, horas, firma e imágenes; abrirlos o cerrarlos; un
+// ejemplo con datos inventados; y las imágenes cargadas, que solo ve el
+// administrador porque una es una firma.
+$enrutador->ambos('/admin/configuracion/certificados', [Certificados::class, 'configuracion'], 'admin:administrador');
+$enrutador->post('/admin/configuracion/certificados/estado', [Certificados::class, 'estado'], 'admin:administrador');
+$enrutador->get('/admin/configuracion/certificados/ejemplo', [Certificados::class, 'ejemplo'], 'admin:administrador');
+$enrutador->get('/admin/configuracion/certificados/imagen/{ranura:slug}', [Certificados::class, 'imagen'], 'admin:administrador');
 $enrutador->ambos('/admin/cuenta', [Cuenta::class, 'ver'], 'admin:consulta');
 
 // Aplica al esquema lo que falte para esta versión del código. Solo agrega
@@ -196,6 +215,12 @@ $enrutador->get('/admin/registros/{persona:num}', [Admin::class, 'ficha'], 'admi
 $enrutador->post('/admin/registros/clave', [Admin::class, 'restablecerClave'], 'admin:administrador');
 $enrutador->post('/admin/registros/enlace-clave', [Admin::class, 'enviarEnlaceClave'], 'admin:administrador');
 $enrutador->post('/admin/registros/qr', [Admin::class, 'regenerarQrAcceso'], 'admin:administrador');
+
+// El certificado de una persona, desde su ficha: lleva su documento, así que
+// pide el mismo rol que verlo. Y el ingreso registrado a mano, para quien
+// estuvo y no escaneó: sin ingreso no hay certificado (3.21).
+$enrutador->get('/admin/registros/{persona:num}/certificado', [Certificados::class, 'dePersona'], 'admin:operador');
+$enrutador->post('/admin/registros/asistencia', [Certificados::class, 'asistenciaManual'], 'admin:administrador');
 
 // El perfil de asistencia. Exige administrador porque por aquí se pone «Staff»,
 // que da acceso a los carnets de todo el evento y a sellar ingresos.

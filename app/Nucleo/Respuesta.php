@@ -169,6 +169,32 @@ final class Respuesta
     }
 
     /**
+     * Un PDF generado al vuelo: el certificado (3.21).
+     *
+     * Por omisión como descarga, que es lo que se pidió: en el teléfono queda
+     * en «Descargas» y desde ahí se comparte. Sin caché compartida: lleva el
+     * nombre y el documento de una persona.
+     */
+    public static function pdf(string $nombre, string $contenido, bool $enLinea = false): never
+    {
+        $nombre = preg_replace('/[^A-Za-z0-9._-]/', '', $nombre) ?: 'documento.pdf';
+        // La política general es para páginas HTML: con «object-src 'none'» y
+        // sin marcos, el visor de PDF de Chrome se queda en blanco al abrirlo
+        // en una pestaña. Este PDF lo escribe la plataforma y no lleva nada
+        // ejecutable, así que va con una política propia que deja al visor
+        // mostrarlo y nada más.
+        header_remove('X-Frame-Options');
+        header("Content-Security-Policy: default-src 'none'; object-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'");
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: ' . ($enLinea ? 'inline' : 'attachment') . '; filename="' . $nombre . '"');
+        header('Content-Length: ' . strlen($contenido));
+        header('X-Content-Type-Options: nosniff');
+        header('Cache-Control: private, no-store');
+        echo $contenido;
+        exit;
+    }
+
+    /**
      * Sirve un archivo subido.
      *
      * Los logos, las fotos y los adjuntos de los expositores nunca se sirven

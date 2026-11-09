@@ -11,6 +11,8 @@
  * @var bool $esAdministrador @var bool $tieneClave @var bool $qrActivo
  * @var string $claveNueva @var string $urlAcceso @var bool $claveActiva
  * @var array{0: string, 1: string}|null $enlaceClave el resultado de enviarle el enlace
+ * @var array|null $certificados a los que tiene derecho (3.21); null sin las tablas
+ * @var bool $certificadosAbiertos
  */
 defined('EVENTOS_TIC') || exit;
 
@@ -19,6 +21,8 @@ $foto = urlFoto($persona);
 $qrAcceso = $qrAcceso ?? '';
 $claveActiva = $claveActiva ?? true;
 $enlaceClave = $enlaceClave ?? null;
+$certificados = $certificados ?? null;
+$hoy = date('Y-m-d');
 ?>
 <div class="stack stack--4" data-ficha-contenido>
 
@@ -108,16 +112,69 @@ $enlaceClave = $enlaceClave ?? null;
     <div class="card__body--tight">
       <?php if (!$historial): ?>
         <div class="empty" style="margin:8px 0">Este evento todavía no tiene jornadas</div>
-      <?php else: foreach ($historial as $h): ?>
-        <div class="kv">
+      <?php else: foreach ($historial as $h): $manual = ($h['via'] ?? '') === 'manual'; ?>
+        <div class="kv" data-jornada-ficha="<?= e((string) $h['numero']) ?>">
           <span class="kv__k">Día <?= e((string) $h['numero']) ?> · <?= e(fecha((string) $h['fecha'])) ?></span>
-          <span class="mono" style="font-size:11px;text-transform:uppercase;color:<?= $h['registrado_en'] ? 'var(--c-accent)' : 'var(--c-muted)' ?>">
-            <?= $h['registrado_en'] ? 'Ingresó ' . e(hora((string) $h['registrado_en'])) : 'Sin ingreso' ?>
+          <span class="row" style="gap:8px;flex-wrap:nowrap;justify-content:flex-end">
+            <span class="mono" style="font-size:11px;text-transform:uppercase;color:<?= $h['registrado_en'] ? 'var(--c-accent)' : 'var(--c-muted)' ?>">
+              <?= $h['registrado_en'] ? ($manual ? 'A mano · ' : 'Ingresó ') . e(hora((string) $h['registrado_en'])) : 'Sin ingreso' ?>
+            </span>
+            <?php if ($esAdministrador && isset($h['jornada_id']) && (!$h['registrado_en'] && (string) $h['fecha'] <= $hoy || $manual)): ?>
+              <!-- Para quien estuvo y no escaneó (3.21): sin ingreso no hay
+                   certificado. Solo se quitan los registrados a mano. -->
+              <form method="post" action="<?= e(u('/admin/registros/asistencia')) ?>" data-ficha-accion
+                    data-confirmar="<?= e($manual
+                        ? '¿Quitar el ingreso del día ' . $h['numero'] . ' que se registró a mano? Deja de contar para su certificado.'
+                        : '¿Registrar a mano el ingreso del día ' . $h['numero'] . '? Queda en la bitácora y cuenta para su certificado.') ?>">
+                <?= testigo() ?>
+                <input type="hidden" name="persona" value="<?= e((string) $id) ?>">
+                <input type="hidden" name="jornada" value="<?= e((string) $h['jornada_id']) ?>">
+                <input type="hidden" name="accion" value="<?= $manual ? 'quitar' : 'marcar' ?>">
+                <button class="btn btn--sm" type="submit" data-asistencia-manual="<?= $manual ? 'quitar' : 'marcar' ?>"><?= $manual ? 'Quitar' : 'Registrar' ?></button>
+              </form>
+            <?php endif; ?>
           </span>
         </div>
       <?php endforeach; endif; ?>
     </div>
   </div>
+
+  <?php if ($certificados !== null): ?>
+    <div class="card" data-certificados-ficha>
+      <div class="card__head">
+        <span>Certificados</span>
+        <span class="tag <?= $certificadosAbiertos ? 'tag--ok' : 'tag--mute' ?>"><?= $certificadosAbiertos ? 'Disponibles' : 'Cerrados' ?></span>
+      </div>
+      <div class="card__body--tight">
+        <?php if ($certificados === []): ?>
+          <div class="empty" style="margin:8px 0">Sin certificado: no tiene ingresos registrados ni exposiciones aprobadas</div>
+        <?php else: foreach ($certificados as $c):
+          $asis = $c['asistencia'];
+          $detalle = $c['tipo'] === 'expositor'
+              ? 'Conferencista: «' . $c['exposicion']['titulo'] . '»'
+              : ($asis['completa'] ? 'Asistencia completa · ' : 'Asistencia · ') . $asis['asistidas'] . ' de ' . $asis['total']
+                . ($asis['total'] === 1 ? ' jornada' : ' jornadas')
+                . ($asis['horas'] > 0 ? ' · ' . \App\Modelos\Certificado::horas((float) $asis['horas']) : '');
+        ?>
+          <div class="kv" data-certificado-ficha="<?= e($c['tipo']) ?>">
+            <span class="kv__k" style="min-width:0">
+              <?= e($detalle) ?>
+              <?php if ($c['emision'] !== null): ?>
+                <span class="mono muted" style="font-size:11px;display:block">
+                  <?= e(\App\Modelos\Certificado::codigoLegible((string) $c['emision']['codigo'])) ?>
+                  · <?= (int) $c['emision']['descargas'] === 0 ? 'sin descargar' : 'descargado ' . e((string) $c['emision']['descargas']) . ((int) $c['emision']['descargas'] === 1 ? ' vez' : ' veces') ?>
+                </span>
+              <?php endif; ?>
+            </span>
+            <?php if (\App\Nucleo\Guardia::puede('operador')): ?>
+              <a class="btn btn--sm" href="<?= e(u('/admin/registros/' . $id . '/certificado', ['tipo' => $c['tipo'], 'ref' => (int) $c['referencia']])) ?>"
+                 download>PDF</a>
+            <?php endif; ?>
+          </div>
+        <?php endforeach; endif; ?>
+      </div>
+    </div>
+  <?php endif; ?>
 
   <?php if ($esAdministrador && $caracterizacion): ?>
     <div class="card">

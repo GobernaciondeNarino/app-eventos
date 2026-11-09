@@ -29,18 +29,18 @@ const ADMIN = { correo: 'aerazo@narino.gov.co', clave: 'una frase larga y facil 
 const ASISTENTE = 'mzambrano@narino.gov.co';
 
 const PUBLICAS = ['/', '/registro', '/entrar/crear', '/agenda', '/entrar', '/admin/entrar',
-                  '/entrar/recuperar', '/admin/recuperar'];
+                  '/entrar/recuperar', '/admin/recuperar', '/v'];
 
 /* Las pantallas de la contraseña nueva necesitan un enlace vigente. Los deja
    extremo-a-extremo.php en la carpeta de salidas; abrirlos no los gasta. */
 const enlaceDePrueba = archivo => {
   try { return fs.readFileSync(path.join(__dirname, 'capturas', archivo), 'utf8').trim(); } catch (e) { return ''; }
 };
-const ASISTENTE_RUTAS = ['/carnet', '/carnet/imprimir', '/checkin', '/contactos'];
+const ASISTENTE_RUTAS = ['/carnet', '/carnet/imprimir', '/checkin', '/contactos', '/certificado'];
 const ADMIN_RUTAS = ['/admin', '/admin/escaner', '/admin/registros', '/admin/registros/nuevo', '/admin/qr-dias',
                      '/admin/expositores', '/admin/organizadores', '/admin/eventos', '/admin/identidad', '/admin/autenticacion',
                      '/admin/cuenta', '/admin/configuracion/registro', '/admin/configuracion/expositores',
-                     '/admin/configuracion/api', '/carnets', '/carnets/imprimir'];
+                     '/admin/configuracion/api', '/admin/configuracion/certificados', '/carnets', '/carnets/imprimir'];
 
 let fallos = 0;
 

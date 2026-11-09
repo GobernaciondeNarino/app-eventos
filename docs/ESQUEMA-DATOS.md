@@ -1,6 +1,6 @@
 # Esquema de datos
 
-Plataforma de Eventos TIC · versión del esquema **1.15.0**
+Plataforma de Eventos TIC · versión del esquema **1.16.0**
 
 > Documento generado con `php herramientas/generar-doc-esquema.php` a partir de
 > `app/Esquema.php`, la misma definición que el instalador usa para crear y actualizar
@@ -31,6 +31,8 @@ poder compartir la base con otras aplicaciones del alojamiento.
 | `evt_codigo_acceso` | 7 | Códigos de un solo uso que se envían por correo al asistente. Se guarda el hash, no el código. |
 | `evt_recuperacion_clave` | 9 | Enlaces de un solo uso para poner una contraseña nueva, de asistentes y del equipo. Se guarda el hash del enlace, no el enlace. |
 | `evt_api_token` | 16 | Tokens de la API de consulta (/api/v1). Se buscan por su hash; desde la 1.15.0, cada uno se guarda además cifrado con la llave de la instalación, para volver a copiarlo. Cada sistema que consulta tiene el suyo y se revoca o se elimina sin tocar los demás. |
+| `evt_evento_certificado` | 15 | Los certificados de cada evento: si ya se pueden descargar, cómo se nombra el evento y quién certifica, la ciudad, las horas de cada jornada, la firma y las imágenes de fondo. Lo que no está guardado es el de fábrica. |
+| `evt_certificado` | 8 | Los certificados emitidos: uno de asistencia por persona y uno de participación por cada exposición aprobada. El código va impreso y en el QR, y con él cualquiera comprueba en /v, sin cuenta, que es auténtico. Lo que dice el certificado se calcula al descargarlo, así que aquí no se guarda. |
 | `evt_intento` | 5 | Contador de intentos fallidos para el límite de fuerza bruta. La clave se guarda como HMAC, no en claro. |
 | `evt_bitacora` | 8 | Auditoría. Quién hizo qué, cuándo y desde dónde. Solo se inserta: no se actualiza ni se borra. |
 | `evt_migracion` | 3 | Qué versión del esquema está aplicada. Sin esto el instalador no sabría si actualizar o instalar. |
@@ -39,12 +41,14 @@ poder compartir la base con otras aplicaciones del alojamiento.
 
 ```
 evento ─┬─ evento_tema        identidad visual: paleta, tipografía y logo
+        ├─ evento_certificado los certificados: si se descargan, textos, horas, firma, fondos
         ├─ evento_dia ────┬── asistencia        un ingreso por persona y jornada
         │                 └── charla            la agenda publicada
         └─ persona ───┬─── persona_caracterizacion   datos sensibles, aparte
                       ├─── credencial                el carnet y su token
                       ├─── contacto                  intercambios por QR
                       ├─── codigo_acceso             códigos de un solo uso
+                      ├─── certificado               cada certificado emitido y su código
                       └─── propuesta ─── charla      al aprobarse
 
 usuario ─── sesion            equipo organizador y sus sesiones
@@ -495,6 +499,55 @@ Llaves e índices:
 
 - `PRIMARY KEY (id)`
 - `UNIQUE KEY uq_api_token (token_hash)`
+
+### `evt_evento_certificado`
+
+Los certificados de cada evento: si ya se pueden descargar, cómo se nombra el evento y quién certifica, la ciudad, las horas de cada jornada, la firma y las imágenes de fondo. Lo que no está guardado es el de fábrica.
+
+| Columna | Tipo |
+|---|---|
+| `evento_id` | `INT UNSIGNED NOT NULL` |
+| `estado` | `VARCHAR(12) NOT NULL DEFAULT 'cerrado'` |
+| `nombre_evento` | `VARCHAR(200) NOT NULL DEFAULT ''` |
+| `entidad` | `VARCHAR(300) NOT NULL DEFAULT ''` |
+| `ciudad` | `VARCHAR(120) NOT NULL DEFAULT ''` |
+| `horas_json` | `TEXT NULL` |
+| `expositores` | `TINYINT(1) NOT NULL DEFAULT 1` |
+| `color` | `VARCHAR(7) NOT NULL DEFAULT ''` |
+| `firma_nombre` | `VARCHAR(160) NOT NULL DEFAULT ''` |
+| `firma_cargo` | `VARCHAR(200) NOT NULL DEFAULT ''` |
+| `firma_imagen` | `VARCHAR(120) NOT NULL DEFAULT ''` |
+| `fondo_imagen` | `VARCHAR(120) NOT NULL DEFAULT ''` |
+| `texto_imagen` | `VARCHAR(120) NOT NULL DEFAULT ''` |
+| `actualizado_en` | `DATETIME NULL` |
+| `actualizado_por` | `INT UNSIGNED NULL` |
+
+Llaves e índices:
+
+- `PRIMARY KEY (evento_id)`
+- `CONSTRAINT fk_certconf_evento FOREIGN KEY (evento_id) REFERENCES `evt_evento` (id) ON DELETE CASCADE`
+
+### `evt_certificado`
+
+Los certificados emitidos: uno de asistencia por persona y uno de participación por cada exposición aprobada. El código va impreso y en el QR, y con él cualquiera comprueba en /v, sin cuenta, que es auténtico. Lo que dice el certificado se calcula al descargarlo, así que aquí no se guarda.
+
+| Columna | Tipo |
+|---|---|
+| `id` | `INT UNSIGNED NOT NULL AUTO_INCREMENT` |
+| `persona_id` | `INT UNSIGNED NOT NULL` |
+| `tipo` | `VARCHAR(20) NOT NULL` |
+| `referencia` | `INT UNSIGNED NOT NULL DEFAULT 0` |
+| `codigo` | `CHAR(12) NOT NULL` |
+| `emitido_en` | `DATETIME NOT NULL` |
+| `descargas` | `INT UNSIGNED NOT NULL DEFAULT 0` |
+| `descargado_en` | `DATETIME NULL` |
+
+Llaves e índices:
+
+- `PRIMARY KEY (id)`
+- `UNIQUE KEY uq_certificado (persona_id, tipo, referencia)`
+- `UNIQUE KEY uq_certificado_codigo (codigo)`
+- `CONSTRAINT fk_certificado_persona FOREIGN KEY (persona_id) REFERENCES `evt_persona` (id) ON DELETE CASCADE`
 
 ### `evt_intento`
 

@@ -6555,6 +6555,299 @@ comprobar('«Actualizar la base de datos» vuelve a crearlas, vacías',
 $pdo->exec("DELETE FROM {$P}asistencia WHERE persona_id IN ($idsCert)");
 
 /* =========================================================================
+   Eventos independientes (1.17.0)
+   -------------------------------------------------------------------------
+   Cada evento funciona por su cuenta: su dirección pública, su identidad, sus
+   registros, la sesión de sus asistentes, su equipo con un rol en cada evento,
+   sus tokens de la API y su bitácora. El administrador global crea eventos y
+   elige el principal; el de un evento, solo cuida el suyo. Al final se elimina
+   el evento de prueba, para que lo que sigue encuentre un solo evento.
+   ========================================================================= */
+titulo('Eventos independientes');
+
+$P = $BD['prefijo'];
+$pdo->exec("DELETE FROM {$P}intento");
+$cuenta = static fn(string $sql): int => (int) $pdo->query($sql)->fetchColumn();
+$fila = static fn(string $sql): array => $pdo->query($sql)->fetch(PDO::FETCH_ASSOC) ?: [];
+$base = (string) parse_url($BASE, PHP_URL_PATH);
+$idA = $cuenta("SELECT id FROM {$P}evento WHERE activo = 1 ORDER BY id DESC LIMIT 1");
+$eventoA = $fila("SELECT * FROM {$P}evento WHERE id = $idA");
+$slugA = (string) ($eventoA['slug'] ?? '');
+$claveGlobal = 'una frase larga y facil de recordar';
+$entrarEquipo = static function (string $correo, string $clave) use ($BASE): Cliente {
+    $c = new Cliente($BASE);
+    $c->get('/admin/entrar');
+    $c->post('/admin/entrar', ['correo' => $correo, 'clave' => $clave], false);
+    return $c;
+};
+
+// La cuenta del instalador es global; la de la puerta la creó esta batería
+// desde Organizadores, así que es del evento, con su rol en él.
+$puertaFila = $fila("SELECT id, alcance FROM {$P}usuario WHERE correo = 'puerta@narino.gov.co'");
+comprobar('la cuenta del instalador es global, el evento tiene su dirección, y las creadas desde Organizadores son del evento',
+    $fila("SELECT alcance FROM {$P}usuario WHERE correo = 'aerazo@narino.gov.co'")['alcance'] === 'global'
+    && preg_match('/^[a-z0-9][a-z0-9-]*$/', $slugA) === 1 && ($puertaFila['alcance'] ?? '') === 'eventos'
+    && $fila("SELECT rol FROM {$P}usuario_evento WHERE usuario_id = " . (int) ($puertaFila['id'] ?? 0) . " AND evento_id = $idA")['rol'] === 'operador',
+    $slugA . ' · ' . ($puertaFila['alcance'] ?? '?'));
+
+// ---- El global crea un evento ---------------------------------------------------------------
+$global = $entrarEquipo('aerazo@narino.gov.co', $claveGlobal);
+$global->get('/admin');
+$global->get('/admin/eventos');
+$global->post('/admin/eventos/crear', [
+    'nombre' => 'Foro de Gobierno Abierto 2027', 'dependencia' => 'Secretaría TIC, Innovación y Gobierno Abierto',
+    'sede' => 'Ipiales', 'fecha_inicio' => date('Y-m-d', strtotime('+30 days')), 'jornadas' => '2',
+]);
+$eventoB = $fila("SELECT * FROM {$P}evento WHERE nombre = 'Foro de Gobierno Abierto 2027' ORDER BY id DESC LIMIT 1");
+$idB = (int) ($eventoB['id'] ?? 0);
+$slugB = (string) ($eventoB['slug'] ?? '');
+comprobar('el global crea un evento en borrador, con su dirección, sin quitarle el principal al de antes',
+    $idB > 0 && $slugB === 'foro-de-gobierno-abierto-2027' && ($eventoB['estado'] ?? '') === 'borrador'
+    && (int) ($eventoB['activo'] ?? 1) === 0 && $cuenta("SELECT id FROM {$P}evento WHERE activo = 1") === $idA, $slugB);
+
+$anonimo = new Cliente($BASE);
+$anonimo->get('/e/' . $slugB . '/', false);
+$borradorOculto = $anonimo->codigo;
+$html = $global->get('/e/' . $slugB . '/registro');
+comprobar('en borrador, su dirección responde 404 al público y su equipo sí la ve',
+    $borradorOculto === 404 && $global->codigo === 200 && str_contains($html, 'Foro de Gobierno Abierto 2027'),
+    $borradorOculto . ' / ' . $global->codigo);
+$anonimo->get('/e/no-existe-este-evento/registro', false);
+comprobar('la dirección de un evento que no existe, 404', $anonimo->codigo === 404);
+
+// ---- Al entrar se elige el evento ------------------------------------------------------------
+$global2 = $entrarEquipo('aerazo@narino.gov.co', $claveGlobal);
+$global2->get('/admin', false);
+$aElegir = $global2->codigo === 303 && str_contains($global2->cabecera('Location'), '/admin/evento');
+$html = $global2->get('/admin/evento');
+comprobar('quien trabaja en dos eventos los elige al entrar: el panel lleva a elegir, y están los dos',
+    $aElegir && str_contains($html, 'data-elegir-evento="' . $idA . '"') && str_contains($html, 'data-elegir-evento="' . $idB . '"'),
+    $global2->codigo . ' → ' . $global2->cabecera('Location'));
+$global2->post('/admin/evento', ['evento' => (string) $idB, 'destino' => '/admin'], false);
+$eligio = $global2->codigo === 303 && str_ends_with($global2->cabecera('Location'), '/admin');
+$html = $global2->get('/admin');
+comprobar('al elegir el Foro, el panel es del Foro, y el menú ofrece cambiar de evento',
+    $eligio && str_contains($html, 'data-evento-actual="' . $idB . '"') && str_contains($html, 'data-cambiar-evento'));
+$html = $global->get('/admin');
+comprobar('la otra sesión, que eligió antes, sigue en el suyo', str_contains($html, 'data-evento-actual="' . $idA . '"'));
+
+// ---- La identidad y los datos, del evento elegido ----------------------------------------------
+$temaAntesA = $fila("SELECT * FROM {$P}evento_tema WHERE evento_id = $idA");
+$global2->get('/admin/identidad');
+$global2->post('/admin/identidad', ['preset' => 'narino-verde', 'tipografia' => 'tecnologica',
+    'nombre' => 'Foro de Gobierno Abierto 2027', 'dependencia' => 'Secretaría TIC', 'sede' => 'Ipiales']);
+$temaB = $fila("SELECT preset FROM {$P}evento_tema WHERE evento_id = $idB");
+comprobar('la identidad que se guarda es la del evento elegido; la del otro no cambia',
+    ($temaB['preset'] ?? '') === 'narino-verde' && $fila("SELECT * FROM {$P}evento_tema WHERE evento_id = $idA") == $temaAntesA);
+
+$global2->get('/admin/eventos');
+$global2->post('/admin/eventos/editar', ['evento' => (string) $idB, 'nombre' => 'Foro de Gobierno Abierto 2027',
+    'dependencia' => 'Secretaría TIC', 'sede' => 'Ipiales', 'fecha_inicio' => (string) $eventoB['fecha_inicio'], 'estado' => 'abierto']);
+$html = $anonimo->get('/e/' . $slugB . '/registro');
+comprobar('abierto, el público lo ve en su dirección, con su nombre y sus enlaces bajo /e/',
+    $anonimo->codigo === 200 && str_contains($html, 'Foro de Gobierno Abierto 2027')
+    && str_contains($html, 'action="' . $base . '/e/' . $slugB . '/registro"'));
+$html = $anonimo->get('/');
+comprobar('y la dirección de la plataforma sigue mostrando el principal', str_contains($html, (string) $eventoA['nombre'])
+    && !str_contains($html, 'Foro de Gobierno Abierto 2027'));
+
+// ---- Sus propios registros, y la sesión de su asistente ------------------------------------------
+$correoDoble = 'mzambrano@narino.gov.co';
+$asistenteB = new Cliente($BASE);
+$asistenteB->get('/e/' . $slugB . '/registro');
+$html = $asistenteB->post('/e/' . $slugB . '/registro', [
+    'correo' => $correoDoble, 'nombre' => 'María Fernanda Zambrano Ortiz', 'tipo_documento' => 'CC',
+    'documento' => '1085234567', 'departamento' => 'Nariño', 'municipio' => 'Pasto', 'rol' => 'participante', 'habeas' => '1',
+]);
+$personaB = $fila("SELECT * FROM {$P}persona WHERE evento_id = $idB AND correo = '$correoDoble'");
+comprobar('el mismo correo y la misma cédula se registran en el Foro como otra persona: cada evento tiene sus registros',
+    !empty($personaB) && $cuenta("SELECT COUNT(*) FROM {$P}persona WHERE evento_id = $idA AND correo = '$correoDoble'") === 1
+    && str_contains($html, 'Tu carnet digital'), substr(strip_tags($html), 0, 140));
+
+$asistenteB->get('/carnet', false);
+$aSuEvento = $asistenteB->codigo === 303 && str_contains($asistenteB->cabecera('Location'), $base . '/e/' . $slugB . '/carnet');
+$asistenteB->get('/e/' . $slugA . '/carnet', false);
+$enElOtro = $asistenteB->codigo === 303 && str_contains($asistenteB->cabecera('Location'), '/entrar');
+comprobar('su sesión es del Foro: sin evento en la dirección va a su carnet del Foro; en el otro evento le piden entrar',
+    $aSuEvento && $enElOtro, $asistenteB->cabecera('Location'));
+$html = $asistenteB->get('/e/' . $slugB . '/carnet');
+comprobar('y su carnet es del Foro, con los enlaces del Foro', $asistenteB->codigo === 200
+    && str_contains($html, 'Foro de Gobierno Abierto 2027') && str_contains($html, $base . '/e/' . $slugB . '/'));
+$telMaria->get('/e/' . $slugB . '/carnet', false);
+$mariaEnB = $telMaria->codigo === 303 && str_contains($telMaria->cabecera('Location'), $base . '/e/' . $slugB . '/entrar');
+$html = $telMaria->get('/carnet');
+comprobar('la sesión de María en el otro evento no abre el Foro, y su carnet de siempre sigue igual',
+    $mariaEnB && $telMaria->codigo === 200 && str_contains($html, (string) $eventoA['nombre']));
+$tokenDiaB = (string) $fila("SELECT token FROM {$P}evento_dia WHERE evento_id = $idB ORDER BY numero LIMIT 1")['token'];
+$asistenteB->get('/d/' . $tokenDiaB, false);
+comprobar('el QR de una jornada del Foro, sin /e/ en la dirección, es del Foro: no le pide entrar a su asistente',
+    $asistenteB->codigo === 200, (string) $asistenteB->codigo);
+
+$html = $global2->get('/admin/registros');
+$global2->get('/admin/registros/' . $idPaula, false);
+comprobar('en el panel del Foro, Registros lista solo al Foro, y la ficha de alguien del otro evento es 404',
+    str_contains($html, 'María Fernanda Zambrano Ortiz') && !str_contains($html, 'Paula Montenegro') && $global2->codigo === 404);
+
+// ---- El equipo de cada evento ------------------------------------------------------------
+$global2->get('/admin/organizadores');
+$global2->post('/admin/organizadores/crear', ['nombre' => 'Lorena Patricia Cabrera', 'correo' => 'admin.foro@narino.gov.co',
+    'rol' => 'administrador', 'puesto' => 'Coordinación del Foro', 'clave' => 'una clave larga del foro 2027']);
+$lorenaFila = $fila("SELECT * FROM {$P}usuario WHERE correo = 'admin.foro@narino.gov.co'");
+$idLorena = (int) ($lorenaFila['id'] ?? 0);
+comprobar('creada desde el Foro, la cuenta es del Foro: administradora allí y en ningún otro evento',
+    ($lorenaFila['alcance'] ?? '') === 'eventos' && ($lorenaFila['rol'] ?? '') === 'administrador'
+    && $cuenta("SELECT COUNT(*) FROM {$P}usuario_evento WHERE usuario_id = $idLorena") === 1
+    && $fila("SELECT rol FROM {$P}usuario_evento WHERE usuario_id = $idLorena AND evento_id = $idB")['rol'] === 'administrador');
+$pdo->exec("UPDATE {$P}usuario SET debe_cambiar = 0 WHERE id = $idLorena");
+$lorena = $entrarEquipo('admin.foro@narino.gov.co', 'una clave larga del foro 2027');
+$html = $lorena->get('/admin');
+comprobar('con un solo evento no hay nada que elegir: entra derecho al panel del Foro, sin «Cambiar de evento»',
+    $lorena->codigo === 200 && str_contains($html, 'data-evento-actual="' . $idB . '"') && !str_contains($html, 'data-cambiar-evento'));
+$lorena->get('/admin/registros/' . $idPaula, false);
+$fichaAjena = $lorena->codigo;
+$lorena->post('/admin/eventos/crear', ['nombre' => 'Uno que no debería', 'fecha_inicio' => date('Y-m-d'), 'jornadas' => '1'], false);
+$crearEvento = $lorena->codigo;
+$lorena->get('/admin/correo', false);
+$verCorreo = $lorena->codigo;
+$lorena->post('/admin/actualizar-esquema', [], false);
+comprobar('la administradora del Foro no ve personas del otro evento, ni crea eventos, ni toca el correo o la base',
+    $fichaAjena === 404 && $crearEvento === 403 && $verCorreo === 403 && $lorena->codigo === 403,
+    "$fichaAjena / $crearEvento / $verCorreo / {$lorena->codigo}");
+$html = $lorena->get('/admin/eventos');
+comprobar('en Eventos ve solo el suyo, para corregirlo, sin crear ni eliminar ni elegir el principal',
+    str_contains($html, 'data-evento-fila="' . $idB . '"') && !str_contains($html, 'data-evento-fila="' . $idA . '"')
+    && !str_contains($html, 'data-abrir-modal="modal-evento"') && !str_contains($html, 'modal-borrar-') && !str_contains($html, 'Hacer principal'));
+$lorena->post('/admin/eventos/editar', ['evento' => (string) $idA, 'nombre' => 'Cambiado por quien no debe',
+    'fecha_inicio' => (string) $eventoA['fecha_inicio'], 'estado' => 'abierto'], false);
+comprobar('y no corrige el otro evento escribiendo su número', $lorena->codigo === 403
+    && $fila("SELECT nombre FROM {$P}evento WHERE id = $idA")['nombre'] === $eventoA['nombre']);
+$html = $lorena->get('/admin/configuracion/registro');
+comprobar('su Configuración no tiene «Acceso y correo», que es de toda la plataforma',
+    $lorena->codigo === 200 && !str_contains($html, '>Acceso y correo<') && str_contains($html, '>Certificados<'));
+
+$lorena->get('/admin/organizadores');
+$lorena->post('/admin/organizadores/crear', ['nombre' => 'Jhon Fredy Pantoja', 'correo' => 'puerta.foro@narino.gov.co',
+    'rol' => 'operador', 'puesto' => 'Puerta del Foro', 'clave' => 'otra clave larga para la puerta']);
+$idJhon = $cuenta("SELECT id FROM {$P}usuario WHERE correo = 'puerta.foro@narino.gov.co'");
+$claveJhon = (string) $fila("SELECT clave_hash FROM {$P}usuario WHERE id = $idJhon")['clave_hash'];
+$idAerazo = $cuenta("SELECT id FROM {$P}usuario WHERE correo = 'aerazo@narino.gov.co'");
+$lorena->post('/admin/organizadores/estado', ['usuario' => (string) $idAerazo, 'estado' => 'suspendido'], false);
+$suspenderGlobal = $lorena->codigo;
+$lorena->post('/admin/organizadores/estado', ['usuario' => (string) $idJhon, 'estado' => 'suspendido']);
+$suspendido = $fila("SELECT estado FROM {$P}usuario WHERE id = $idJhon")['estado'] === 'suspendido';
+$lorena->post('/admin/organizadores/estado', ['usuario' => (string) $idJhon, 'estado' => 'activo']);
+comprobar('agrega a su equipo un operador del Foro; puede suspender esa cuenta, y no una global',
+    $idJhon > 0 && $suspenderGlobal === 403 && $suspendido
+    && $fila("SELECT estado FROM {$P}usuario WHERE id = $idAerazo")['estado'] === 'activo'
+    && $fila("SELECT rol FROM {$P}usuario_evento WHERE usuario_id = $idJhon AND evento_id = $idB")['rol'] === 'operador');
+
+$global->get('/admin/organizadores');
+$html = $global->post('/admin/organizadores/crear', ['nombre' => 'Jhon Fredy Pantoja', 'correo' => 'puerta.foro@narino.gov.co',
+    'rol' => 'consulta', 'clave' => '']);
+comprobar('una cuenta que ya existe se agrega al otro evento con otro rol, sin tocarle la contraseña',
+    str_contains($html, 'también trabaja en este evento')
+    && $fila("SELECT rol FROM {$P}usuario_evento WHERE usuario_id = $idJhon AND evento_id = $idA")['rol'] === 'consulta'
+    && $fila("SELECT clave_hash FROM {$P}usuario WHERE id = $idJhon")['clave_hash'] === $claveJhon);
+$lorena->post('/admin/organizadores/estado', ['usuario' => (string) $idJhon, 'estado' => 'suspendido'], false);
+comprobar('desde que trabaja en dos eventos, la administradora del Foro ya no cuida la cuenta entera', $lorena->codigo === 403);
+
+$pdo->exec("UPDATE {$P}usuario SET debe_cambiar = 0 WHERE id = $idJhon");
+$jhon = $entrarEquipo('puerta.foro@narino.gov.co', 'otra clave larga para la puerta');
+$jhon->get('/admin/evento');
+$jhon->post('/admin/evento', ['evento' => (string) $idA, 'destino' => '/admin']);
+$jhon->get('/admin/qr-dias', false);
+$qrEnA = $jhon->codigo;
+$jhon->post('/admin/evento', ['evento' => (string) $idB, 'destino' => '/admin']);
+$jhon->get('/admin/qr-dias', false);
+comprobar('el rol es el de cada evento: consulta en uno —los QR del día, 403—, operador en el otro —200—',
+    $qrEnA === 403 && $jhon->codigo === 200, $qrEnA . ' / ' . $jhon->codigo);
+$lorena->post('/admin/organizadores/quitar', ['usuario' => (string) $idJhon]);
+comprobar('quitarlo del Foro lo deja solo en el otro evento',
+    $cuenta("SELECT COUNT(*) FROM {$P}usuario_evento WHERE usuario_id = $idJhon AND evento_id = $idB") === 0
+    && $cuenta("SELECT COUNT(*) FROM {$P}usuario_evento WHERE usuario_id = $idJhon AND evento_id = $idA") === 1);
+
+// ---- Global o de un solo evento ---------------------------------------------------------------
+// Las cuentas de antes de la 3.22 quedaron globales al actualizar; el global
+// las deja solo en su evento, y al revés. Nadie más, y nunca la propia.
+$global->get('/admin/organizadores');
+$global->post('/admin/organizadores/crear', ['nombre' => 'Carlos Andrés Rosero', 'correo' => 'apoyo.global@narino.gov.co',
+    'rol' => 'operador', 'alcance' => 'global', 'puesto' => 'Apoyo en todos los eventos', 'clave' => 'una clave global bien larga']);
+$idCarlos = $cuenta("SELECT id FROM {$P}usuario WHERE correo = 'apoyo.global@narino.gov.co'");
+$lorena->get('/admin/organizadores');
+$lorena->post('/admin/organizadores/alcance', ['usuario' => (string) $idCarlos, 'alcance' => 'eventos'], false);
+$alcanceDeLorena = $lorena->codigo;
+$html = $global->get('/admin/organizadores');
+$conBoton = str_contains($html, 'data-cambiar-alcance="' . $idCarlos . '"') && !str_contains($html, 'data-cambiar-alcance="' . $idAerazo . '"');
+$global->post('/admin/organizadores/alcance', ['usuario' => (string) $idCarlos, 'alcance' => 'eventos']);
+$carlos = $fila("SELECT alcance, rol FROM {$P}usuario WHERE id = $idCarlos");
+comprobar('el global deja una cuenta global solo en este evento, con el mismo rol; la administradora de un evento no puede',
+    $idCarlos > 0 && $alcanceDeLorena === 403 && $conBoton
+    && ($carlos['alcance'] ?? '') === 'eventos' && ($carlos['rol'] ?? '') === 'operador'
+    && $cuenta("SELECT COUNT(*) FROM {$P}usuario_evento WHERE usuario_id = $idCarlos") === 1
+    && ($fila("SELECT rol FROM {$P}usuario_evento WHERE usuario_id = $idCarlos AND evento_id = $idA")['rol'] ?? '') === 'operador',
+    $alcanceDeLorena . ' · ' . json_encode($carlos));
+$global->post('/admin/organizadores/alcance', ['usuario' => (string) $idCarlos, 'alcance' => 'global']);
+$global->post('/admin/organizadores/alcance', ['usuario' => (string) $idAerazo, 'alcance' => 'eventos']);
+comprobar('y la vuelve global, con el rol que tenía en el evento; la propia no se cambia, y todo queda anotado',
+    ($fila("SELECT alcance FROM {$P}usuario WHERE id = $idCarlos")['alcance'] ?? '') === 'global'
+    && $cuenta("SELECT COUNT(*) FROM {$P}usuario_evento WHERE usuario_id = $idCarlos") === 0
+    && ($fila("SELECT alcance FROM {$P}usuario WHERE id = $idAerazo")['alcance'] ?? '') === 'global'
+    && $cuenta("SELECT COUNT(*) FROM {$P}bitacora WHERE accion = 'usuario_alcance' AND entidad_id = $idCarlos") === 2);
+$pdo->exec("DELETE FROM {$P}usuario WHERE id = $idCarlos");
+
+// ---- Los tokens de la API, del evento -------------------------------------------------------
+$lorena->get('/admin/configuracion/api');
+$html = $lorena->post('/admin/configuracion/api/crear', ['nombre' => 'Sitio del Foro', 'alcance' => 'basico']);
+$tokenForo = $tokenDeLaPantalla($html);
+$idTokenForo = $idDeToken($tokenForo);
+$r = $pedirApi($api, '/api/v1/personas?token=' . $tokenForo);
+$correosForo = array_column($r['datos'] ?? [], 'id');
+comprobar('un token creado en el Foro entrega solo a las personas del Foro',
+    $api->codigo === 200 && ($r['evento']['id'] ?? 0) === $idB && $correosForo === [(int) $personaB['id']]
+    && $cuenta("SELECT evento_id FROM {$P}api_token WHERE id = $idTokenForo") === $idB, json_encode($correosForo));
+$r = $pedirApi($api, '/api/v1/personas?evento=' . $idA . '&token=' . $tokenForo);
+comprobar('y pedirle el otro evento responde 404', $api->codigo === 404 && ($r['error']['codigo'] ?? 0) === 404);
+$html = $global->get('/admin/configuracion/api');
+$global->post('/admin/configuracion/api/revocar', ['token' => (string) $idTokenForo]);
+comprobar('en la API del otro evento ese token no aparece, ni se revoca con su número',
+    !str_contains($html, 'Sitio del Foro') && $cuenta("SELECT COUNT(*) FROM {$P}api_token WHERE id = $idTokenForo AND revocado_en IS NULL") === 1);
+
+// ---- La bitácora, de cada evento ------------------------------------------------------------
+$html = $lorena->get('/admin');
+preg_match_all('/data-bitacora-evento="([0-9]*)"/', $html, $deLorena);
+$htmlGlobal = $global2->get('/admin');
+preg_match_all('/data-bitacora-evento="([0-9]*)"/', $htmlGlobal, $delGlobal);
+comprobar('en el panel del Foro la bitácora es la del Foro; el global ve además la de la plataforma',
+    $deLorena[1] !== [] && array_unique($deLorena[1]) === [(string) $idB]
+    && in_array('', $delGlobal[1], true) && !in_array((string) $idA, $delGlobal[1], true),
+    json_encode([array_unique($deLorena[1]), array_unique($delGlobal[1])]));
+comprobar('lo que se hace en el Foro queda anotado con el Foro',
+    $cuenta("SELECT evento_id FROM {$P}bitacora WHERE accion = 'api_token_creado' ORDER BY id DESC LIMIT 1") === $idB
+    && $cuenta("SELECT evento_id FROM {$P}bitacora WHERE accion = 'evento_creado' AND entidad_id = $idB") === $idB);
+
+// ---- El principal ------------------------------------------------------------------------
+$global->get('/admin/eventos');
+$global->post('/admin/eventos/activar', ['evento' => (string) $idB]);
+$raizB = $anonimo->get('/');
+$propiaA = $anonimo->get('/e/' . $slugA . '/');
+comprobar('el global hace principal al Foro: la raíz muestra el Foro, y el otro sigue en su propia dirección',
+    str_contains($raizB, 'Foro de Gobierno Abierto 2027') && $anonimo->codigo === 200 && str_contains($propiaA, (string) $eventoA['nombre']));
+$global->post('/admin/eventos/activar', ['evento' => (string) $idA]);
+comprobar('y al devolverlo, la raíz vuelve al de antes',
+    str_contains($anonimo->get('/'), (string) $eventoA['nombre']) && $cuenta("SELECT id FROM {$P}evento WHERE activo = 1") === $idA);
+
+// ---- Al eliminar el evento --------------------------------------------------------------------
+$global->post('/admin/eventos/eliminar', ['evento' => (string) $idB, 'confirmacion' => 'ELIMINAR']);
+comprobar('al eliminar el Foro se van sus personas, su equipo y sus tokens; las cuentas siguen existiendo',
+    $cuenta("SELECT COUNT(*) FROM {$P}evento WHERE id = $idB") === 0 && $cuenta("SELECT COUNT(*) FROM {$P}persona WHERE evento_id = $idB") === 0
+    && $cuenta("SELECT COUNT(*) FROM {$P}usuario_evento WHERE evento_id = $idB") === 0
+    && $cuenta("SELECT COUNT(*) FROM {$P}api_token WHERE evento_id = $idB") === 0 && $cuenta("SELECT COUNT(*) FROM {$P}usuario WHERE id = $idLorena") === 1);
+$html = $global2->get('/admin');
+comprobar('y quien trabajaba en él vuelve al único evento que queda, sin elegir', $global2->codigo === 200
+    && str_contains($html, 'data-evento-actual="' . $idA . '"'));
+$pdo->exec("DELETE FROM {$P}usuario WHERE id IN ($idLorena, $idJhon)");
+
+/* =========================================================================
    Resultado
    ========================================================================= */
 echo "\n" . str_repeat('─', 62) . "\n";

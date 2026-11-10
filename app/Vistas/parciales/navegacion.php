@@ -126,6 +126,12 @@ if ($usuario !== null) {
             $grupoAdmin[] = $item;
         }
     }
+    // Quien trabaja en más de un evento lo cambia desde aquí (1.17.0). Al
+    // final, para no mover la barra de abajo del celular.
+    $eventosDelEquipo = count(Guardia::eventosDe($usuario));
+    if ($eventosDelEquipo > 1) {
+        $grupoAdmin[] = ['clave' => 'admin-evento', 'etiqueta' => 'Cambiar de evento', 'icono' => 'evento', 'ruta' => '/admin/evento'];
+    }
 }
 
 $navegacion = [];

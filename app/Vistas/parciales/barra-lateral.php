@@ -9,8 +9,12 @@ $marca = require __DIR__ . '/marca.php';
   <div class="sidebar__brand">
     <?= $marca('lg') ?>
     <span class="brandtext">
-      <span class="brandtext__name"><?= e($evento['nombre'] ?? 'Eventos TIC') ?></span>
+      <span class="brandtext__name" data-evento-actual="<?= (int) ($evento['id'] ?? 0) ?>"><?= e($evento['nombre'] ?? 'Eventos TIC') ?></span>
       <span class="brandtext__sub"><?= e($evento['sede'] ?? 'Plataforma de eventos') ?></span>
+      <?php if ($usuario !== null && ($eventosDelEquipo ?? 0) > 1): ?>
+        <a class="brandtext__sub" href="<?= e(u('/admin/evento')) ?>" data-cambiar-evento
+           style="color:var(--c-accent);text-decoration:underline;text-underline-offset:3px">Cambiar de evento</a>
+      <?php endif; ?>
     </span>
   </div>
 

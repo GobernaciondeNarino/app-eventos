@@ -949,10 +949,14 @@ final class Instalador
             // segundo plano: los asistentes veían un evento vacío.
             $eventoId = (int) ($estado['evento_id'] ?? 0);
             if ($eventoId === 0) {
-                // El evento en memoria puede ser de otra base: el paso 2 pudo
-                // cambiar los datos de conexión.
+                // Se pregunta a la base, no a la plataforma: el asistente corre
+                // antes de que ella arranque —sin config/config.php no llega a
+                // hacerlo—, y entonces no conoce ningún evento aunque la base
+                // tenga uno con toda la gente inscrita (1.17.0). Y lo que tuviera
+                // en memoria podía ser de otra base: el paso 2 pudo cambiar los
+                // datos de conexión.
                 \App\Nucleo\App::olvidarEvento();
-                $activo = \App\Nucleo\App::eventoActivo();
+                $activo = Evento::principal();
                 if ($activo !== null) {
                     $eventoId = (int) $activo['id'];
                     $estado['evento_id'] = $eventoId;

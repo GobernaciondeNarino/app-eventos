@@ -36,31 +36,36 @@ final class Enrutador
      * @param string          $patron   /admin/registros, /c/{token:token}
      * @param callable|array  $destino  [Controlador::class, 'metodo']
      * @param string|null     $guardia  null, 'asistente', 'admin', 'admin:rol'
+     * @param string|null     $contexto de qué evento es la ruta, si lo dice su token: 'dia',
+     *                                  'carnet', 'acceso'… (ver Contexto). Se resuelve antes
+     *                                  del guardia, que también depende del evento.
      */
-    public function agregar(string $metodo, string $patron, array|callable $destino, ?string $guardia = null): void
+    public function agregar(string $metodo, string $patron, array|callable $destino, ?string $guardia = null,
+                            ?string $contexto = null): void
     {
         $this->rutas[] = [
-            'metodos' => explode('|', strtoupper($metodo)),
-            'regex'   => $this->compilar($patron),
-            'patron'  => $patron,
-            'destino' => $destino,
-            'guardia' => $guardia,
+            'metodos'  => explode('|', strtoupper($metodo)),
+            'regex'    => $this->compilar($patron),
+            'patron'   => $patron,
+            'destino'  => $destino,
+            'guardia'  => $guardia,
+            'contexto' => $contexto,
         ];
     }
 
-    public function get(string $patron, array|callable $destino, ?string $guardia = null): void
+    public function get(string $patron, array|callable $destino, ?string $guardia = null, ?string $contexto = null): void
     {
-        $this->agregar('GET', $patron, $destino, $guardia);
+        $this->agregar('GET', $patron, $destino, $guardia, $contexto);
     }
 
-    public function post(string $patron, array|callable $destino, ?string $guardia = null): void
+    public function post(string $patron, array|callable $destino, ?string $guardia = null, ?string $contexto = null): void
     {
-        $this->agregar('POST', $patron, $destino, $guardia);
+        $this->agregar('POST', $patron, $destino, $guardia, $contexto);
     }
 
-    public function ambos(string $patron, array|callable $destino, ?string $guardia = null): void
+    public function ambos(string $patron, array|callable $destino, ?string $guardia = null, ?string $contexto = null): void
     {
-        $this->agregar('GET|POST', $patron, $destino, $guardia);
+        $this->agregar('GET|POST', $patron, $destino, $guardia, $contexto);
     }
 
     private function compilar(string $patron): string
@@ -104,6 +109,9 @@ final class Enrutador
                 }
             }
 
+            if ($r['contexto'] !== null) {
+                Contexto::resolver($r['contexto'], $parametros);
+            }
             Guardia::exigir($r['guardia'], $peticion);
 
             // El testigo se comprueba después del guardia: así un envío sin

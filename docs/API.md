@@ -1,7 +1,8 @@
 # API de consulta
 
 Plataforma de Eventos TIC · versión 1 de la API, desde la 3.14; el enlace de la fotografía, desde
-la 3.16; la caracterización, volver a ver el token y eliminarlo, desde la 3.20
+la 3.16; la caracterización, volver a ver el token y eliminarlo, desde la 3.20; un token por
+evento, desde la 3.22
 
 Para que otro sistema —el sitio web de la Secretaría, un tablero, otra dependencia— consulte en
 JSON quiénes se registraron al evento: expositores, participantes y los demás perfiles, con
@@ -44,6 +45,11 @@ y cuántas consultas lleva, y se le corta a uno sin dejar sin servicio a los dem
 
 Solo un **administrador** crea, revoca y elimina tokens (2.7). Queda en la bitácora del panel
 quién lo hizo y para qué sistema.
+
+Desde la 3.22 cada token es **de un evento**: se crea en **Configuración → API** del evento en
+el que se trabaja, y solo consulta ese. Para consultar dos eventos hacen falta dos tokens, uno en
+cada uno. Los tokens que existían antes de la 3.22 quedaron con el evento principal: siguen
+respondiendo exactamente lo mismo.
 
 ### 2.2 Qué puede ver: el alcance
 
@@ -223,13 +229,14 @@ Los filtros son todos opcionales. **Uno que no se entiende responde `400` dicien
 un nombre mal escrito (`perfiles=` por `perfil=`), un perfil o un estado que no existe, un día que
 el evento no tiene. Nunca se ignora en silencio para devolver algo distinto de lo que se pidió.
 
-Por omisión se consulta el **evento activo**. Con `evento=N` se consulta otro; los números están
-en `/api/v1`.
+Cada token consulta **su evento** (2.1). El filtro `evento=N` se sigue admitiendo para no romper
+consultas guardadas, pero solo con el número de ese mismo evento: con el de otro responde `404` y
+dice qué evento consulta el token. El número está en `/api/v1`.
 
 ### 3.1 `GET /api/v1` — qué se puede consultar
 
-El evento, los días con su fecha, la lista de eventos —con su fecha de inicio, su estado y
-cuál es el activo—, el alcance del token, si tiene los permisos de la fotografía
+El evento, los días con su fecha, la lista `eventos` —desde la 3.22 trae solo el del token, con
+la misma forma de antes: su fecha de inicio, su estado y si es el principal (`activo`)—, el alcance del token, si tiene los permisos de la fotografía
 (`"fotografia"`) y de la caracterización (`"caracterizacion"`) y, para cada consulta, su
 dirección y sus filtros con lo que hace cada uno.
 
@@ -270,7 +277,7 @@ Todos los perfiles: participantes, expositores, prensa, staff…
 | `orden` | `nombre`, `entidad`, `municipio`, `perfil`, `ingresos` (cuántos días entró) o `registro` (fecha). Por omisión, `nombre` | `orden=registro` |
 | `dir` | `asc` o `desc`. Por omisión, `asc` | `dir=desc` |
 | `pagina`, `por` | Ver 5 | `pagina=2&por=100` |
-| `evento` | Otro evento que no sea el activo | `evento=1` |
+| `evento` | El número del evento del token; el de otro responde `404` (2.1) | `evento=1` |
 
 Los textos se buscan sin distinguir mayúsculas. Al ordenar por nombre, entidad o municipio, los
 que lo tienen vacío van al final en los dos sentidos.
@@ -475,7 +482,7 @@ Siempre con la misma forma, y con un mensaje en español que dice qué hacer:
 |---|---|
 | `400` | Un filtro que no existe o con un valor que no se entiende. El mensaje dice los valores válidos |
 | `401` | Falta el token, no existe, o fue revocado o eliminado |
-| `404` | La consulta no existe, el evento pedido con `evento=`, o un enlace de fotografía que no sirve (2.6) |
+| `404` | La consulta no existe, un `evento=` que no es el del token, o un enlace de fotografía que no sirve (2.6) |
 | `405` | Se usó otro método que no es `GET` |
 | `429` | Pasó el tope de consultas del token, o demasiados intentos con tokens que no sirven. Esperar lo que diga `Retry-After` (segundos) |
 | `500` | Un fallo inesperado. Queda anotado en el registro de errores de la plataforma |

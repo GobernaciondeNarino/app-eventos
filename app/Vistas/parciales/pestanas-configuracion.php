@@ -8,7 +8,8 @@
  * estaba cambiando en otra.
  *
  * Quien no es administrador ve solo «Mi cuenta»: el resto cambia lo que ve todo
- * el evento.
+ * el evento. «Acceso y correo» es de toda la plataforma: solo para el
+ * administrador global (1.17.0).
  *
  * @var string $pestana la activa: registro, expositores, identidad, acceso, api, certificados o cuenta
  */
@@ -22,7 +23,8 @@ $pestanasConfiguracion = [
     // así que esta pestaña es donde se consigue su enlace.
     'expositores' => ['Registro de expositores', '/admin/configuracion/expositores', 'administrador'],
     'identidad' => ['Identidad', '/admin/identidad', 'administrador'],
-    'acceso'    => ['Acceso y correo', '/admin/autenticacion', 'administrador'],
+    // De toda la plataforma, no de un evento (1.17.0): la ve el administrador global.
+    'acceso'    => ['Acceso y correo', '/admin/autenticacion', 'global'],
     // Los tokens con que otros sistemas consultan los registros en JSON.
     'api'       => ['API', '/admin/configuracion/api', 'administrador'],
     // Los certificados del evento: abrirlos, sus textos, horas, firma y diseño.
@@ -32,7 +34,7 @@ $pestanasConfiguracion = [
 ?>
 <nav class="tabs tabs--enlaces" aria-label="Secciones de la configuración">
   <?php foreach ($pestanasConfiguracion as $clave => [$etiqueta, $ruta, $rol]): ?>
-    <?php if (Guardia::puede($rol)): ?>
+    <?php if ($rol === 'global' ? ($usuario !== null && Guardia::esAdministradorGlobal($usuario)) : Guardia::puede($rol)): ?>
       <a class="tabs__btn<?= $clave === $pestana ? ' is-active' : '' ?>" href="<?= e(u($ruta)) ?>"
          <?= $clave === $pestana ? 'aria-current="page"' : '' ?>><?= e($etiqueta) ?></a>
     <?php endif; ?>

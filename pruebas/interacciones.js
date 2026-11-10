@@ -1297,6 +1297,79 @@ function titulo(t) {
   }
 
   /* =====================================================================
+     Eventos independientes (3.22)
+     ---------------------------------------------------------------------
+     El administrador global crea un segundo evento y lo abre. Al volver a
+     entrar, la plataforma le pide elegir en cuál trabaja; con el elegido, el
+     panel y el menú son de ese evento, y «Cambiar de evento» lleva de vuelta
+     a elegir. Su portada pública, en /e/<slug>/, se ve en el celular sin
+     desbordar. Al final se elimina desde la misma pantalla, como estaba.
+     ===================================================================== */
+  titulo('Eventos independientes');
+  {
+    const ctx = await navegador.newContext({ viewport: { width: 1440, height: 1000 } });
+    const pg = await ctx.newPage();
+    const erroresEv = [];
+    pg.on('pageerror', e => erroresEv.push(e.message));
+    const entrar = async () => {
+      await pg.goto(BASE + '/admin/entrar', { waitUntil: 'networkidle' });
+      await pg.fill('#correo', ADMIN.correo);
+      await pg.fill('#clave', ADMIN.clave);
+      await Promise.all([pg.waitForNavigation(), pg.click('button[type=submit]')]);
+    };
+    await entrar();
+    await pg.goto(BASE + '/admin/eventos', { waitUntil: 'networkidle' });
+    await pg.click('[data-abrir-modal="modal-evento"]');
+    await pg.fill('#ev-nombre', 'Encuentro de Prueba del Navegador');
+    await pg.fill('#ev-fecha', '2027-03-15');
+    await pg.fill('#ev-jornadas', '1');
+    await Promise.all([pg.waitForNavigation(), pg.click('#modal-evento button[type=submit]')]);
+    const fila = pg.locator('[data-evento-fila]', { hasText: 'Encuentro de Prueba del Navegador' });
+    const id = await fila.getAttribute('data-evento-fila');
+    const direccion = (await fila.locator('[data-direccion-evento]').innerText()).trim();
+    comprobar('el global crea un evento desde Eventos, con su propia dirección',
+      !!id && /\/e\/encuentro-de-prueba-del-navegador\/$/.test(direccion), direccion);
+
+    await pg.click('[data-abrir-modal="modal-editar-' + id + '"]');
+    await pg.selectOption('#ed-estado-' + id, 'abierto');
+    await Promise.all([pg.waitForNavigation(), pg.click('#modal-editar-' + id + ' button[type=submit]')]);
+
+    await ctx.clearCookies();
+    await entrar();
+    comprobar('al volver a entrar, con dos eventos, la plataforma pide elegir en cuál trabajar',
+      /\/admin\/evento(\?|$)/.test(new URL(pg.url()).pathname + new URL(pg.url()).search)
+      && await pg.locator('[data-elegir-evento="' + id + '"]').isVisible(), pg.url());
+    await Promise.all([pg.waitForNavigation(), pg.click('[data-elegir-evento="' + id + '"]')]);
+    comprobar('al elegirlo, el panel es de ese evento, y el menú ofrece cambiar de evento',
+      await pg.locator('[data-evento-actual]').getAttribute('data-evento-actual') === id
+      && await pg.locator('[data-cambiar-evento]').isVisible());
+    await Promise.all([pg.waitForNavigation(), pg.click('[data-cambiar-evento]')]);
+    comprobar('«Cambiar de evento» lleva de vuelta a elegir, marcando en cuál está',
+      new URL(pg.url()).pathname.endsWith('/admin/evento') && await pg.locator('[data-evento-elegido]').count() === 1);
+
+    const cel = await navegador.newContext({
+      viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
+    });
+    const pc = await cel.newPage();
+    pc.on('pageerror', e => erroresEv.push(e.message));
+    await pc.goto(direccion, { waitUntil: 'networkidle' });
+    const sinDesborde = await pc.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
+    comprobar('su portada pública, en /e/<slug>/, se ve en el celular sin desbordar y con sus enlaces bajo /e/',
+      sinDesborde && (await pc.content()).includes('Encuentro de Prueba del Navegador')
+      && await pc.locator('a[href*="/e/encuentro-de-prueba-del-navegador/registro"]').count() > 0);
+    await cel.close();
+
+    await pg.goto(BASE + '/admin/eventos', { waitUntil: 'networkidle' });
+    await pg.click('[data-abrir-modal="modal-borrar-' + id + '"]');
+    await pg.fill('#conf-' + id, 'ELIMINAR');
+    await Promise.all([pg.waitForNavigation(), pg.click('#modal-borrar-' + id + ' button[type=submit]')]);
+    comprobar('y se elimina desde la misma pantalla: queda un solo evento',
+      await pg.locator('[data-evento-fila="' + id + '"]').count() === 0 && await pg.locator('[data-evento-fila]').count() === 1);
+    comprobar('sin errores de JavaScript en todo el recorrido', erroresEv.length === 0, erroresEv.join(' | '));
+    await ctx.close();
+  }
+
+  /* =====================================================================
      Segundo factor: la hora del servidor contra la de este equipo
      ---------------------------------------------------------------------
      El aviso lo pinta segundo-factor.js. No se puede correr el reloj del

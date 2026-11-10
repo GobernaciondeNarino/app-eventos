@@ -35,7 +35,7 @@ final class Bitacora
             $peticion = App::peticion();
             $sesionAdmin = Sesion::actual('admin');
 
-            Bd::insertar('bitacora', [
+            $fila = [
                 'usuario_id' => $sesionAdmin['sujeto_id'] ?? null,
                 'accion'     => mb_substr($accion, 0, 80),
                 'entidad'    => mb_substr($entidad, 0, 60),
@@ -43,7 +43,22 @@ final class Bitacora
                 'detalle'    => $detalle ? json_encode(self::limpiar($detalle), JSON_UNESCAPED_UNICODE) : null,
                 'ip'         => @inet_pton($peticion->ip()) ?: null,
                 'creado_en'  => date('Y-m-d H:i:s'),
-            ]);
+            ];
+            if (self::$conEvento) {
+                $fila['evento_id'] = self::eventoDe($entidad, $entidadId);
+            }
+            try {
+                Bd::insertar('bitacora', $fila);
+            } catch (\PDOException $e) {
+                // Una base de antes de la 1.17.0, mientras se actualiza: se
+                // anota igual, sin el evento.
+                if (!self::$conEvento || !str_contains($e->getMessage(), 'evento_id')) {
+                    throw $e;
+                }
+                self::$conEvento = false;
+                unset($fila['evento_id']);
+                Bd::insertar('bitacora', $fila);
+            }
         } catch (\Throwable $e) {
             // Que falle la auditoría no puede tumbar la operación en curso —en
             // plena puerta del evento eso sería peor—, pero sí queda en el
@@ -85,17 +100,57 @@ final class Bitacora
         return $salida;
     }
 
-    /** Últimas entradas, para el panel. */
-    public static function recientes(int $limite = 20): array
+    /** ¿La tabla tiene ya la columna del evento? Se descubre al primer intento. */
+    private static bool $conEvento = true;
+
+    /**
+     * En qué evento pasó (1.17.0): el del registro si la entrada es de un
+     * evento; si no, el de la petición cuando la pantalla es de un evento —la
+     * de una persona, la configuración, la puerta—, y null cuando no lo es: la
+     * cuenta propia, el correo, el esquema.
+     */
+    private static function eventoDe(string $entidad, ?int $entidadId): ?int
+    {
+        if ($entidad === 'evento' && $entidadId !== null) {
+            return $entidadId;
+        }
+        $ruta = App::peticion()->ruta();
+        if (Guardia::rutaDelEquipo($ruta) && !Guardia::rutaPorEvento($ruta)) {
+            return null;
+        }
+        $evento = App::eventoActivo();
+        return isset($evento['id']) ? (int) $evento['id'] : null;
+    }
+
+    /**
+     * Últimas entradas, para el panel: las de ese evento. Con $globales,
+     * también las que no son de ningún evento —las ve el administrador
+     * global—. Sin evento, todas.
+     */
+    public static function recientes(int $limite = 20, ?int $eventoId = null, bool $globales = false): array
     {
         $limite = max(1, min(200, $limite));
-        return Bd::filas(
-            "SELECT b.*, u.nombre AS usuario_nombre
-               FROM {bitacora} b
-          LEFT JOIN {usuario} u ON u.id = b.usuario_id
-           ORDER BY b.id DESC
-              LIMIT $limite"
-        );
+        $donde = '';
+        $parametros = [];
+        if ($eventoId !== null) {
+            $donde = $globales ? 'WHERE (b.evento_id = ? OR b.evento_id IS NULL)' : 'WHERE b.evento_id = ?';
+            $parametros = [$eventoId];
+        }
+        try {
+            return Bd::filas(
+                "SELECT b.*, u.nombre AS usuario_nombre
+                   FROM {bitacora} b
+              LEFT JOIN {usuario} u ON u.id = b.usuario_id
+                 $donde
+               ORDER BY b.id DESC
+                  LIMIT $limite",
+                $parametros
+            );
+        } catch (\Throwable) {
+            // Sin la columna todavía: el global ve todo, como antes; el de un
+            // evento, nada que no sea seguro que es suyo.
+            return $globales || $eventoId === null ? self::recientes($limite) : [];
+        }
     }
 
     /** Texto legible de cada acción, para no mostrar claves internas en pantalla. */
@@ -153,6 +208,39 @@ final class Bitacora
             'exportacion'        => "$quien exportó registros" . (($detalle['sensible'] ?? false) ? ' con caracterización' : ''),
             'contacto_creado'    => 'Intercambio de contacto entre asistentes',
             'usuario_creado'     => "$quien agregó a alguien al equipo",
+            // El equipo de cada evento (3.22).
+            'usuario_agregado_evento' => "$quien sumó al equipo del evento una cuenta que ya existía"
+                . (isset($detalle['despues']) ? ', como ' . $detalle['despues'] : ''),
+            'usuario_rol'        => "$quien cambió el rol de una cuenta del equipo"
+                . (!empty($detalle['antes']) && isset($detalle['despues']) ? ' (' . $detalle['antes'] . ' → ' . $detalle['despues'] . ')' : ''),
+            'usuario_quitado_evento' => "$quien sacó a una cuenta del equipo del evento",
+            'usuario_alcance'    => "$quien " . (($detalle['despues'] ?? '') === 'global'
+                    ? 'hizo global una cuenta del equipo' : 'dejó una cuenta global solo en un evento')
+                . (isset($detalle['rol']) ? ', como ' . $detalle['rol'] : ''),
+            'usuario_estado'     => "$quien " . (($detalle['estado'] ?? '') === 'suspendido' ? 'suspendió' : 'reactivó')
+                . ' una cuenta del equipo',
+            'acceso_denegado'    => 'Se negó el acceso a una pantalla'
+                . (isset($detalle['rol_exigido']) ? ' que exige el rol ' . $detalle['rol_exigido'] : ''),
+            'evento_actualizado' => "$quien corrigió los datos de un evento",
+            'evento_desactivado' => "$quien quitó un evento como principal",
+            'evento_eliminado'   => "$quien eliminó un evento"
+                . (isset($detalle['nombre']) ? ': «' . $detalle['nombre'] . '»' : ''),
+            // Las que se anotaban sin texto propio y se veían con su clave.
+            'ficha_consultada'   => "$quien abrió la ficha de una persona",
+            'qr_acceso_regenerado' => "$quien le generó un QR de acceso nuevo a una persona",
+            'credencial_consultada' => 'Se consultó un carnet en la puerta',
+            'busqueda_manual'    => 'Se buscó a una persona por su identificación para acreditarla',
+            'token_dia_invalido' => 'Se escaneó un código de jornada que no existe',
+            'carnets_listados'   => "$quien abrió los carnets para imprimir",
+            'carnets_impresos'   => "$quien imprimió carnets" . (isset($detalle['cuantos']) ? ' (' . $detalle['cuantos'] . ')' : ''),
+            'acceso_asistente'   => 'Un asistente volvió a entrar desde un teléfono recordado',
+            'dispositivo_invalido' => 'Se rechazó un teléfono recordado que ya no era válido',
+            'dispositivos_cerrados' => 'Un asistente olvidó sus teléfonos recordados y cambió su QR de acceso',
+            'contactos_exportados' => 'Un asistente descargó sus contactos',
+            'correo_configurado' => "$quien cambió el correo de salida",
+            'correo_probado'     => "$quien probó el correo de salida" . (array_key_exists('ok', $detalle) && !$detalle['ok'] ? ', y no salió' : ''),
+            'correo_red_probada' => "$quien probó la conexión con el servidor de correo",
+            'autenticacion_configurada' => "$quien cambió las formas de entrar de los asistentes",
             'clave_cambiada'     => "$quien cambió su contraseña",
             'clave_asistente_restablecida' => "$quien le generó una contraseña nueva a un asistente",
             'enlace_clave_pedido' => ($entrada['entidad'] ?? '') === 'usuario'
@@ -207,7 +295,7 @@ final class Bitacora
             } . (isset($detalle['a']) ? ' (versión ' . $detalle['a'] . ')' : ''),
             'instalacion_reparacion'  => 'Se reabrió el asistente para reparar la instalación',
             'evento_creado'      => "$quien creó un evento",
-            'evento_activado'    => "$quien cambió el evento activo",
+            'evento_activado'    => "$quien eligió el evento principal",
             'instalacion'        => 'Se completó la instalación',
             'limite_alcanzado'   => 'Se bloqueó una acción por exceso de intentos',
             'csrf_rechazado'     => 'Se descartó un envío sin testigo válido',

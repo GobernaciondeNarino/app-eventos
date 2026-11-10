@@ -15,7 +15,18 @@ defined('EVENTOS_TIC') || exit;
 final class App
 {
     private static ?Peticion $peticion = null;
+
+    /** El evento de esta petición, ya resuelto (ver eventoActivo()). */
     private static ?array $evento = null;
+    private static bool $eventoResuelto = false;
+    private static bool $eventoFijado = false;
+    private static ?array $principal = null;
+    private static bool $principalLeido = false;
+    private static ?string $prefijo = null;
+    /** La dirección pidió /e/<slug>/ de un evento que no existe o que no se puede ver. */
+    private static bool $eventoDesconocido = false;
+    /** Con la base conectada y al día: antes de eso no se pregunta por eventos. */
+    private static bool $listo = false;
 
     public static function peticion(): Peticion
     {
@@ -75,9 +86,17 @@ final class App
         if (!str_starts_with($peticion->ruta(), '/instalar')) {
             Actualizacion::alDia();
         }
+        self::$listo = true;
 
         Sesion::limpiar();
         self::compartirConVistas();
+
+        // /e/<slug>/ de un evento que no existe, o de uno en borrador para
+        // quien no es de su equipo: lo mismo que una página que no existe.
+        if (self::$eventoDesconocido && !$peticion->esApi()) {
+            Respuesta::error(404, 'Evento no encontrado',
+                'La dirección no corresponde a ningún evento abierto. Revisa el enlace con quien te lo envió.');
+        }
 
         // El testigo se emite en cualquier página, no solo donde hay un
         // formulario: quien llega directo a una pantalla que envía por POST
@@ -404,19 +423,143 @@ final class App
             [['texto' => 'Entrar al panel', 'url' => Url::a('/admin/entrar'), 'principal' => true]]);
     }
 
-    /** El evento marcado como activo; si no hay ninguno, el más reciente. */
+    /**
+     * El evento de esta petición (1.17.0).
+     *
+     * Hasta la 3.21 era uno solo para toda la plataforma: el marcado como
+     * activo. Desde que cada evento funciona por su cuenta, depende de quién
+     * pide qué:
+     *
+     *   · el equipo, en /admin, trabaja sobre el evento que eligió al entrar
+     *     (Guardia::eventoDelEquipo()); mientras no ha elegido, se muestra el
+     *     principal, y el guardia no lo deja pasar de las pantallas que no
+     *     dependen de un evento;
+     *   · una dirección /e/<slug>/… es de ese evento —si es público, o si quien
+     *     la abre es de su equipo—;
+     *   · una ruta con token —el QR del día, un carnet, el enlace de los
+     *     expositores— es del evento del token: lo fija el enrutador antes del
+     *     guardia (Contexto), con usarEvento();
+     *   · y todo lo demás, del principal: el marcado como activo, o el más
+     *     reciente si no hay ninguno, como siempre.
+     *
+     * Casi todas las pantallas lo usan sin saber nada de esto, y por eso cada
+     * una queda limitada a su evento: la ficha de una persona, por ejemplo, ya
+     * respondía 404 si la persona no era del evento activo.
+     */
     public static function eventoActivo(): ?array
     {
-        if (self::$evento !== null) {
+        if (self::$eventoResuelto) {
             return self::$evento;
         }
-        $fila = Bd::fila('SELECT * FROM {evento} WHERE activo = 1 ORDER BY id DESC LIMIT 1')
-            ?? Bd::fila('SELECT * FROM {evento} ORDER BY id DESC LIMIT 1');
-        return self::$evento = $fila;
+        if (!self::$listo) {
+            return null;
+        }
+        self::$eventoResuelto = true;
+        return self::$evento = self::resolverEvento();
     }
 
+    private static function resolverEvento(): ?array
+    {
+        $peticion = self::peticion();
+        if (Guardia::rutaDelEquipo($peticion->ruta())) {
+            return Guardia::eventoDelEquipo() ?? self::principal();
+        }
+
+        $slug = $peticion->slugEvento();
+        if ($slug !== '') {
+            $evento = \App\Modelos\Evento::porSlug($slug);
+            if ($evento !== null && !\App\Modelos\Evento::esPublico($evento)
+                && Guardia::rolDelEquipoEn((int) $evento['id']) === null) {
+                $evento = null;
+            }
+            if ($evento === null) {
+                self::$eventoDesconocido = true;
+            }
+            return $evento;
+        }
+        return self::principal();
+    }
+
+    /** El que se sirve en la raíz: el marcado como activo; si no hay, el más reciente. */
+    public static function principal(): ?array
+    {
+        if (!self::$principalLeido && self::$listo) {
+            self::$principalLeido = true;
+            self::$principal = \App\Modelos\Evento::principal();
+        }
+        return self::$principal;
+    }
+
+    /**
+     * Fija el evento de esta petición. Lo usan el enrutador, con el evento del
+     * token de la ruta, y la API, con el del token que consulta. Las vistas se
+     * pintan después, así que se les pasa también.
+     */
+    public static function usarEvento(?array $evento): void
+    {
+        self::$evento = $evento;
+        self::$eventoResuelto = true;
+        self::$eventoFijado = true;
+        self::$eventoDesconocido = false;
+        self::$prefijo = null;
+        Respuesta::compartir('evento', $evento);
+        Respuesta::compartir('tema', Tema::del($evento['id'] ?? 0));
+    }
+
+    /** Vuelve a resolver el evento —el equipo acaba de elegir otro— y se lo pasa a las vistas. */
+    public static function refrescarEvento(): void
+    {
+        self::olvidarEvento();
+        $evento = self::eventoActivo();
+        Respuesta::compartir('evento', $evento);
+        Respuesta::compartir('tema', Tema::del($evento['id'] ?? 0));
+    }
+
+    /** ¿El evento lo fijó una ruta con token, y no la dirección? */
+    public static function eventoFijado(): bool
+    {
+        return self::$eventoFijado;
+    }
+
+    /**
+     * Lo que va delante de las rutas públicas en las direcciones que se
+     * generan: '/e/<slug>' si el evento de esta petición no es el principal,
+     * '' si lo es —sus direcciones siguen siendo las de siempre— o si todavía
+     * no hay base.
+     */
+    public static function prefijoEvento(): string
+    {
+        if (self::$prefijo !== null) {
+            return self::$prefijo;
+        }
+        if (!self::$listo) {
+            return '';
+        }
+        $evento = self::eventoActivo();
+        $principal = self::principal();
+        if ($evento === null || ($principal !== null && (int) $principal['id'] === (int) $evento['id'])) {
+            return self::$prefijo = '';
+        }
+        $slug = \App\Modelos\Evento::slugDe($evento);
+        return self::$prefijo = $slug === '' ? '' : '/e/' . $slug;
+    }
+
+    /**
+     * Olvida lo resuelto: después de cambiar un evento —activarlo, editarlo,
+     * agregarle una jornada— la misma petición lo vuelve a leer.
+     */
     public static function olvidarEvento(): void
     {
+        $fijado = self::$eventoFijado ? self::$evento : null;
         self::$evento = null;
+        self::$eventoResuelto = false;
+        self::$principal = null;
+        self::$principalLeido = false;
+        self::$prefijo = null;
+        if ($fijado !== null) {
+            // Uno fijado por una ruta se relee por su id: sigue siendo ese.
+            self::$evento = \App\Modelos\Evento::porId((int) $fijado['id']);
+            self::$eventoResuelto = true;
+        }
     }
 }

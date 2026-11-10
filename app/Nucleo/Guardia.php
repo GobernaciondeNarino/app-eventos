@@ -164,6 +164,19 @@ final class Guardia
         $persona = self::personaActual();
 
         if ($persona === null) {
+            // Tiene sesión, pero en otro evento, y llegó a una dirección sin
+            // evento —un marcador viejo, la dirección escrita a mano—: se la
+            // lleva a la misma pantalla de su evento en vez de pedirle que se
+            // identifique otra vez.
+            $otra = self::$personaDeOtroEvento;
+            if ($otra !== null && $peticion->slugEvento() === '' && !App::eventoFijado() && !$peticion->esPost()) {
+                $suyo = \App\Modelos\Evento::porId((int) $otra['evento_id']);
+                if ($suyo !== null) {
+                    $consulta = $_SERVER['QUERY_STRING'] ?? '';
+                    Respuesta::redirigirAbsoluto(Url::deEvento($suyo, $peticion->ruta())
+                        . ($consulta !== '' ? '?' . $consulta : ''));
+                }
+            }
             self::pedirIdentificacion($peticion, '/entrar');
         }
 
@@ -207,8 +220,20 @@ final class Guardia
             Sesion::cerrar('asistente');
             return null;
         }
+
+        // La sesión es de su evento y de ningún otro (1.17.0): los eventos
+        // funcionan cada uno por su cuenta, con sus propios registros. En las
+        // páginas de otro evento, quien entró en este es un visitante más.
+        $evento = App::eventoActivo();
+        if ($evento !== null && (int) $persona['evento_id'] !== (int) $evento['id']) {
+            self::$personaDeOtroEvento = $persona;
+            return null;
+        }
         return $persona;
     }
+
+    /** La persona con sesión abierta en otro evento, si personaActual() la descartó por eso. */
+    private static ?array $personaDeOtroEvento = null;
 
     /* =====================================================================
        Sin municipio, a «Mis datos»
@@ -304,7 +329,39 @@ final class Guardia
                 'Tu cuenta está suspendida. Comunícate con la administración del evento.');
         }
 
-        if ($rolExigido !== null && !self::tieneRol($usuario, $rolExigido)) {
+        // Cada evento funciona por su cuenta (1.17.0): las pantallas del equipo
+        // trabajan sobre el evento que se eligió al entrar, y el rol que cuenta
+        // es el de ese evento. Las que no son de ningún evento —la cuenta
+        // propia, la lista de eventos, el correo— miran el rol más alto.
+        $ruta = $peticion->ruta();
+        if (self::rutaPorEvento($ruta)) {
+            $evento = self::eventoDelEquipo() ?? self::elegirSiEsUnoSolo($usuario);
+            if ($evento === null) {
+                self::pedirEvento($peticion, $usuario);
+            }
+            $eventoDelRol = (int) $evento['id'];
+        } elseif (self::rutaDelEquipo($ruta)) {
+            $eventoDelRol = null;
+        } else {
+            // Fuera de /admin —acreditar en la puerta, los carnets, el carnet
+            // escaneado—, el evento es el de la página o el del token.
+            $eventoDelRol = isset(App::eventoActivo()['id']) ? (int) App::eventoActivo()['id'] : null;
+        }
+
+        if ($rolExigido === 'global') {
+            if (!self::esAdministradorGlobal($usuario)) {
+                Bitacora::registrar('acceso_denegado', 'seguridad', (int) $usuario['id'], [
+                    'ruta' => $peticion->ruta(),
+                    'rol_exigido' => 'administrador global',
+                ]);
+                Respuesta::error(403, 'No tienes permiso',
+                    'Esta sección es de la administración global de la plataforma: crear y eliminar eventos, el '
+                    . 'correo y la actualización de la base. Pídeselo a quien administra la plataforma.');
+            }
+            return;
+        }
+
+        if ($rolExigido !== null && !self::tieneRol($usuario, $rolExigido, $eventoDelRol)) {
             Bitacora::registrar('acceso_denegado', 'seguridad', (int) $usuario['id'], [
                 'ruta' => $peticion->ruta(),
                 'rol_exigido' => $rolExigido,
@@ -375,10 +432,20 @@ final class Guardia
         'consulta'      => ['consulta'],
     ];
 
-    public static function tieneRol(array $usuario, string $rolExigido): bool
+    /**
+     * ¿Tiene ese rol —o uno que lo incluye— en el evento?
+     *
+     * Sin decir el evento, el de esta petición (App::eventoActivo()). Con
+     * null, ninguno en particular: vale el rol más alto que tenga en
+     * cualquiera, que es lo que miran las pantallas que no son de un evento.
+     */
+    public static function tieneRol(array $usuario, string $rolExigido, int|null|false $eventoId = false): bool
     {
-        $suyos = self::JERARQUIA[$usuario['rol']] ?? [];
-        return in_array($rolExigido, $suyos, true);
+        if ($eventoId === false) {
+            $eventoId = isset(App::eventoActivo()['id']) ? (int) App::eventoActivo()['id'] : null;
+        }
+        $rol = self::rolEn($usuario, $eventoId);
+        return $rol !== null && in_array($rolExigido, self::JERARQUIA[$rol] ?? [], true);
     }
 
     /** Para las vistas: ¿le muestro este botón? */
@@ -386,6 +453,210 @@ final class Guardia
     {
         $usuario = self::usuarioActual();
         return $usuario !== null && self::tieneRol($usuario, $rol);
+    }
+
+    /* =====================================================================
+       Roles por evento (1.17.0)
+       ===================================================================== */
+
+    /** @var array<string, ?string> rol de cada cuenta en cada evento, en esta petición */
+    private static array $roles = [];
+
+    /**
+     * ¿La cuenta vale en todos los eventos? Las de antes de la 1.17.0 sí: así
+     * nadie pierde lo que veía al actualizar.
+     */
+    public static function esGlobal(array $usuario): bool
+    {
+        return ($usuario['alcance'] ?? 'global') !== 'eventos';
+    }
+
+    /** El administrador global: crea y elimina eventos, todas las cuentas, el correo. */
+    public static function esAdministradorGlobal(array $usuario): bool
+    {
+        return self::esGlobal($usuario) && ($usuario['rol'] ?? '') === 'administrador';
+    }
+
+    /**
+     * El rol de la cuenta en un evento, o null si no trabaja en él. Con null
+     * como evento, el más alto que tenga en cualquiera.
+     */
+    public static function rolEn(array $usuario, ?int $eventoId): ?string
+    {
+        $rol = (string) ($usuario['rol'] ?? '');
+        if (self::esGlobal($usuario)) {
+            return isset(self::JERARQUIA[$rol]) ? $rol : null;
+        }
+        $clave = (int) $usuario['id'] . ':' . ($eventoId ?? '*');
+        if (array_key_exists($clave, self::$roles)) {
+            return self::$roles[$clave];
+        }
+        try {
+            if ($eventoId === null) {
+                $filas = Bd::filas('SELECT rol FROM {usuario_evento} WHERE usuario_id = ?', [(int) $usuario['id']]);
+                $suyo = null;
+                foreach (['administrador', 'operador', 'consulta'] as $candidato) {
+                    if (in_array($candidato, array_column($filas, 'rol'), true)) {
+                        $suyo = $candidato;
+                        break;
+                    }
+                }
+            } else {
+                $suyo = Bd::valor('SELECT rol FROM {usuario_evento} WHERE usuario_id = ? AND evento_id = ?',
+                    [(int) $usuario['id'], $eventoId]);
+            }
+        } catch (\Throwable) {
+            $suyo = null;
+        }
+        $suyo = is_string($suyo) && isset(self::JERARQUIA[$suyo]) ? $suyo : null;
+        return self::$roles[$clave] = $suyo;
+    }
+
+    /** Olvida los roles leídos: después de cambiar el equipo de un evento. */
+    public static function olvidarRoles(): void
+    {
+        self::$roles = [];
+        self::$eventoEquipoLeido = false;
+        self::$eventoEquipo = null;
+    }
+
+    /** El rol en ese evento de quien tiene sesión del equipo y terminó de entrar, o null. */
+    public static function rolDelEquipoEn(int $eventoId): ?string
+    {
+        $usuario = self::equipoOperativo();
+        return $usuario === null ? null : self::rolEn($usuario, $eventoId);
+    }
+
+    /**
+     * Los eventos en los que trabaja: todos si es global; si no, los suyos.
+     * Con el rol de cada uno en 'rol_equipo'.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public static function eventosDe(array $usuario): array
+    {
+        $eventos = \App\Modelos\Evento::todos();
+        if (self::esGlobal($usuario)) {
+            return array_map(static fn(array $e): array => $e + ['rol_equipo' => (string) $usuario['rol']], $eventos);
+        }
+        $suyos = [];
+        foreach ($eventos as $evento) {
+            $rol = self::rolEn($usuario, (int) $evento['id']);
+            if ($rol !== null) {
+                $suyos[] = $evento + ['rol_equipo' => $rol];
+            }
+        }
+        return $suyos;
+    }
+
+    /* =====================================================================
+       El evento que eligió el equipo al entrar (1.17.0)
+       ===================================================================== */
+
+    private const EVENTO_ELEGIDO = 'evento_id';
+
+    private static ?array $eventoEquipo = null;
+    private static bool $eventoEquipoLeido = false;
+
+    /**
+     * Las pantallas del equipo que no son de un evento: entrar y salir, la
+     * cuenta propia, la lista de eventos y la elección de uno, el correo y la
+     * actualización de la base.
+     */
+    private const RUTAS_SIN_EVENTO = [
+        '/admin/entrar', '/admin/verificar', '/admin/activar-2fa', '/admin/salir', '/admin/clave',
+        '/admin/recuperar', '/admin/evento', '/admin/eventos', '/admin/cuenta', '/admin/autenticacion',
+        '/admin/correo', '/admin/actualizar-esquema',
+    ];
+
+    /**
+     * Las rutas del equipo: /admin y los QR de las jornadas que se pintan en
+     * sus pantallas. Trabajan sobre el evento que eligió al entrar.
+     */
+    public static function rutaDelEquipo(string $ruta): bool
+    {
+        return $ruta === '/admin' || str_starts_with($ruta, '/admin/') || str_starts_with($ruta, '/medios/qr/dia/');
+    }
+
+    public static function rutaPorEvento(string $ruta): bool
+    {
+        if (!self::rutaDelEquipo($ruta)) {
+            return false;
+        }
+        foreach (self::RUTAS_SIN_EVENTO as $sinEvento) {
+            if ($ruta === $sinEvento || str_starts_with($ruta, $sinEvento . '/')) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * El evento sobre el que trabaja quien tiene sesión del equipo: el que
+     * eligió, si todavía existe y todavía trabaja en él. Null si no eligió.
+     */
+    public static function eventoDelEquipo(): ?array
+    {
+        if (self::$eventoEquipoLeido) {
+            return self::$eventoEquipo;
+        }
+        self::$eventoEquipoLeido = true;
+        $usuario = self::usuarioActual();
+        $id = (int) (Sesion::datos('admin')[self::EVENTO_ELEGIDO] ?? 0);
+        if ($usuario === null || $id <= 0) {
+            return self::$eventoEquipo = null;
+        }
+        $evento = \App\Modelos\Evento::porId($id);
+        if ($evento === null || self::rolEn($usuario, $id) === null) {
+            return self::$eventoEquipo = null;
+        }
+        return self::$eventoEquipo = $evento;
+    }
+
+    /** Deja elegido ese evento en la sesión del equipo. False si no trabaja en él. */
+    public static function elegirEvento(int $eventoId): bool
+    {
+        $usuario = self::usuarioActual();
+        if ($usuario === null || \App\Modelos\Evento::porId($eventoId) === null || self::rolEn($usuario, $eventoId) === null) {
+            return false;
+        }
+        Sesion::guardarDatos('admin', [self::EVENTO_ELEGIDO => $eventoId] + Sesion::datos('admin'));
+        self::$eventoEquipoLeido = false;
+        App::refrescarEvento();
+        return true;
+    }
+
+    /** Con un solo evento no hay nada que elegir: se elige solo. */
+    private static function elegirSiEsUnoSolo(array $usuario): ?array
+    {
+        $eventos = self::eventosDe($usuario);
+        if (count($eventos) !== 1 || !self::elegirEvento((int) $eventos[0]['id'])) {
+            return null;
+        }
+        return self::eventoDelEquipo();
+    }
+
+    /** Sin evento elegido y con varios para elegir: a la pantalla de elegir, recordando a dónde iba. */
+    private static function pedirEvento(Peticion $peticion, array $usuario): never
+    {
+        if (self::eventosDe($usuario) === []) {
+            if (self::esAdministradorGlobal($usuario)) {
+                Respuesta::redirigir('/admin/eventos', 'Crea el primer evento para empezar.', 'warn');
+            }
+            Respuesta::error(403, 'Todavía no trabajas en ningún evento',
+                'Tu cuenta existe, pero ningún evento te ha agregado a su equipo. Pídeselo a quien '
+                . 'administra el evento.',
+                [['texto' => 'Salir', 'url' => Url::a('/admin/entrar'), 'principal' => true]]);
+        }
+        $destino = $peticion->metodo() === 'GET' ? $peticion->ruta() : '/admin';
+        $consulta = $_SERVER['QUERY_STRING'] ?? '';
+        if ($destino !== '/admin' && $consulta !== '') {
+            $destino .= '?' . $consulta;
+        }
+        if ($peticion->esAjax()) {
+            Respuesta::json(['error' => 'evento', 'ir' => Url::a('/admin/evento')], 409);
+        }
+        Respuesta::redirigirAbsoluto(Url::a('/admin/evento', $destino === '/admin' ? [] : ['destino' => $destino]));
     }
 
     /* =====================================================================

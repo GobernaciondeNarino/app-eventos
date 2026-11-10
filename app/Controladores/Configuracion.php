@@ -122,7 +122,7 @@ final class Configuracion
         Respuesta::vista('admin/config-api', [
             'titulo'     => 'API',
             'pantalla'   => 'configuracion',
-            'tokens'     => \App\Modelos\TokenApi::todos(),
+            'tokens'     => \App\Modelos\TokenApi::todos((int) App::eventoExigido()['id']),
             'enPantalla' => $enPantalla,
             'fotoDisponible' => $this->fotoDisponible(),
             'caracterizacionDisponible' => $this->caracterizacionDisponible(),
@@ -154,7 +154,7 @@ final class Configuracion
             $this->exigirColumnaCaracterizacion();
         }
         $token = \App\Modelos\TokenApi::crear($nombre, $alcance, $conFoto, (int) Guardia::usuarioActual()['id'],
-            $conCaracterizacion);
+            $conCaracterizacion, (int) App::eventoExigido()['id']);
 
         // Se pinta en esta misma respuesta.
         $this->api($peticion, ['enPantalla' => [
@@ -171,7 +171,7 @@ final class Configuracion
     public function verTokenApi(Peticion $peticion): void
     {
         $this->exigirTablaApi();
-        $resultado = \App\Modelos\TokenApi::paraCopiar($peticion->entero('token'));
+        $resultado = \App\Modelos\TokenApi::paraCopiar($this->tokenDelEvento($peticion));
         $fila = $resultado['fila'];
 
         if ($resultado['estado'] !== 'ok' || $fila === null) {
@@ -194,7 +194,7 @@ final class Configuracion
     public function revocarTokenApi(Peticion $peticion): void
     {
         $this->exigirTablaApi();
-        $revocado = \App\Modelos\TokenApi::revocar($peticion->entero('token'));
+        $revocado = \App\Modelos\TokenApi::revocar($this->tokenDelEvento($peticion));
         Respuesta::redirigir('/admin/configuracion/api', $revocado
             ? 'Token revocado: desde ahora la API lo rechaza. Los demás siguen funcionando.'
             : 'Ese token ya estaba revocado o no existe.', $revocado ? 'ok' : 'warn');
@@ -204,7 +204,7 @@ final class Configuracion
     public function eliminarTokenApi(Peticion $peticion): void
     {
         $this->exigirTablaApi();
-        $eliminado = \App\Modelos\TokenApi::eliminar($peticion->entero('token'));
+        $eliminado = \App\Modelos\TokenApi::eliminar($this->tokenDelEvento($peticion));
         Respuesta::redirigir('/admin/configuracion/api', $eliminado === null
             ? 'Ese token ya no existe.'
             : ($eliminado['vigente']
@@ -219,7 +219,7 @@ final class Configuracion
         $this->exigirTablaApi();
         $this->exigirColumnaCaracterizacion();
         $permitir = $peticion->campo('permitir') === '1';
-        $hecho = \App\Modelos\TokenApi::permitirCaracterizacion($peticion->entero('token'), $permitir);
+        $hecho = \App\Modelos\TokenApi::permitirCaracterizacion($this->tokenDelEvento($peticion), $permitir);
         Respuesta::redirigir('/admin/configuracion/api', !$hecho
             ? 'Ese token no existe, ya estaba revocado o ya estaba así.'
             : ($permitir
@@ -234,13 +234,26 @@ final class Configuracion
         $this->exigirTablaApi();
         $this->exigirColumnaFoto();
         $permitir = $peticion->campo('permitir') === '1';
-        $hecho = \App\Modelos\TokenApi::permitirFoto($peticion->entero('token'), $permitir);
+        $hecho = \App\Modelos\TokenApi::permitirFoto($this->tokenDelEvento($peticion), $permitir);
         Respuesta::redirigir('/admin/configuracion/api', !$hecho
             ? 'Ese token no existe, ya estaba revocado o ya estaba así.'
             : ($permitir
                 ? 'Listo: desde la próxima consulta, cada persona trae el enlace de su fotografía.'
                 : 'Listo: la API ya no da la fotografía con ese token, y los enlaces que había entregado dejan de servir.'),
             $hecho ? 'ok' : 'warn');
+    }
+
+    /**
+     * El token que pide la acción, si es de este evento (1.17.0). Si es de
+     * otro, lo mismo que si no existiera.
+     */
+    private function tokenDelEvento(Peticion $peticion): int
+    {
+        $id = $peticion->entero('token');
+        if (!\App\Modelos\TokenApi::esDelEvento($id, (int) App::eventoExigido()['id'])) {
+            Respuesta::redirigir('/admin/configuracion/api', 'Ese token ya no existe.', 'warn');
+        }
+        return $id;
     }
 
     /**

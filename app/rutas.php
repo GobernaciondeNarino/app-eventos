@@ -15,7 +15,15 @@ declare(strict_types=1);
  *   'admin:consulta'       equipo, cualquier rol
  *   'admin:operador'       operador o administrador
  *   'admin:administrador'  solo administrador
+ *   'admin:global'         solo el administrador global (1.17.0): crear y
+ *                          eliminar eventos, el correo, la base de datos
  *   'instalar'             solo mientras no haya instalación terminada
+ *
+ * Desde la 1.17.0 cada evento funciona por su cuenta: el rol del equipo es el
+ * del evento sobre el que trabaja —el que eligió al entrar, en /admin/evento—,
+ * y las páginas públicas de cada evento se sirven en /e/<slug>/ (las del
+ * principal, además, en la raíz). Las rutas con un token llevan un quinto
+ * valor, el contexto: el token dice de qué evento son (ver App\Nucleo\Contexto).
  *
  * @var App\Nucleo\Enrutador $enrutador
  */
@@ -61,7 +69,7 @@ $enrutador->ambos('/preregistro', [Publico::class, 'registro']);
 // El mismo formulario para los expositores, con su propia configuración. No
 // está en ningún menú: se llega solo por el enlace privado que la organización
 // envía aparte. Sin el token vigente responde 404.
-$enrutador->ambos('/registro/expositores/{token:token}', [Publico::class, 'registroExpositores']);
+$enrutador->ambos('/registro/expositores/{token:token}', [Publico::class, 'registroExpositores'], null, 'expositores');
 $enrutador->get('/agenda', [Publico::class, 'agenda']);
 $enrutador->get('/agenda/{id:num}', [Publico::class, 'charla']);
 $enrutador->get('/municipios/{departamento:texto}', [Publico::class, 'municipios']);
@@ -80,14 +88,14 @@ $enrutador->ambos('/entrar/crear', [Acceso::class, 'crearCuenta']);
 
 // Acceso por QR personal. Sin guardia: identificarse es justamente lo que hace.
 // El token es de 128 bits y hay límite por IP contra la enumeración.
-$enrutador->get('/entrar/qr/{token:token}', [Acceso::class, 'porQr']);
+$enrutador->get('/entrar/qr/{token:token}', [Acceso::class, 'porQr'], null, 'acceso');
 $enrutador->post('/salir', [Acceso::class, 'salirAsistente']);
 
 // «Olvidé mi contraseña»: se pide un enlace al correo y con él se pone una
 // nueva. Abrir el enlace no lo gasta —los antivirus del correo lo abren antes
 // que la persona—; guardar la contraseña sí.
 $enrutador->ambos('/entrar/recuperar', [Recuperar::class, 'pedirAsistente']);
-$enrutador->ambos('/entrar/recuperar/{token:token}', [Recuperar::class, 'nuevaAsistente']);
+$enrutador->ambos('/entrar/recuperar/{token:token}', [Recuperar::class, 'nuevaAsistente'], null, 'recuperacion');
 
 /* =========================================================================
    Códigos QR
@@ -99,19 +107,19 @@ $enrutador->ambos('/entrar/recuperar/{token:token}', [Recuperar::class, 'nuevaAs
    ========================================================================= */
 
 // Código de la jornada, pegado en la entrada. Registra el ingreso propio.
-$enrutador->get('/d/{token:token}', [Escaneo::class, 'codigoDelDia'], 'asistente');
+$enrutador->get('/d/{token:token}', [Escaneo::class, 'codigoDelDia'], 'asistente', 'dia');
 
 // Carnet de una persona. Quién lo escanea decide qué pasa:
 // el equipo sella su ingreso, otro asistente intercambia contacto.
-$enrutador->get('/c/{token:token}', [Escaneo::class, 'carnetAjeno']);
-$enrutador->post('/c/{token:token}/contacto', [Escaneo::class, 'guardarContacto'], 'asistente');
-$enrutador->post('/c/{token:token}/asistencia', [Escaneo::class, 'sellarAsistencia'], 'acreditar');
+$enrutador->get('/c/{token:token}', [Escaneo::class, 'carnetAjeno'], null, 'carnet');
+$enrutador->post('/c/{token:token}/contacto', [Escaneo::class, 'guardarContacto'], 'asistente', 'carnet');
+$enrutador->post('/c/{token:token}/asistencia', [Escaneo::class, 'sellarAsistencia'], 'acreditar', 'carnet');
 
 // El QR de cada certificado (3.21). Pública: quien recibe un certificado —una
 // universidad, una empresa— lo comprueba sin cuenta. Sin código, un formulario
 // para escribirlo; los códigos que no existen cuentan para el límite por IP.
 $enrutador->get('/v', [Certificados::class, 'verificar']);
-$enrutador->get('/v/{codigo:codigo}', [Certificados::class, 'verificar']);
+$enrutador->get('/v/{codigo:codigo}', [Certificados::class, 'verificar'], null, 'certificado');
 
 /* =========================================================================
    Asistente identificado
@@ -157,6 +165,10 @@ $enrutador->post('/admin/salir', [Acceso::class, 'salirEquipo']);
 // no ha pasado el guardia del panel, y el propio método comprueba la sesión.
 $enrutador->ambos('/admin/clave', [Acceso::class, 'cambiarClave']);
 
+// Elegir el evento sobre el que se trabaja (1.17.0). Al entrar, a quien trabaja
+// en más de uno se le pide aquí; con uno solo se elige sin preguntar.
+$enrutador->ambos('/admin/evento', [Admin::class, 'elegirEvento'], 'admin:consulta');
+
 // La misma recuperación por correo, para el equipo. El enlace cambia la
 // contraseña pero no abre sesión: el segundo factor se pasa igual que siempre.
 $enrutador->ambos('/admin/recuperar', [Recuperar::class, 'pedirEquipo']);
@@ -193,7 +205,7 @@ $enrutador->ambos('/admin/cuenta', [Cuenta::class, 'ver'], 'admin:consulta');
 
 // Aplica al esquema lo que falte para esta versión del código. Solo agrega
 // tablas y columnas; nunca borra. Ver Esquema::revisionPendiente().
-$enrutador->post('/admin/actualizar-esquema', [Admin::class, 'actualizarEsquema'], 'admin:administrador');
+$enrutador->post('/admin/actualizar-esquema', [Admin::class, 'actualizarEsquema'], 'admin:global');
 
 // La pantalla de la puerta. Es la misma para el equipo y para el Staff —de ahí
 // el guardia 'acreditar' y las dos direcciones—, y vive en Escaneo porque dejó
@@ -243,16 +255,22 @@ $enrutador->post('/admin/organizadores/estado', [Admin::class, 'cambiarEstadoUsu
 $enrutador->post('/admin/organizadores/rol', [Admin::class, 'cambiarRolUsuario'], 'admin:administrador');
 $enrutador->post('/admin/organizadores/segundo-factor', [Admin::class, 'restablecerSegundoFactor'], 'admin:administrador');
 $enrutador->post('/admin/organizadores/enlace-clave', [Admin::class, 'enviarEnlaceClaveUsuario'], 'admin:administrador');
+// Sacar a una cuenta del equipo de este evento (1.17.0). Sigue en los demás.
+$enrutador->post('/admin/organizadores/quitar', [Admin::class, 'quitarDelEvento'], 'admin:administrador');
+// Global o de un solo evento: lo decide la administración global (1.17.0).
+$enrutador->post('/admin/organizadores/alcance', [Admin::class, 'cambiarAlcanceUsuario'], 'admin:global');
 
+// La lista la ve también el administrador de un evento, con los suyos, y los
+// corrige; crearlos, elegir el principal y eliminarlos es del global.
 $enrutador->get('/admin/eventos', [Admin::class, 'eventos'], 'admin:administrador');
-$enrutador->post('/admin/eventos/crear', [Admin::class, 'crearEvento'], 'admin:administrador');
-$enrutador->post('/admin/eventos/activar', [Admin::class, 'activarEvento'], 'admin:administrador');
+$enrutador->post('/admin/eventos/crear', [Admin::class, 'crearEvento'], 'admin:global');
+$enrutador->post('/admin/eventos/activar', [Admin::class, 'activarEvento'], 'admin:global');
 $enrutador->post('/admin/eventos/editar', [Admin::class, 'editarEvento'], 'admin:administrador');
-$enrutador->post('/admin/eventos/desactivar', [Admin::class, 'desactivarEvento'], 'admin:administrador');
+$enrutador->post('/admin/eventos/desactivar', [Admin::class, 'desactivarEvento'], 'admin:global');
 
 // Eliminar se lleva por delante los registros de las personas y no hay
 // deshacer: el propio método exige que se escriba ELIMINAR.
-$enrutador->post('/admin/eventos/eliminar', [Admin::class, 'eliminarEvento'], 'admin:administrador');
+$enrutador->post('/admin/eventos/eliminar', [Admin::class, 'eliminarEvento'], 'admin:global');
 
 $enrutador->get('/admin/identidad', [Admin::class, 'identidad'], 'admin:administrador');
 $enrutador->post('/admin/identidad', [Admin::class, 'guardarIdentidad'], 'admin:administrador');
@@ -260,14 +278,16 @@ $enrutador->post('/admin/identidad', [Admin::class, 'guardarIdentidad'], 'admin:
 // Autenticación. Solo administrador: aquí se decide cómo entra la gente al
 // evento y se guardan las credenciales con las que la plataforma envía en
 // nombre de la Gobernación.
-$enrutador->get('/admin/autenticacion', [Admin::class, 'correo'], 'admin:administrador');
-$enrutador->post('/admin/autenticacion', [Admin::class, 'guardarAutenticacion'], 'admin:administrador');
+// Desde la 1.17.0, del administrador global: el correo y las formas de entrar
+// son de toda la plataforma, no de un evento.
+$enrutador->get('/admin/autenticacion', [Admin::class, 'correo'], 'admin:global');
+$enrutador->post('/admin/autenticacion', [Admin::class, 'guardarAutenticacion'], 'admin:global');
 // La dirección anterior sigue viva: hay enlaces y marcadores hechos con ella.
-$enrutador->get('/admin/correo', [Admin::class, 'correo'], 'admin:administrador');
-$enrutador->post('/admin/correo', [Admin::class, 'guardarCorreo'], 'admin:administrador');
-$enrutador->post('/admin/correo/probar', [Admin::class, 'probarCorreo'], 'admin:administrador');
-$enrutador->post('/admin/correo/red', [Admin::class, 'probarRedCorreo'], 'admin:administrador');
-$enrutador->post('/admin/correo/local', [Admin::class, 'usarCorreoLocal'], 'admin:administrador');
+$enrutador->get('/admin/correo', [Admin::class, 'correo'], 'admin:global');
+$enrutador->post('/admin/correo', [Admin::class, 'guardarCorreo'], 'admin:global');
+$enrutador->post('/admin/correo/probar', [Admin::class, 'probarCorreo'], 'admin:global');
+$enrutador->post('/admin/correo/red', [Admin::class, 'probarRedCorreo'], 'admin:global');
+$enrutador->post('/admin/correo/local', [Admin::class, 'usarCorreoLocal'], 'admin:global');
 
 /* =========================================================================
    API de consulta, en JSON
@@ -298,11 +318,11 @@ $enrutador->get('/medios/banner/{evento:num}/expositores', [Medios::class, 'bann
 // Sin guardia en la tabla: la foto de una persona la puede ver ella misma y el
 // equipo organizador, y eso lo decide el propio método. Con un guardia fijo,
 // una de las dos mitades quedaba fuera.
-$enrutador->get('/medios/foto/{persona:num}', [Medios::class, 'foto']);
+$enrutador->get('/medios/foto/{persona:num}', [Medios::class, 'foto'], null, 'persona');
 
 // Los adjuntos del expositor, por la misma razón: los ve quien los subió y
 // quien revisa las propuestas. La ranura es «hoja-de-vida» o «exposicion».
-$enrutador->get('/medios/documento/{propuesta:num}/{ranura:slug}', [Medios::class, 'documento']);
+$enrutador->get('/medios/documento/{propuesta:num}/{ranura:slug}', [Medios::class, 'documento'], null, 'propuesta');
 
 $enrutador->get('/medios/qr/carnet.svg', [Medios::class, 'qrCarnet'], 'asistente');
 $enrutador->get('/medios/qr/acceso.svg', [Medios::class, 'qrAcceso'], 'asistente');

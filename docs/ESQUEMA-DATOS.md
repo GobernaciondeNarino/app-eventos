@@ -1,6 +1,6 @@
 # Esquema de datos
 
-Plataforma de Eventos TIC · versión del esquema **1.16.0**
+Plataforma de Eventos TIC · versión del esquema **1.17.0**
 
 > Documento generado con `php herramientas/generar-doc-esquema.php` a partir de
 > `app/Esquema.php`, la misma definición que el instalador usa para crear y actualizar
@@ -13,7 +13,7 @@ poder compartir la base con otras aplicaciones del alojamiento.
 
 | Tabla | Columnas | Para qué existe |
 |---|---:|---|
-| `evt_evento` | 9 | Un registro por evento. La plataforma es multievento desde el día uno. |
+| `evt_evento` | 10 | Un registro por evento. La plataforma es multievento desde el día uno; desde la 1.17.0 cada evento tiene además su propia dirección pública (/e/<slug>/) y su propio equipo. |
 | `evt_evento_tema` | 7 | Identidad visual: paleta, tipografía y logo. Es lo que se convierte en variables CSS. |
 | `evt_evento_formulario` | 13 | Cómo es el formulario de registro de cada evento: qué campos pide, las opciones de cada lista, el banner y si recibe registros nuevos. Lo que no está guardado —campos o listas en NULL, una lista que no aparece— es el de fábrica. |
 | `evt_evento_formulario_expositores` | 13 | El formulario de registro privado de los expositores: el mismo formulario, con su propia configuración, al que se llega solo por un enlace con token que se envía aparte. Los perfiles de asistencia son los del formulario público. |
@@ -25,16 +25,17 @@ poder compartir la base con otras aplicaciones del alojamiento.
 | `evt_contacto` | 5 | Intercambio de datos entre asistentes. Guarda quién escaneó a quién, para poder revertirlo si alguien lo pide. |
 | `evt_propuesta` | 17 | Lo que envía un expositor en el preregistro. Al aprobarse se convierte en charla. |
 | `evt_charla` | 6 | La agenda pública: propuestas aprobadas con horario y salón asignados. |
-| `evt_usuario` | 14 | El equipo organizador. Contraseña con Argon2id y segundo factor obligatorio para el rol administrador. |
+| `evt_usuario` | 15 | El equipo organizador. Contraseña con Argon2id y segundo factor obligatorio para el rol administrador. |
+| `evt_usuario_evento` | 5 | El equipo de cada evento: con qué rol trabaja en él cada cuenta de alcance «eventos». Las cuentas globales valen en todos y no aparecen aquí. |
 | `evt_sesion` | 9 | Sesiones en base de datos: se pueden cerrar a distancia y no quedan en archivos compartidos del servidor. |
 | `evt_dispositivo` | 8 | Teléfonos desde los que un asistente ya entró. Le evitan volver a pedir el código cada vez. |
 | `evt_codigo_acceso` | 7 | Códigos de un solo uso que se envían por correo al asistente. Se guarda el hash, no el código. |
 | `evt_recuperacion_clave` | 9 | Enlaces de un solo uso para poner una contraseña nueva, de asistentes y del equipo. Se guarda el hash del enlace, no el enlace. |
-| `evt_api_token` | 16 | Tokens de la API de consulta (/api/v1). Se buscan por su hash; desde la 1.15.0, cada uno se guarda además cifrado con la llave de la instalación, para volver a copiarlo. Cada sistema que consulta tiene el suyo y se revoca o se elimina sin tocar los demás. |
+| `evt_api_token` | 17 | Tokens de la API de consulta (/api/v1). Se buscan por su hash; desde la 1.15.0, cada uno se guarda además cifrado con la llave de la instalación, para volver a copiarlo. Cada sistema que consulta tiene el suyo y se revoca o se elimina sin tocar los demás. |
 | `evt_evento_certificado` | 15 | Los certificados de cada evento: si ya se pueden descargar, cómo se nombra el evento y quién certifica, la ciudad, las horas de cada jornada, la firma y las imágenes de fondo. Lo que no está guardado es el de fábrica. |
 | `evt_certificado` | 8 | Los certificados emitidos: uno de asistencia por persona y uno de participación por cada exposición aprobada. El código va impreso y en el QR, y con él cualquiera comprueba en /v, sin cuenta, que es auténtico. Lo que dice el certificado se calcula al descargarlo, así que aquí no se guarda. |
 | `evt_intento` | 5 | Contador de intentos fallidos para el límite de fuerza bruta. La clave se guarda como HMAC, no en claro. |
-| `evt_bitacora` | 8 | Auditoría. Quién hizo qué, cuándo y desde dónde. Solo se inserta: no se actualiza ni se borra. |
+| `evt_bitacora` | 9 | Auditoría. Quién hizo qué, cuándo y desde dónde. Solo se inserta: no se actualiza ni se borra. |
 | `evt_migracion` | 3 | Qué versión del esquema está aplicada. Sin esto el instalador no sabría si actualizar o instalar. |
 
 ## Cómo se relacionan
@@ -42,6 +43,7 @@ poder compartir la base con otras aplicaciones del alojamiento.
 ```
 evento ─┬─ evento_tema        identidad visual: paleta, tipografía y logo
         ├─ evento_certificado los certificados: si se descargan, textos, horas, firma, fondos
+        ├─ usuario_evento     su equipo: qué cuentas trabajan en él y con qué rol
         ├─ evento_dia ────┬── asistencia        un ingreso por persona y jornada
         │                 └── charla            la agenda publicada
         └─ persona ───┬─── persona_caracterizacion   datos sensibles, aparte
@@ -51,11 +53,12 @@ evento ─┬─ evento_tema        identidad visual: paleta, tipografía y logo
                       ├─── certificado               cada certificado emitido y su código
                       └─── propuesta ─── charla      al aprobarse
 
-usuario ─── sesion            equipo organizador y sus sesiones
+usuario ─┬─ sesion           equipo organizador y sus sesiones
+         └─ usuario_evento   el rol en cada evento de las cuentas que no son globales
 recuperacion_clave            enlaces para poner una contraseña nueva, de personas y del equipo
-api_token                     quién puede consultar la API; el hash de cada token y su copia cifrada
+api_token                     quién puede consultar la API de un evento; el hash de cada token y su copia cifrada
 intento                       contador para el límite de fuerza bruta
-bitacora                      auditoría; solo inserciones
+bitacora                      auditoría, con el evento de cada entrada; solo inserciones
 migracion                     versión del esquema aplicada
 ```
 
@@ -77,12 +80,13 @@ Cuatro decisiones explican la forma del modelo:
 
 ### `evt_evento`
 
-Un registro por evento. La plataforma es multievento desde el día uno.
+Un registro por evento. La plataforma es multievento desde el día uno; desde la 1.17.0 cada evento tiene además su propia dirección pública (/e/<slug>/) y su propio equipo.
 
 | Columna | Tipo |
 |---|---|
 | `id` | `INT UNSIGNED NOT NULL AUTO_INCREMENT` |
 | `nombre` | `VARCHAR(160) NOT NULL` |
+| `slug` | `VARCHAR(80) NULL DEFAULT NULL` |
 | `dependencia` | `VARCHAR(160) NOT NULL DEFAULT ''` |
 | `sede` | `VARCHAR(160) NOT NULL DEFAULT ''` |
 | `fecha_inicio` | `DATE NOT NULL` |
@@ -95,6 +99,7 @@ Llaves e índices:
 
 - `PRIMARY KEY (id)`
 - `KEY idx_evento_estado (estado, activo)`
+- `UNIQUE KEY uq_evento_slug (slug)`
 
 ### `evt_evento_tema`
 
@@ -370,6 +375,7 @@ El equipo organizador. Contraseña con Argon2id y segundo factor obligatorio par
 | `correo` | `VARCHAR(190) NOT NULL` |
 | `clave_hash` | `VARCHAR(255) NOT NULL` |
 | `rol` | `ENUM('administrador','operador','consulta') NOT NULL DEFAULT 'operador'` |
+| `alcance` | `ENUM('global','eventos') NOT NULL DEFAULT 'global'` |
 | `puesto` | `VARCHAR(80) NOT NULL DEFAULT ''` |
 | `totp_secreto` | `VARBINARY(255) NULL` |
 | `totp_confirmado` | `TINYINT(1) NOT NULL DEFAULT 0` |
@@ -384,6 +390,25 @@ Llaves e índices:
 
 - `PRIMARY KEY (id)`
 - `UNIQUE KEY uq_usuario_correo (correo)`
+
+### `evt_usuario_evento`
+
+El equipo de cada evento: con qué rol trabaja en él cada cuenta de alcance «eventos». Las cuentas globales valen en todos y no aparecen aquí.
+
+| Columna | Tipo |
+|---|---|
+| `usuario_id` | `INT UNSIGNED NOT NULL` |
+| `evento_id` | `INT UNSIGNED NOT NULL` |
+| `rol` | `ENUM('administrador','operador','consulta') NOT NULL DEFAULT 'operador'` |
+| `creado_por` | `INT UNSIGNED NULL` |
+| `creado_en` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` |
+
+Llaves e índices:
+
+- `PRIMARY KEY (usuario_id, evento_id)`
+- `KEY idx_usuario_evento_evento (evento_id)`
+- `CONSTRAINT fk_usuev_usuario FOREIGN KEY (usuario_id) REFERENCES `evt_usuario` (id) ON DELETE CASCADE`
+- `CONSTRAINT fk_usuev_evento FOREIGN KEY (evento_id) REFERENCES `evt_evento` (id) ON DELETE CASCADE`
 
 ### `evt_sesion`
 
@@ -480,6 +505,7 @@ Tokens de la API de consulta (/api/v1). Se buscan por su hash; desde la 1.15.0, 
 |---|---|
 | `id` | `INT UNSIGNED NOT NULL AUTO_INCREMENT` |
 | `nombre` | `VARCHAR(120) NOT NULL` |
+| `evento_id` | `INT UNSIGNED NULL` |
 | `token_hash` | `CHAR(64) NOT NULL` |
 | `pista` | `CHAR(8) NOT NULL` |
 | `token_cifrado` | `VARBINARY(255) NULL` |
@@ -499,6 +525,7 @@ Llaves e índices:
 
 - `PRIMARY KEY (id)`
 - `UNIQUE KEY uq_api_token (token_hash)`
+- `KEY idx_api_token_evento (evento_id)`
 
 ### `evt_evento_certificado`
 
@@ -574,6 +601,7 @@ Auditoría. Quién hizo qué, cuándo y desde dónde. Solo se inserta: no se act
 |---|---|
 | `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` |
 | `usuario_id` | `INT UNSIGNED NULL` |
+| `evento_id` | `INT UNSIGNED NULL` |
 | `accion` | `VARCHAR(80) NOT NULL` |
 | `entidad` | `VARCHAR(60) NOT NULL DEFAULT ''` |
 | `entidad_id` | `INT UNSIGNED NULL` |
@@ -586,6 +614,7 @@ Llaves e índices:
 - `PRIMARY KEY (id)`
 - `KEY idx_bitacora_fecha (creado_en)`
 - `KEY idx_bitacora_accion (accion)`
+- `KEY idx_bitacora_evento (evento_id, creado_en)`
 
 ### `evt_migracion`
 

@@ -47,7 +47,8 @@ final class TokenApi
         string $alcance,
         bool $conFoto,
         ?int $creadoPor,
-        bool $conCaracterizacion = false
+        bool $conCaracterizacion = false,
+        ?int $eventoId = null
     ): string {
         $alcance = isset(self::ALCANCES[$alcance]) ? $alcance : 'basico';
         $nombre = mb_substr(trim($nombre), 0, 120);
@@ -72,6 +73,10 @@ final class TokenApi
         $cifrado = self::cifrar($token);
         if ($cifrado !== null) {
             $datos['token_cifrado'] = $cifrado;
+        }
+        // De qué evento son los datos que entrega (1.17.0).
+        if ($eventoId !== null && self::tieneColumna('evento_id')) {
+            $datos['evento_id'] = $eventoId;
         }
         $id = Bd::insertar('api_token', $datos);
         Bitacora::registrar('api_token_creado', 'api_token', $id, ['nombre' => $nombre, 'alcance' => $alcance,
@@ -111,8 +116,11 @@ final class TokenApi
      * Sin el token cifrado: a la pantalla le basta saber si se puede volver a
      * ver («copiable»), y así no viaja a la vista en ninguna forma.
      */
-    public static function todos(): array
+    public static function todos(?int $eventoId = null): array
     {
+        // Los de un evento (1.17.0); sin la columna todavía, todos, que eran
+        // del único evento que había.
+        $deEvento = $eventoId !== null && self::tieneColumna('evento_id');
         return array_map(static function (array $t): array {
             $t['copiable'] = ($t['token_cifrado'] ?? null) !== null && $t['token_cifrado'] !== '';
             unset($t['token_cifrado']);
@@ -121,8 +129,23 @@ final class TokenApi
             'SELECT t.*, u.nombre AS creado_por_nombre
                FROM {api_token} t
           LEFT JOIN {usuario} u ON u.id = t.creado_por
-           ORDER BY (t.revocado_en IS NULL) DESC, t.creado_en DESC, t.id DESC'
+              ' . ($deEvento ? 'WHERE t.evento_id = ?' : '') . '
+           ORDER BY (t.revocado_en IS NULL) DESC, t.creado_en DESC, t.id DESC',
+            $deEvento ? [$eventoId] : []
         ));
+    }
+
+    /**
+     * ¿Ese token es de ese evento? Cada acción sobre un token —verlo,
+     * revocarlo, darle la foto— lo pregunta antes: el número es correlativo,
+     * y el equipo de un evento no tiene nada que hacer con los de otro.
+     */
+    public static function esDelEvento(int $id, int $eventoId): bool
+    {
+        if (!self::tieneColumna('evento_id')) {
+            return true;
+        }
+        return (int) Bd::valor('SELECT COUNT(*) FROM {api_token} WHERE id = ? AND evento_id = ?', [$id, $eventoId]) === 1;
     }
 
     /**

@@ -15,15 +15,73 @@ defined('EVENTOS_TIC') || exit;
  */
 final class Url
 {
-    /** Ruta interna de la aplicación: Url::a('/carnet') → /cumbreAI/carnet */
+    /**
+     * Las rutas que no son de un evento y nunca llevan el prefijo /e/<slug>:
+     * el equipo, los recursos, los archivos, la API, el instalador, la
+     * verificación de certificados, y las que llevan un token que ya dice de
+     * qué evento son —el QR del día, el carnet, el acceso por QR, el enlace de
+     * una contraseña nueva, el de los expositores—. Que esas no cambien
+     * importa: van impresas en los QR y en los correos.
+     */
+    private const SIN_PREFIJO = '#^/(admin|assets|medios|api|instalar|e)(/|$)|^/v(/|$)|^/[dc]/|^/entrar/qr/'
+        . '|^/entrar/recuperar/[a-f0-9]|^/registro/expositores/[a-f0-9]#';
+
+    /**
+     * Ruta interna de la aplicación: Url::a('/carnet') → /cumbreAI/carnet.
+     *
+     * Desde la 1.17.0, con el prefijo del evento de esta petición si no es el
+     * principal: en las páginas del Foro, Url::a('/registro') →
+     * /cumbreAI/e/foro-tic-2027/registro. Las pantallas no tienen que saberlo.
+     */
     public static function a(string $ruta = '/', array $consulta = []): string
     {
-        $base = App::peticion()->base();
         $ruta = '/' . ltrim($ruta, '/');
-        if ($ruta === '/') {
-            $ruta = '';
+        return self::armar(self::llevaPrefijo($ruta) ? App::prefijoEvento() : '', $ruta, $consulta);
+    }
+
+    /** La ruta de un evento en particular, sea o no el de esta petición. */
+    public static function deEvento(array $evento, string $ruta = '/', array $consulta = []): string
+    {
+        $ruta = '/' . ltrim($ruta, '/');
+        return self::armar(self::llevaPrefijo($ruta) ? self::prefijoDe($evento) : '', $ruta, $consulta);
+    }
+
+    /** La dirección completa de una página de un evento: para copiarla y compartirla. */
+    public static function absolutaDeEvento(array $evento, string $ruta = '/'): string
+    {
+        $ruta = '/' . ltrim($ruta, '/');
+        $interna = (self::llevaPrefijo($ruta) ? self::prefijoDe($evento) : '') . $ruta;
+        $configurada = trim((string) Config::obtener('url_base', ''));
+        if ($configurada !== '') {
+            return rtrim($configurada, '/') . '/' . ltrim($interna, '/');
         }
-        $url = $base . $ruta;
+        return App::peticion()->origen() . self::armar(self::llevaPrefijo($ruta) ? self::prefijoDe($evento) : '', $ruta, []);
+    }
+
+    /** '/e/<slug>' para un evento que no es el principal; '' para el principal. */
+    public static function prefijoDe(array $evento): string
+    {
+        $principal = App::principal();
+        if ($principal !== null && (int) $principal['id'] === (int) ($evento['id'] ?? 0)) {
+            return '';
+        }
+        $slug = \App\Modelos\Evento::slugDe($evento);
+        return $slug === '' ? '' : '/e/' . $slug;
+    }
+
+    private static function llevaPrefijo(string $ruta): bool
+    {
+        return !preg_match(self::SIN_PREFIJO, $ruta);
+    }
+
+    private static function armar(string $prefijo, string $ruta, array $consulta): string
+    {
+        $base = App::peticion()->base();
+        if ($ruta === '/') {
+            // La portada de un evento con prefijo termina en barra: /e/foro/.
+            $ruta = $prefijo === '' ? '' : '/';
+        }
+        $url = $base . $prefijo . $ruta;
         if ($url === '') {
             $url = '/';
         }
@@ -40,9 +98,11 @@ final class Url
      */
     public static function absoluta(string $ruta = '/', array $consulta = []): string
     {
+        $ruta = '/' . ltrim($ruta, '/');
         $configurada = trim((string) Config::obtener('url_base', ''));
         if ($configurada !== '') {
-            $url = rtrim($configurada, '/') . '/' . ltrim($ruta, '/');
+            $interna = (self::llevaPrefijo($ruta) ? App::prefijoEvento() : '') . $ruta;
+            $url = rtrim($configurada, '/') . '/' . ltrim($interna, '/');
             return $consulta ? $url . '?' . http_build_query($consulta) : $url;
         }
         return App::peticion()->origen() . self::a($ruta, $consulta);

@@ -15,7 +15,7 @@ use App\Nucleo\Bd;
  */
 final class Esquema
 {
-    public const VERSION = '1.16.0';
+    public const VERSION = '1.17.0';
 
     /**
      * Columnas que ya existen pero cambiaron de tipo.
@@ -108,16 +108,38 @@ final class Esquema
     ];
 
     /**
+     * Llaves que se agregaron a tablas que ya existían.
+     *
+     * «actualizar» crea las llaves de una tabla solo al crearla. Las que
+     * llegan después —el slug del evento tiene que ser único, la bitácora se
+     * filtra por evento— se agregan aquí a las instalaciones de antes, si no
+     * están. Solo índices: una llave foránea nueva sobre datos viejos puede
+     * fallar por una fila huérfana, y no hace falta para lo que se pide.
+     *
+     * @var array<int, array{tabla: string, nombre: string, llave: string}>
+     */
+    private const LLAVES_NUEVAS = [
+        ['tabla' => 'evento',    'nombre' => 'uq_evento_slug',       'llave' => 'UNIQUE KEY uq_evento_slug (slug)'],
+        ['tabla' => 'api_token', 'nombre' => 'idx_api_token_evento', 'llave' => 'KEY idx_api_token_evento (evento_id)'],
+        ['tabla' => 'bitacora',  'nombre' => 'idx_bitacora_evento',  'llave' => 'KEY idx_bitacora_evento (evento_id, creado_en)'],
+    ];
+
+    /**
      * @return array<string, array{nota: string, columnas: array<string,string>, llaves: array<int,string>}>
      */
     public static function tablas(): array
     {
         return [
             'evento' => [
-                'nota' => 'Un registro por evento. La plataforma es multievento desde el día uno.',
+                'nota' => 'Un registro por evento. La plataforma es multievento desde el día uno; desde la 1.17.0 cada evento tiene además su propia dirección pública (/e/<slug>/) y su propio equipo.',
                 'columnas' => [
                     'id'            => 'INT UNSIGNED NOT NULL AUTO_INCREMENT',
                     'nombre'        => 'VARCHAR(160) NOT NULL',
+                    // 1.17.0. La dirección pública del evento: /e/<slug>/. El
+                    // principal —activo = 1— se sirve además en la raíz, como
+                    // siempre. NULL en los eventos de antes: la actualización
+                    // les pone uno a partir del nombre.
+                    'slug'          => 'VARCHAR(80) NULL DEFAULT NULL',
                     'dependencia'   => "VARCHAR(160) NOT NULL DEFAULT ''",
                     'sede'          => "VARCHAR(160) NOT NULL DEFAULT ''",
                     'fecha_inicio'  => 'DATE NOT NULL',
@@ -126,7 +148,7 @@ final class Esquema
                     'activo'        => 'TINYINT(1) NOT NULL DEFAULT 0',
                     'creado_en'     => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
                 ],
-                'llaves' => ['PRIMARY KEY (id)', 'KEY idx_evento_estado (estado, activo)'],
+                'llaves' => ['PRIMARY KEY (id)', 'KEY idx_evento_estado (estado, activo)', 'UNIQUE KEY uq_evento_slug (slug)'],
             ],
 
             'evento_tema' => [
@@ -417,6 +439,13 @@ final class Esquema
                     'correo'            => 'VARCHAR(190) NOT NULL',
                     'clave_hash'        => 'VARCHAR(255) NOT NULL',
                     'rol'               => "ENUM('administrador','operador','consulta') NOT NULL DEFAULT 'operador'",
+                    // 1.17.0. 'global': el rol vale en todos los eventos —el
+                    // administrador global crea eventos y cuentas y configura
+                    // el correo—. 'eventos': el rol va por evento, en
+                    // usuario_evento, y aquí queda el más alto de ellos. Las
+                    // cuentas de antes quedan en 'global': siguen viendo todo
+                    // lo que veían.
+                    'alcance'           => "ENUM('global','eventos') NOT NULL DEFAULT 'global'",
                     'puesto'            => "VARCHAR(80) NOT NULL DEFAULT ''",
                     'totp_secreto'      => 'VARBINARY(255) NULL',
                     'totp_confirmado'   => 'TINYINT(1) NOT NULL DEFAULT 0',
@@ -430,6 +459,26 @@ final class Esquema
                     'creado_en'         => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
                 ],
                 'llaves' => ['PRIMARY KEY (id)', 'UNIQUE KEY uq_usuario_correo (correo)'],
+            ],
+
+            // 1.17.0. El equipo de cada evento: qué cuentas trabajan en cuál y
+            // con qué rol. Solo para las de alcance 'eventos'; las globales
+            // no aparecen aquí.
+            'usuario_evento' => [
+                'nota' => 'El equipo de cada evento: con qué rol trabaja en él cada cuenta de alcance «eventos». Las cuentas globales valen en todos y no aparecen aquí.',
+                'columnas' => [
+                    'usuario_id' => 'INT UNSIGNED NOT NULL',
+                    'evento_id'  => 'INT UNSIGNED NOT NULL',
+                    'rol'        => "ENUM('administrador','operador','consulta') NOT NULL DEFAULT 'operador'",
+                    'creado_por' => 'INT UNSIGNED NULL',
+                    'creado_en'  => 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
+                ],
+                'llaves' => [
+                    'PRIMARY KEY (usuario_id, evento_id)',
+                    'KEY idx_usuario_evento_evento (evento_id)',
+                    'CONSTRAINT fk_usuev_usuario FOREIGN KEY (usuario_id) REFERENCES {usuario} (id) ON DELETE CASCADE',
+                    'CONSTRAINT fk_usuev_evento FOREIGN KEY (evento_id) REFERENCES {evento} (id) ON DELETE CASCADE',
+                ],
             ],
 
             'sesion' => [
@@ -528,6 +577,10 @@ final class Esquema
                     'id'             => 'INT UNSIGNED NOT NULL AUTO_INCREMENT',
                     // Para qué sistema es: «Sitio web de la Secretaría».
                     'nombre'         => 'VARCHAR(120) NOT NULL',
+                    // 1.17.0. De qué evento son los datos que entrega. Los de
+                    // antes quedan con el evento principal, que es el único
+                    // que veían.
+                    'evento_id'      => 'INT UNSIGNED NULL',
                     'token_hash'     => 'CHAR(64) NOT NULL',
                     // Los primeros ocho caracteres, para reconocerlo en la
                     // lista sin mostrar el resto.
@@ -569,6 +622,7 @@ final class Esquema
                 'llaves' => [
                     'PRIMARY KEY (id)',
                     'UNIQUE KEY uq_api_token (token_hash)',
+                    'KEY idx_api_token_evento (evento_id)',
                 ],
             ],
 
@@ -654,6 +708,10 @@ final class Esquema
                 'columnas' => [
                     'id'         => 'BIGINT UNSIGNED NOT NULL AUTO_INCREMENT',
                     'usuario_id' => 'INT UNSIGNED NULL',
+                    // 1.17.0. En qué evento pasó; NULL si no es de ninguno —una
+                    // cuenta, el correo, el esquema— o si es de antes. La ve el
+                    // equipo de ese evento; las de NULL, solo el global.
+                    'evento_id'  => 'INT UNSIGNED NULL',
                     'accion'     => 'VARCHAR(80) NOT NULL',
                     'entidad'    => "VARCHAR(60) NOT NULL DEFAULT ''",
                     'entidad_id' => 'INT UNSIGNED NULL',
@@ -665,6 +723,7 @@ final class Esquema
                     'PRIMARY KEY (id)',
                     'KEY idx_bitacora_fecha (creado_en)',
                     'KEY idx_bitacora_accion (accion)',
+                    'KEY idx_bitacora_evento (evento_id, creado_en)',
                 ],
             ],
 
@@ -821,7 +880,8 @@ final class Esquema
                 // se corrigen las que cambiaron de tipo.
                 $agregadas = self::agregarColumnasFaltantes($nombre, $definicion, $prefijo);
                 $ajustadas = $modo === 'actualizar' ? self::ajustarColumnas($nombre, $prefijo) : [];
-                $cambios = array_merge($agregadas, $ajustadas);
+                $llaves = $modo === 'actualizar' ? self::agregarLlavesFaltantes($nombre, $prefijo) : [];
+                $cambios = array_merge($agregadas, $ajustadas, $llaves);
 
                 $hechas[] = [
                     'tabla'   => $prefijo . $nombre,
@@ -833,12 +893,87 @@ final class Esquema
             Bd::ejecutarBruto('SET FOREIGN_KEY_CHECKS = 1');
         }
 
+        // Con las columnas en su sitio, los datos que traen: la dirección de
+        // los eventos que no la tenían y el evento de los tokens de la API.
+        if ($modo !== 'limpio') {
+            $hechas = array_merge($hechas, self::completarDatos());
+        }
+
         Bd::ejecutar(
             'INSERT INTO {migracion} (version, descripcion) VALUES (?, ?)
              ON DUPLICATE KEY UPDATE aplicada_en = CURRENT_TIMESTAMP',
             [self::VERSION, 'Instalación ' . $modo]
         );
 
+        return $hechas;
+    }
+
+    /**
+     * Lo que una columna nueva no trae sola (1.17.0).
+     *
+     * Los eventos de antes no tienen dirección pública propia: se les da una
+     * a partir del nombre. Los tokens de la API de antes no dicen de qué
+     * evento son: se quedan con el principal, que es el único que veían.
+     * Se puede correr cuantas veces se quiera: solo toca lo que está vacío.
+     *
+     * @return array<int, array{tabla: string, accion: string, detalle: string}>
+     */
+    public static function completarDatos(): array
+    {
+        $hechas = [];
+        $prefijo = Bd::prefijo();
+        try {
+            $sinSlug = Bd::filas("SELECT id, nombre FROM {evento} WHERE slug IS NULL OR slug = '' ORDER BY id");
+        } catch (\Throwable) {
+            $sinSlug = [];   // todavía sin la columna: no hay nada que completar
+        }
+        foreach ($sinSlug as $evento) {
+            Bd::ejecutar("UPDATE {evento} SET slug = ? WHERE id = ? AND (slug IS NULL OR slug = '')",
+                [\App\Modelos\Evento::slugLibre((string) $evento['nombre'], (int) $evento['id']), (int) $evento['id']]);
+        }
+        if ($sinSlug !== []) {
+            $hechas[] = ['tabla' => $prefijo . 'evento', 'accion' => 'actualizada',
+                         'detalle' => count($sinSlug) . ' dirección(es) pública(s) nueva(s)'];
+        }
+
+        try {
+            $principal = Bd::valor('SELECT id FROM {evento} WHERE activo = 1 ORDER BY id DESC LIMIT 1')
+                ?? Bd::valor('SELECT id FROM {evento} ORDER BY id DESC LIMIT 1');
+            $tokens = $principal === null ? 0
+                : Bd::ejecutar('UPDATE {api_token} SET evento_id = ? WHERE evento_id IS NULL', [(int) $principal])->rowCount();
+        } catch (\Throwable) {
+            $tokens = 0;
+        }
+        if ($tokens > 0) {
+            $hechas[] = ['tabla' => $prefijo . 'api_token', 'accion' => 'actualizada',
+                         'detalle' => $tokens . ' token(s) con el evento principal'];
+        }
+        return $hechas;
+    }
+
+    /**
+     * ALTER TABLE ... ADD KEY para las llaves de LLAVES_NUEVAS que falten.
+     *
+     * @return array<int, string> nombres de las llaves agregadas
+     */
+    private static function agregarLlavesFaltantes(string $nombre, string $prefijo): array
+    {
+        $pendientes = array_values(array_filter(self::LLAVES_NUEVAS, static fn(array $l): bool => $l['tabla'] === $nombre));
+        if ($pendientes === []) {
+            return [];
+        }
+        $existentes = array_column(Bd::filasDirecto(
+            'SELECT DISTINCT INDEX_NAME FROM information_schema.STATISTICS
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
+            [$prefijo . $nombre]
+        ), 'INDEX_NAME');
+        $hechas = [];
+        foreach ($pendientes as $llave) {
+            if (!in_array($llave['nombre'], $existentes, true)) {
+                Bd::ejecutarBruto("ALTER TABLE `$prefijo$nombre` ADD {$llave['llave']}");
+                $hechas[] = $llave['nombre'] . ' (llave)';
+            }
+        }
         return $hechas;
     }
 
@@ -1084,6 +1219,28 @@ final class Esquema
         if ($columnas !== []) {
             return [true, 'Faltan ' . count($columnas) . ' columna(s): '
                 . implode(', ', array_slice($columnas, 0, 6)) . (count($columnas) > 6 ? '…' : '') . '.'];
+        }
+
+        try {
+            $indices = [];
+            foreach (Bd::filasDirecto(
+                "SELECT DISTINCT TABLE_NAME, INDEX_NAME FROM information_schema.STATISTICS
+                  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME LIKE ? ESCAPE '!'",
+                [strtr($prefijo, ['!' => '!!', '_' => '!_', '%' => '!%']) . '%']
+            ) as $fila) {
+                $indices[(string) $fila['TABLE_NAME']][] = (string) $fila['INDEX_NAME'];
+            }
+            $sinLlave = [];
+            foreach (self::LLAVES_NUEVAS as $llave) {
+                if (!in_array($llave['nombre'], $indices[$prefijo . $llave['tabla']] ?? [], true)) {
+                    $sinLlave[] = $llave['tabla'] . '.' . $llave['nombre'];
+                }
+            }
+            if ($sinLlave !== []) {
+                return [true, 'Faltan ' . count($sinLlave) . ' llave(s): ' . implode(', ', $sinLlave) . '.'];
+            }
+        } catch (\Throwable) {
+            // Sin permiso para leer los índices: lo dirá la versión anotada.
         }
 
         $viejas = [];

@@ -37,7 +37,7 @@ const enlaceDePrueba = archivo => {
   try { return fs.readFileSync(path.join(__dirname, 'capturas', archivo), 'utf8').trim(); } catch (e) { return ''; }
 };
 const ASISTENTE_RUTAS = ['/carnet', '/carnet/imprimir', '/checkin', '/contactos', '/certificado'];
-const ADMIN_RUTAS = ['/admin', '/admin/escaner', '/admin/registros', '/admin/registros/nuevo', '/admin/qr-dias',
+const ADMIN_RUTAS = ['/admin', '/admin/evento', '/admin/escaner', '/admin/registros', '/admin/registros/nuevo', '/admin/qr-dias',
                      '/admin/expositores', '/admin/organizadores', '/admin/eventos', '/admin/identidad', '/admin/autenticacion',
                      '/admin/cuenta', '/admin/configuracion/registro', '/admin/configuracion/expositores',
                      '/admin/configuracion/api', '/admin/configuracion/certificados', '/carnets', '/carnets/imprimir'];

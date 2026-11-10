@@ -55,6 +55,9 @@ final class Api
     /** @var array<int, array> Los días de cada evento, que se piden más de una vez. */
     private array $jornadas = [];
 
+    /** El evento del token que consulta (1.17.0): el único cuyos datos entrega. */
+    private ?array $eventoDelToken = null;
+
     /* =====================================================================
        Consultas
        ===================================================================== */
@@ -75,11 +78,12 @@ final class Api
             'fotografia' => TokenApi::daFoto($token),
             'caracterizacion' => TokenApi::daCaracterizacion($token),
             'evento'   => $this->datosEvento($evento),
+            // Desde la 1.17.0 cada token es de un evento y solo ve ese: la
+            // lista trae nada más que el suyo, con la misma forma de siempre.
             'eventos'  => array_map(static fn(array $e): array => [
                 'id' => (int) $e['id'], 'nombre' => (string) $e['nombre'], 'fecha_inicio' => (string) $e['fecha_inicio'],
                 'estado' => (string) $e['estado'], 'activo' => (int) $e['activo'] === 1,
-            ], Bd::filas('SELECT id, nombre, fecha_inicio, estado, activo FROM {evento}
-                           ORDER BY activo DESC, fecha_inicio DESC, id DESC')),
+            ], [$evento]),
             'consultas' => [
                 [
                     'url' => Url::absoluta('/api/v1/perfiles'),
@@ -278,7 +282,7 @@ final class Api
         try {
             $token = TokenApi::vigenteConFoto($tokenId);
             $persona = $token !== null
-                ? Bd::fila('SELECT id, foto, foto_tipo FROM {persona} WHERE id = ?', [$personaId])
+                ? Bd::fila('SELECT id, evento_id, foto, foto_tipo FROM {persona} WHERE id = ?', [$personaId])
                 : null;
         } catch (\Throwable $e) {
             Registro::excepcion($e);
@@ -287,7 +291,11 @@ final class Api
         }
 
         $archivo = (string) ($persona['foto'] ?? '');
-        if ($token === null || $archivo === ''
+        // La firma ya ata el enlace a la persona y al token; además, la persona
+        // tiene que ser del evento del token (1.17.0).
+        $deOtroEvento = isset($token['evento_id'], $persona['evento_id'])
+            && (int) $token['evento_id'] !== (int) $persona['evento_id'];
+        if ($token === null || $archivo === '' || $deOtroEvento
             || !hash_equals(TokenApi::firmaFoto($token, $personaId, $archivo), (string) $parametros['firma'])) {
             $this->error(404, 'Sin fotografía', 'El enlace no existe o ya no sirve. Pide los datos otra vez a la API.');
         }
@@ -672,20 +680,21 @@ final class Api
         return $perfiles;
     }
 
-    /** El evento pedido con ?evento=, o el activo. */
+    /**
+     * El evento del token (1.17.0). Cada evento funciona por su cuenta, y su
+     * token solo consulta sus datos: ?evento= se sigue aceptando, pero con el
+     * número de otro evento responde 404, igual que si no existiera.
+     */
     private function evento(Peticion $peticion): array
     {
-        $id = $this->numero($peticion, 'evento');
-        if ($id !== null) {
-            $evento = Bd::fila('SELECT * FROM {evento} WHERE id = ?', [$id]);
-            if ($evento === null) {
-                $this->error(404, 'Evento no encontrado', 'No hay ningún evento con el número ' . $id . '. Ver /api/v1.');
-            }
-            return $evento;
-        }
-        $evento = App::eventoActivo();
+        $evento = $this->eventoDelToken ?? App::eventoActivo();
         if ($evento === null) {
-            $this->error(404, 'Sin evento activo', 'No hay ningún evento activo: indica uno con ?evento=… (ver /api/v1).');
+            $this->error(404, 'Sin evento', 'Este token no corresponde a ningún evento. Pide uno nuevo a quien administra el evento.');
+        }
+        $id = $this->numero($peticion, 'evento');
+        if ($id !== null && $id !== (int) $evento['id']) {
+            $this->error(404, 'Evento no encontrado', 'Este token consulta el evento «' . $evento['nombre'] . '» (número '
+                . (int) $evento['id'] . ') y ningún otro. Para otro evento, crea un token desde su Configuración → API.');
         }
         return $evento;
     }
@@ -806,6 +815,15 @@ final class Api
             $this->error(429, 'Demasiadas consultas', 'Este token pasó de ' . TokenApi::TOPE . ' consultas en '
                 . TokenApi::VENTANA_MINUTOS . ' minutos. Espera un momento y vuelve a intentarlo.', ['Retry-After' => '60']);
         }
+
+        // El evento es el del token (1.17.0). Uno de antes que todavía no lo
+        // tenga anotado —la actualización se los pone— es del principal.
+        $evento = isset($fila['evento_id']) ? Evento::porId((int) $fila['evento_id']) : App::principal();
+        if ($evento === null) {
+            $this->error(404, 'Sin evento', 'El evento de este token ya no existe.');
+        }
+        App::usarEvento($evento);
+        $this->eventoDelToken = $evento;
 
         return $fila;
     }

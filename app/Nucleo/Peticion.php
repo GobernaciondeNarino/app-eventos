@@ -20,6 +20,8 @@ final class Peticion
     private string $metodo;
     private string $ruta;
     private string $base;
+    /** El evento que pide la dirección (/e/<slug>/…), o '' si no lo pide (1.17.0). */
+    private string $slugEvento = '';
     private array $consulta;
     private array $cuerpo;
     private array $archivos;
@@ -54,6 +56,15 @@ final class Peticion
         if ($this->ruta === '/index.php') {
             $this->ruta = '/';
         }
+
+        // Cada evento se sirve en /e/<slug>/ (1.17.0): el prefijo dice de qué
+        // evento es la página y el resto es la ruta de siempre, así que la
+        // tabla de rutas no cambia. Sin prefijo, la página es del evento
+        // principal, como hasta ahora.
+        if (preg_match('#^/e/([a-z0-9][a-z0-9-]{0,79})(/.*)?\z#', $this->ruta, $m)) {
+            $this->slugEvento = $m[1];
+            $this->ruta = '/' . ltrim($m[2] ?? '', '/');
+        }
         $this->consulta = $_GET;
         $this->cuerpo = $_POST;
         $this->archivos = $_FILES;
@@ -62,6 +73,7 @@ final class Peticion
     public function metodo(): string { return $this->metodo; }
     public function ruta(): string { return $this->ruta; }
     public function base(): string { return $this->base; }
+    public function slugEvento(): string { return $this->slugEvento; }
 
     public function esPost(): bool { return $this->metodo === 'POST'; }
 

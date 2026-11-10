@@ -19,14 +19,15 @@ registra gente, se sella asistencia, se aprueban exposiciones y se exportan repo
 
 | | Qué hay |
 |---|---|
-| **Interfaz** | 29 pantallas, diseño y formulario de registro configurables por evento, responsive. Los listados largos van por páginas y se ordenan desde el título de cada columna. En el celular, el menú es una barra de íconos abajo, como la de Instagram |
+| **Interfaz** | 30 pantallas, diseño y formulario de registro configurables por evento, responsive. Los listados largos van por páginas y se ordenan desde el título de cada columna. En el celular, el menú es una barra de íconos abajo, como la de Instagram |
+| **Eventos** | Varios a la vez, cada uno por su cuenta —su identidad, sus formularios, sus jornadas, sus personas, sus certificados, sus tokens de la API y su equipo— y en su propia dirección: el principal en la de siempre, los demás en `/e/<nombre>/`. Un administrador global para toda la plataforma y administradores de cada evento; quien trabaja en varios elige al entrar en cuál |
 | **Backend** | PHP 8.1+ con PDO y MySQL/MariaDB, sin framework ni Composer |
 | **Instalación** | Asistente de seis pasos que crea, actualiza o anexa las tablas. Al subir una versión nueva, la base se pone al día sola en la primera visita |
 | **Autenticación** | Cinco formas de entrar: correo, QR personal, contraseña, WhatsApp y SMS. Se puede crear el acceso con solo correo y contraseña. El equipo, con contraseña y segundo factor. Quien olvida su contraseña la recupera con un enlace al correo, y un administrador puede enviárselo desde el panel |
 | **Códigos QR** | Generador **y lector** propios, verificados uno contra otro y contra una librería de referencia |
 | **Certificados** | En PDF, para cada quien asistió y para los expositores, en **Mi certificado**. Quien estuvo en todas las jornadas recibe el de asistencia completa, con un sello dorado y el total de horas. Cada uno lleva un código y un QR que lo verifican en una página pública. El PDF lo escribe la propia plataforma, sin bibliotecas |
 | **API** | Consulta en JSON de expositores, participantes y demás perfiles, con filtros en la dirección y un token por cada sistema que consulta, que se crea, se vuelve a copiar, se revoca y se elimina en Configuración → API. Solo lee, y nunca entrega la identificación; la fotografía, como enlace, y la caracterización, solo a un token con cada permiso |
-| **Pruebas** | 1090 comprobaciones de extremo a extremo, 160 de actualización desde la 1.0.0, 170 en navegador, y 713 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy, formulario de registro y el PDF de los certificados |
+| **Pruebas** | 1128 comprobaciones de extremo a extremo, 172 de actualización desde la 1.0.0, 177 en navegador, y 713 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy, formulario de registro y el PDF de los certificados |
 
 ---
 
@@ -92,7 +93,7 @@ hay que regenerarlos.
 |---|---|---|
 | Asistente | Su correo, su contraseña o su QR | Su carnet, su ingreso, sus contactos, la agenda y, cuando la organización los abre, su certificado |
 | **Staff** | Lo mismo: es un asistente con ese perfil | Además: acreditar en la puerta e imprimir los carnets del evento |
-| Equipo organizador | Cuenta propia, con contraseña y segundo factor | El panel, según su rol: consulta, operador o administrador |
+| Equipo organizador | Cuenta propia, con contraseña y segundo factor | El panel del evento en el que trabaja, según su rol en él: consulta, operador o administrador. El administrador global, además, crea los eventos y maneja lo de toda la plataforma |
 
 El perfil **Staff** lo asigna un administrador desde la ficha de la persona, y es el único de
 los perfiles de asistencia que da permisos. Para los voluntarios de la puerta, a los que no se
@@ -147,6 +148,12 @@ Quien olvidó su contraseña pulsa **«¿Olvidaste tu contraseña?»** en el acc
 enlace al correo para poner una nueva; un administrador también puede enviárselo, desde la
 ficha de la persona o desde **Organizadores**. El enlace sirve una vez, vence, y no salta el
 segundo factor. Ver `docs/SEGURIDAD.md` y `docs/ADMINISTRAR-EVENTOS.md` (8.5).
+
+Desde la 3.22 cada cuenta es **global** —trabaja en todos los eventos, con el mismo rol— o **de
+eventos**: trabaja solo en los que la agregan, con un rol en cada uno (tabla
+`evt_usuario_evento`). Quien trabaja en varios elige al entrar en cuál, y lo cambia desde el
+menú con «Cambiar de evento». Las cuentas de antes quedaron globales; el administrador global
+deja cada una solo en su evento desde **Organizadores**. Ver `docs/ADMINISTRAR-EVENTOS.md` (14).
 
 ### Otros sistemas
 
@@ -250,8 +257,9 @@ reescribe y el servidor las imprime en el `<head>`: las hojas de estilo no conoc
 - **Revisión de contraste** contra WCAG 2.1 AA, en vivo. Un evento puede verse muy bien en la
   pantalla del diseñador y ser ilegible bajo el sol en la puerta del recinto.
 
-Cada evento tiene su propia identidad y su propio formulario de registro: cambiar de evento
-activo cambia toda la plataforma.
+Cada evento tiene su propia identidad y su propio formulario de registro, y se ve en su propia
+dirección: el principal en la de siempre, los demás en `/e/<nombre>/`. Lo que se configura en
+uno no toca a los demás.
 
 - **Campos** obligatorios, opcionales u ocultos. El correo, el nombre y la autorización de datos
   van siempre; los datos sensibles —género, etnia, discapacidad— se pueden pedir, nunca exigir.
@@ -275,13 +283,14 @@ eventos/                        ← esto es lo que se sube al servidor
 ├── .htaccess                   reescritura, cabeceras y bloqueos
 ├── app/
 │   ├── rutas.php               toda la superficie expuesta, con su guardia
-│   ├── Esquema.php             las 23 tablas, fuente única
+│   ├── Esquema.php             las 24 tablas, fuente única
 │   ├── Datos.php               listas de fábrica del formulario de registro
 │   ├── ayudas.php              e(), u(), testigo()…
 │   ├── Nucleo/                 App, Peticion, Enrutador, Guardia, Bd, Sesion,
 │   │                           Csrf, Cripto, Limite, Bitacora, Qr, Tema, Correo, Totp,
-│   │                           Imagen y Documento (lo que sube el público), y Pdf,
-│   │                           Fuente y CertificadoPdf (el certificado, sin bibliotecas)
+│   │                           Imagen y Documento (lo que sube el público), Pdf,
+│   │                           Fuente y CertificadoPdf (el certificado, sin bibliotecas),
+│   │                           y Contexto (el evento de cada ruta con token)
 │   ├── Controladores/          Publico, Acceso, Carnet, Escaneo, Contactos,
 │   │                           Admin, Configuracion, Cuenta, Medios, Instalador,
 │   │                           Api (la consulta en JSON), Certificados
@@ -395,14 +404,14 @@ el enrutado, las cookies, los testigos y los guardias, que es donde suelen estar
 Incluye 19 comprobaciones en el bloque específico de seguridad y otras tantas repartidas por
 los guardias de cada pantalla.
 
-Estado actual: **1090 de 1090** de extremo a extremo, **78** del asistente de instalación,
-**160** de actualización de una instalación en producción por siete caminos, **46** del
+Estado actual: **1128 de 1128** de extremo a extremo, **78** del asistente de instalación,
+**172** de actualización de una instalación en producción por siete caminos, **46** del
 segundo factor —los vectores del RFC 6238 y el reloj del servidor corrido—, **64** de la
 configuración de los formularios de registro, **22** del hash de contraseñas,
 **19** del correo saliente, **19** de la dirección del visitante detrás del proxy, **21** de la
 fotografía del carnet, **61** de los adjuntos del expositor, **17** del saneado de logos SVG,
 **198** casos de QR idénticos entre PHP y JavaScript, **161** entre JavaScript y la referencia,
-**13** del lector de QR, **72** del PDF de los certificados, **170** de interacción en navegador, y las 34 pantallas limpias en
+**13** del lector de QR, **72** del PDF de los certificados, **177** de interacción en navegador, y las 36 pantallas limpias en
 escritorio, tableta y móvil.
 
 Las pruebas nacieron de errores reales, y por eso cubren lo que cubren: una instalación que se

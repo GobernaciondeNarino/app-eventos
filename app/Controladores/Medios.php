@@ -63,15 +63,13 @@ final class Medios
 
     private function servirBanner(int $eventoId, string $tabla): void
     {
-        // El del evento activo lo ve cualquiera: va arriba del formulario
-        // público. El de otro —uno en borrador puede no estar anunciado—, solo
-        // el equipo. Con la misma respuesta que «no hay», para que contar ids
-        // no diga qué eventos tienen banner.
-        if ($eventoId !== (int) (App::eventoActivo()['id'] ?? 0)) {
-            $equipo = Guardia::equipoOperativo();
-            if ($equipo === null || !Guardia::tieneRol($equipo, 'consulta')) {
-                Respuesta::error(404, 'Sin banner', 'Este evento no tiene banner cargado.');
-            }
+        // El de un evento público lo ve cualquiera: va arriba de su formulario.
+        // El de uno en borrador —puede no estar anunciado—, solo su equipo.
+        // Con la misma respuesta que «no hay», para que contar ids no diga qué
+        // eventos tienen banner.
+        $evento = Evento::porId($eventoId);
+        if ($evento === null || (!Evento::esPublico($evento) && Guardia::rolDelEquipoEn($eventoId) === null)) {
+            Respuesta::error(404, 'Sin banner', 'Este evento no tiene banner cargado.');
         }
 
         try {

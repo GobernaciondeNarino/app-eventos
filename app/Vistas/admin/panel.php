@@ -122,7 +122,8 @@ $maxMunicipio = max(1, max(array_map(static fn($m) => (int) $m['n'], $municipios
           <?php if (!$bitacora): ?>
             <div class="empty">Sin actividad registrada</div>
           <?php else: foreach ($bitacora as $b): ?>
-            <div class="stack" style="gap:3px;padding:10px 0;border-bottom:1px solid var(--hair-soft)">
+            <div class="stack" style="gap:3px;padding:10px 0;border-bottom:1px solid var(--hair-soft)"
+                 data-bitacora-evento="<?= e((string) ($b['evento_id'] ?? '')) ?>">
               <span style="font-size:13px;color:var(--c-title)"><?= e(Bitacora::describir($b)) ?></span>
               <span class="mono muted" style="font-size:11px">
                 <?= e(fecha((string) $b['creado_en'])) ?> · <?= e(hora((string) $b['creado_en'])) ?>

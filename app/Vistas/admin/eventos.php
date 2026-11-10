@@ -1,5 +1,13 @@
 <?php
-/** Listado de eventos. @var array $eventos @var array $estados */
+/**
+ * Listado de eventos.
+ *
+ * @var array $eventos  los que puede ver: todos para el global, los suyos para
+ *                      el administrador de un evento (1.17.0)
+ * @var array $estados
+ * @var bool  $esGlobal crear, elegir el principal, cambiar la dirección y eliminar
+ * @var int   $elegido  el evento sobre el que trabaja ahora
+ */
 defined('EVENTOS_TIC') || exit;
 
 $columnas = 'grid-template-columns:1.6fr 1fr .8fr .8fr 1fr 96px';
@@ -20,14 +28,18 @@ $nombreEstado = [
 
   <div class="row row--between" style="align-items:flex-end">
     <div class="stack stack--2">
-      <span class="kicker">Administrador</span>
+      <span class="kicker"><?= $esGlobal ? 'Administración global' : 'Administrador del evento' ?></span>
       <h1>Eventos de la Secretaría</h1>
       <p class="help">
-        La plataforma sirve a varios eventos a la vez. Cada uno tiene su propia identidad
-        visual, sus jornadas, sus códigos y sus registros.
+        La plataforma sirve a varios eventos a la vez y cada uno funciona por su cuenta: su
+        identidad visual, su formulario de registro, sus jornadas, sus personas, sus certificados y
+        su equipo. Cada uno tiene su propia dirección; el principal se ve además en la dirección de
+        la plataforma, sin <span class="mono">/e/</span>.
       </p>
     </div>
-    <button class="btn btn--sm btn--primary" type="button" data-abrir-modal="modal-evento">Crear evento</button>
+    <?php if ($esGlobal): ?>
+      <button class="btn btn--sm btn--primary" type="button" data-abrir-modal="modal-evento">Crear evento</button>
+    <?php endif; ?>
   </div>
 
   <div class="table">
@@ -40,20 +52,23 @@ $nombreEstado = [
 
         <?php foreach ($eventos as $ev):
           [$etiqueta, $clase] = $etiquetas[$ev['estado']] ?? ['—', ''];
-          $activo = (int) $ev['activo'] === 1; ?>
-          <div class="table__row" style="<?= $columnas ?>">
+          $activo = !empty($ev['principal']); ?>
+          <div class="table__row" style="<?= $columnas ?>" data-evento-fila="<?= (int) $ev['id'] ?>">
             <div class="stack" style="gap:2px;min-width:0">
               <strong style="font-weight:500;color:var(--c-title)"><?= e($ev['nombre']) ?></strong>
               <span class="mono muted" style="font-size:11px">
-                <?= $activo ? 'Evento activo · visible para los asistentes' : e((string) ($ev['sede'] ?: 'Sin sede definida')) ?>
+                <?= $activo ? 'Principal · se ve en la dirección de la plataforma'
+                  : ($ev['publico'] ? 'Abierto en su propia dirección' : 'Borrador · solo lo ve su equipo') ?>
               </span>
+              <span class="mono muted" style="font-size:11px;overflow-wrap:anywhere" data-direccion-evento><?= e((string) $ev['direccion']) ?></span>
             </div>
             <span class="mono" style="font-size:12.5px;color:var(--c-text)"><?= e(fecha((string) $ev['fecha_inicio'])) ?></span>
             <span style="color:var(--c-text)"><?= e((string) $ev['jornadas']) ?> días</span>
             <span class="mono accent"><?= e(numero($ev['registros'])) ?></span>
             <div class="row" style="gap:6px">
               <span class="tag <?= e($clase) ?>"><?= e($etiqueta) ?></span>
-              <?php if ($activo): ?><span class="tag tag--ok">Activo</span><?php endif; ?>
+              <?php if ($activo): ?><span class="tag tag--ok">Principal</span><?php endif; ?>
+              <?php if ((int) $ev['id'] === $elegido): ?><span class="tag" data-evento-abierto>Abierto aquí</span><?php endif; ?>
             </div>
 
             <div class="row" style="gap:4px;flex-wrap:nowrap;justify-content:flex-end">
@@ -64,6 +79,7 @@ $nombreEstado = [
                   <path d="M4 20.5h4l10.5-10.5-4-4L4 16.5zM14.5 6l4 4"></path>
                 </svg>
               </button>
+              <?php if ($esGlobal): ?>
               <button class="btn btn--icono btn--danger" type="button"
                       data-abrir-modal="modal-borrar-<?= (int) $ev['id'] ?>"
                       title="Eliminar <?= e($ev['nombre']) ?>" aria-label="Eliminar <?= e($ev['nombre']) ?>">
@@ -72,6 +88,7 @@ $nombreEstado = [
                   <path d="M4.5 6.5h15M9 6.5V4.5h6v2M6.5 6.5l1 13h9l1-13M10 10v6M14 10v6"></path>
                 </svg>
               </button>
+              <?php endif; ?>
             </div>
           </div>
 
@@ -79,18 +96,27 @@ $nombreEstado = [
                acciones no se llene de botones que hacen cosas muy distintas. -->
           <div class="table__row" style="grid-template-columns:1fr;padding-top:0;border-top:0">
             <div class="row" style="gap:8px">
-              <?php if (!$activo): ?>
-                <form method="post" action="<?= e(u('/admin/eventos/activar')) ?>">
+              <?php if ((int) $ev['id'] !== $elegido): ?>
+                <form method="post" action="<?= e(u('/admin/evento')) ?>">
                   <?= testigo() ?>
                   <input type="hidden" name="evento" value="<?= (int) $ev['id'] ?>">
-                  <button class="btn btn--sm" type="submit">Activar este evento</button>
+                  <input type="hidden" name="destino" value="/admin">
+                  <button class="btn btn--sm btn--primary" type="submit" data-administrar-evento="<?= (int) $ev['id'] ?>">Administrar</button>
                 </form>
-              <?php else: ?>
-                <form method="post" action="<?= e(u('/admin/eventos/desactivar')) ?>"
-                      data-confirmar="Los asistentes dejarán de ver este evento hasta que actives otro o vuelvas a activar este. ¿Continuar?">
+              <?php endif; ?>
+              <?php if ($esGlobal && !$activo): ?>
+                <form method="post" action="<?= e(u('/admin/eventos/activar')) ?>"
+                      data-confirmar="La dirección de la plataforma, sin /e/, pasará a mostrar este evento. Los enlaces y los QR del principal actual siguen funcionando en su propia dirección. ¿Continuar?">
                   <?= testigo() ?>
                   <input type="hidden" name="evento" value="<?= (int) $ev['id'] ?>">
-                  <button class="btn btn--sm" type="submit">Desactivar</button>
+                  <button class="btn btn--sm" type="submit">Hacer principal</button>
+                </form>
+              <?php elseif ($esGlobal): ?>
+                <form method="post" action="<?= e(u('/admin/eventos/desactivar')) ?>"
+                      data-confirmar="Dejará de ser el principal: la dirección de la plataforma mostrará el evento más reciente hasta que elijas otro. Sigue en su propia dirección mientras esté abierto. ¿Continuar?">
+                  <?= testigo() ?>
+                  <input type="hidden" name="evento" value="<?= (int) $ev['id'] ?>">
+                  <button class="btn btn--sm" type="submit">Quitar como principal</button>
                 </form>
               <?php endif; ?>
               <span class="help" style="margin:0"><?= e($nombreEstado[$ev['estado']] ?? '') ?></span>
@@ -100,18 +126,19 @@ $nombreEstado = [
       </div>
     </div>
     <div class="table__foot">
-      <span><?= e((string) count($eventos)) ?> eventos registrados</span>
-      <span>El evento activo es el que ven los asistentes</span>
+      <span><?= e((string) count($eventos)) ?> eventos <?= $esGlobal ? 'registrados' : 'que administras' ?></span>
+      <span>Un evento en borrador solo lo ve su equipo; al abrirlo, cualquiera con su dirección</span>
     </div>
   </div>
 
+  <?php if ($esGlobal): ?>
   <div class="card">
     <div class="card__head"><span>Qué pasa al crear un evento</span></div>
     <div class="card__body grid-3">
       <?php foreach ([
-        ['Se crea', ['Sus jornadas, una por día', 'Un código QR distinto por jornada', 'Su identidad visual por defecto']],
-        ['Queda aparte', ['Los registros de personas', 'Las asistencias', 'Los contactos intercambiados']],
-        ['Se comparte', ['El equipo organizador y sus roles', 'La bitácora de auditoría', 'La configuración del servidor']],
+        ['Se crea', ['Sus jornadas, una por día', 'Un código QR distinto por jornada', 'Su identidad visual por defecto', 'Su propia dirección: /e/su-nombre/']],
+        ['Queda aparte', ['Los registros de personas y sus sesiones', 'Las asistencias y los contactos', 'Su equipo y el rol de cada cuenta', 'Su identidad, registro, certificados y API']],
+        ['Se comparte', ['El administrador global', 'El correo de salida y las formas de entrar', 'La bitácora: cada evento ve la suya']],
       ] as [$titulo, $items]): ?>
         <div class="stack" style="gap:8px">
           <strong style="font-family:var(--f-display);font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--c-accent)">
@@ -124,10 +151,12 @@ $nombreEstado = [
       <?php endforeach; ?>
     </div>
   </div>
+  <?php endif; ?>
 
 </div>
 
 <!-- ================= Crear ================= -->
+<?php if ($esGlobal): ?>
 <div class="modal hidden" id="modal-evento" hidden>
   <div class="modal__panel" role="dialog" aria-modal="true" aria-label="Crear evento">
     <div class="modal__head">
@@ -175,6 +204,7 @@ $nombreEstado = [
     </div>
   </div>
 </div>
+<?php endif; ?>
 
 <!-- ================= Editar y eliminar, uno por evento ================= -->
 <?php foreach ($eventos as $ev): $c = $ev['contenido']; ?>
@@ -228,11 +258,23 @@ $nombreEstado = [
             </div>
           </div>
 
+          <?php if ($esGlobal): ?>
+            <div class="field">
+              <label class="label" for="ed-slug-<?= (int) $ev['id'] ?>">Dirección del evento: /e/…/</label>
+              <input class="input input--mono" id="ed-slug-<?= (int) $ev['id'] ?>" name="slug" maxlength="80"
+                     pattern="[a-z0-9][a-z0-9\-]{0,79}" value="<?= e((string) $ev['slug']) ?>">
+              <span class="help">
+                Minúsculas sin tilde, números y guiones. Cambiarla deja sin servir los enlaces ya
+                compartidos con la anterior; los QR de las jornadas y de los carnets siguen sirviendo.
+              </span>
+            </div>
+          <?php endif; ?>
+
           <label class="row" style="align-items:flex-start;gap:11px;cursor:pointer;flex-wrap:nowrap">
             <input type="checkbox" name="mover_jornadas" value="1"
                    style="margin-top:3px;width:18px;height:18px;flex:none;accent-color:var(--c-accent)">
             <span class="help" style="flex:1">
-              Mover también las <?= e((string) $c['jornadas']) ?> jornadas. Se desplazan todas los
+              Mover también las <?= e((string) $ev['dias']) ?> jornadas. Se desplazan todas los
               mismos días que la fecha de inicio, conservando la separación entre ellas. Sin
               marcarlo, las jornadas se quedan donde están.
             </span>
@@ -247,6 +289,7 @@ $nombreEstado = [
     </div>
   </div>
 
+  <?php if ($esGlobal && $c !== null): ?>
   <div class="modal hidden" id="modal-borrar-<?= (int) $ev['id'] ?>" hidden>
     <div class="modal__panel" role="dialog" aria-modal="true" aria-label="Eliminar evento">
       <div class="modal__head">
@@ -287,7 +330,7 @@ $nombreEstado = [
             <input class="input input--mono" id="conf-<?= (int) $ev['id'] ?>" name="confirmacion"
                    autocomplete="off" autocapitalize="characters" placeholder="ELIMINAR" required>
             <span class="help">
-              Se pide porque no hay deshacer. Si solo quieres que deje de verse, desactívalo.
+              Se pide porque no hay deshacer. Si solo quieres que deje de verse, pásalo a borrador.
             </span>
           </div>
 
@@ -299,5 +342,6 @@ $nombreEstado = [
       </div>
     </div>
   </div>
+  <?php endif; ?>
 
 <?php endforeach; ?>

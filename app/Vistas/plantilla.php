@@ -73,7 +73,7 @@ $nombreEvento = $evento['nombre'] ?? 'Plataforma de Eventos TIC';
                 <?= e((string) ($esquemaVersion ?? '')) ?>; no se borra ni se cambia nada de lo
                 que ya hay, así que se puede hacer con el evento en curso.
               </span>
-              <?php if ($usuario !== null && App\Nucleo\Guardia::puede('administrador')): ?>
+              <?php if ($usuario !== null && App\Nucleo\Guardia::esAdministradorGlobal($usuario)): ?>
                 <form method="post" action="<?= e(u('/admin/actualizar-esquema')) ?>">
                   <?= testigo() ?>
                   <button class="btn btn--sm btn--primary" type="submit">Actualizar la base de datos</button>

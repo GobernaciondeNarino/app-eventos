@@ -58,7 +58,10 @@ final class Admin
             'resumen'     => Evento::resumen((int) $evento['id']),
             'porJornada'  => Asistencia::totalPorJornada((int) $evento['id']),
             'municipios'  => Evento::porMunicipio((int) $evento['id']),
-            'bitacora'    => Bitacora::recientes(12),
+            // La de este evento; el global ve además la de la plataforma —las
+            // cuentas, el correo, el esquema— (1.17.0).
+            'bitacora'    => Bitacora::recientes(12, (int) $evento['id'],
+                Guardia::esAdministradorGlobal(Guardia::usuarioActual() ?? [])),
             'pendientes'  => $this->pendientes((int) $evento['id']),
         ]);
     }
@@ -1112,68 +1115,139 @@ final class Admin
        Equipo
        ===================================================================== */
 
+    /**
+     * El equipo del evento (1.17.0): las cuentas globales, que trabajan en
+     * todos, y las que se agregaron a este, con el rol que tienen aquí.
+     */
     public function organizadores(Peticion $peticion): void
     {
+        $evento = App::eventoExigido();
+        $yo = Guardia::usuarioActual();
+        $esGlobal = Guardia::esAdministradorGlobal($yo);
+        $equipo = Usuario::delEvento((int) $evento['id']);
+        foreach ($equipo as &$u) {
+            // Lo que se le puede hacer a la cuenta entera —suspenderla, su
+            // contraseña, su segundo factor—: el global a cualquiera; el
+            // administrador de un evento, a las que solo trabajan en el suyo.
+            $u['cuidable'] = (int) $u['id'] !== (int) $yo['id']
+                && ($esGlobal || ($u['alcance'] === 'eventos' && (int) $u['en_eventos'] === 1));
+        }
+        unset($u);
+
         Respuesta::vista('admin/organizadores', [
             'titulo'   => 'Organizadores',
             'pantalla' => 'admin-organizadores',
-            'equipo'   => Usuario::todos(),
+            'equipo'   => $equipo,
+            'esGlobal' => $esGlobal,
         ]);
     }
 
+    /**
+     * Agrega a alguien al equipo del evento.
+     *
+     * Si la cuenta no existe se crea, de alcance «eventos» —o global, si lo
+     * pide el administrador global—. Si ya existe porque trabaja en otro
+     * evento, se la agrega a este con el rol elegido, sin tocar su contraseña.
+     */
     public function crearUsuario(Peticion $peticion): void
     {
-        $clave = $peticion->campoCrudo('clave');
+        $evento = App::eventoExigido();
+        $eventoId = (int) $evento['id'];
+        $yo = Guardia::usuarioActual();
+        $rol = $peticion->campo('rol', 'operador');
+        if (!in_array($rol, Usuario::ROLES, true)) {
+            Respuesta::redirigir('/admin/organizadores', 'Ese rol no existe.', 'warn');
+        }
+        $global = Guardia::esAdministradorGlobal($yo) && $peticion->campo('alcance') === 'global';
 
+        if (!filter_var($peticion->campo('correo'), FILTER_VALIDATE_EMAIL)) {
+            Respuesta::redirigir('/admin/organizadores', 'Escribe un correo válido.', 'warn');
+        }
+
+        $existente = Usuario::porCorreo($peticion->campo('correo'));
+        if ($existente !== null) {
+            if (Guardia::esGlobal($existente)) {
+                Respuesta::redirigir('/admin/organizadores', 'La cuenta de ' . $existente['nombre']
+                    . ' es global: ya trabaja en todos los eventos.', 'warn');
+            }
+            try {
+                $antes = Usuario::asignarEvento((int) $existente['id'], $eventoId, $rol, (int) $yo['id']);
+            } catch (\DomainException $e) {
+                Respuesta::redirigir('/admin/organizadores', $e->getMessage(), 'warn');
+            }
+            Respuesta::redirigir('/admin/organizadores', $antes === null
+                ? 'La cuenta de ' . $existente['nombre'] . ' ya existía: ahora también trabaja en este evento, como '
+                    . $rol . '. Entra con la contraseña de siempre.'
+                : $existente['nombre'] . ' ya estaba en el equipo; ahora es ' . $rol . ' en este evento.');
+        }
+
+        $clave = $peticion->campoCrudo('clave');
         if (mb_strlen($clave) < 12) {
             Respuesta::redirigir('/admin/organizadores',
                 'La contraseña inicial debe tener al menos 12 caracteres.', 'warn');
-        }
-        if (!filter_var($peticion->campo('correo'), FILTER_VALIDATE_EMAIL)) {
-            Respuesta::redirigir('/admin/organizadores', 'Escribe un correo válido.', 'warn');
         }
         if (mb_strlen($peticion->campo('nombre')) < 5) {
             Respuesta::redirigir('/admin/organizadores', 'Escribe el nombre completo.', 'warn');
         }
 
         try {
-            Usuario::crear([
+            $id = Usuario::crear([
                 'nombre'       => $peticion->campo('nombre'),
                 'correo'       => $peticion->campo('correo'),
                 'clave'        => $clave,
-                'rol'          => $peticion->campo('rol', 'operador'),
+                'rol'          => $rol,
+                'alcance'      => $global ? 'global' : 'eventos',
                 'puesto'       => $peticion->campo('puesto'),
                 'debe_cambiar' => true,
             ]);
+            if (!$global) {
+                Usuario::asignarEvento($id, $eventoId, $rol, (int) $yo['id']);
+            }
         } catch (\DomainException $e) {
             Respuesta::redirigir('/admin/organizadores', $e->getMessage(), 'warn');
         }
 
-        Respuesta::redirigir('/admin/organizadores',
-            'Cuenta creada. Entrégale la contraseña por un canal seguro; deberá cambiarla al entrar.');
+        Respuesta::redirigir('/admin/organizadores', ($global
+            ? 'Cuenta global creada: trabaja en todos los eventos. '
+            : 'Cuenta creada para este evento. ')
+            . 'Entrégale la contraseña por un canal seguro; deberá cambiarla al entrar.');
     }
 
-    public function cambiarEstadoUsuario(Peticion $peticion): void
+    /**
+     * La cuenta sobre la que va a actuar el equipo, si le corresponde: el
+     * global, sobre cualquiera; el administrador de un evento, sobre las que
+     * trabajan solo en el suyo. Nunca sobre la propia.
+     */
+    private function cuentaCuidable(Peticion $peticion, string $sobreLaPropia): array
     {
         $yo = Guardia::usuarioActual();
         $id = $peticion->entero('usuario');
-
         if ($id === (int) $yo['id']) {
-            Respuesta::redirigir('/admin/organizadores',
-                'No puedes suspender tu propia cuenta.', 'warn');
+            Respuesta::redirigir('/admin/organizadores', $sobreLaPropia, 'warn');
         }
-
         $objetivo = Usuario::porId($id);
         if (!$objetivo) {
             Respuesta::redirigir('/admin/organizadores', 'Esa cuenta no existe.', 'warn');
         }
+        $eventoId = (int) App::eventoExigido()['id'];
+        if (!Guardia::esAdministradorGlobal($yo) && !Usuario::soloEnEvento($objetivo, $eventoId)) {
+            Respuesta::error(403, 'No tienes permiso', 'Esa cuenta trabaja también en otros eventos, o es global: '
+                . 'la cuida la administración global de la plataforma.');
+        }
+        return $objetivo;
+    }
 
-        // Sin administradores activos nadie podría volver a configurar nada.
-        if ($objetivo['rol'] === 'administrador'
+    public function cambiarEstadoUsuario(Peticion $peticion): void
+    {
+        $objetivo = $this->cuentaCuidable($peticion, 'No puedes suspender tu propia cuenta.');
+        $id = (int) $objetivo['id'];
+
+        // Sin administradores globales activos nadie podría volver a configurar nada.
+        if ($objetivo['rol'] === 'administrador' && Guardia::esGlobal($objetivo)
             && $peticion->campo('estado') === 'suspendido'
             && Usuario::administradoresActivos() <= 1) {
             Respuesta::redirigir('/admin/organizadores',
-                'Es el único administrador activo. Nombra otro antes de suspenderlo.', 'warn');
+                'Es el único administrador global activo. Nombra otro antes de suspenderlo.', 'warn');
         }
 
         Usuario::cambiarEstado($id, $peticion->campo('estado'));
@@ -1191,15 +1265,10 @@ final class Admin
     public function enviarEnlaceClaveUsuario(Peticion $peticion): void
     {
         $yo = Guardia::usuarioActual();
-        $id = $peticion->entero('usuario');
-
-        if ($id === (int) $yo['id']) {
+        if ($peticion->entero('usuario') === (int) $yo['id']) {
             Respuesta::redirigir('/admin/clave', 'Tu propia contraseña la cambias aquí.', 'warn');
         }
-        $objetivo = Usuario::porId($id);
-        if (!$objetivo) {
-            Respuesta::redirigir('/admin/organizadores', 'Esa cuenta no existe.', 'warn');
-        }
+        $objetivo = $this->cuentaCuidable($peticion, 'Tu propia contraseña la cambias en «Mi cuenta».');
         if ($objetivo['estado'] !== 'activo') {
             Respuesta::redirigir('/admin/organizadores', 'La cuenta de ' . $objetivo['nombre']
                 . ' está suspendida. Reactívala antes de enviarle el enlace.', 'warn');
@@ -1220,16 +1289,12 @@ final class Admin
     public function restablecerSegundoFactor(Peticion $peticion): void
     {
         $yo = Guardia::usuarioActual();
-        $id = $peticion->entero('usuario');
-
-        if ($id === (int) $yo['id']) {
+        if ($peticion->entero('usuario') === (int) $yo['id']) {
             Respuesta::redirigir('/admin/cuenta',
                 'Tu propia verificación en dos pasos se restablece aquí, en Configuración → Mi cuenta.', 'warn');
         }
-        $objetivo = Usuario::porId($id);
-        if (!$objetivo) {
-            Respuesta::redirigir('/admin/organizadores', 'Esa cuenta no existe.', 'warn');
-        }
+        $objetivo = $this->cuentaCuidable($peticion, 'Tu propia verificación en dos pasos se restablece en «Mi cuenta».');
+        $id = (int) $objetivo['id'];
 
         Usuario::quitarSegundoFactor($id);
         \App\Nucleo\Sesion::cerrarTodasDe('admin', $id);
@@ -1246,12 +1311,16 @@ final class Admin
      * alguien de consulta a operador —que en un evento pasa el mismo día, con
      * gente que llega a ayudar en la puerta— había que borrar la cuenta y
      * crearla otra vez, perdiendo su historial en la bitácora.
+     *
+     * Desde la 1.17.0, en una cuenta de un evento se cambia el rol que tiene
+     * en este evento; el de una cuenta global, solo lo cambia el global.
      */
     public function cambiarRolUsuario(Peticion $peticion): void
     {
         $yo = Guardia::usuarioActual();
         $id = $peticion->entero('usuario');
         $rol = $peticion->campo('rol');
+        $eventoId = (int) App::eventoExigido()['id'];
 
         // Quitarse a uno mismo el rol de administrador es la forma más rápida
         // de quedarse fuera del panel sin nadie que lo devuelva.
@@ -1268,13 +1337,28 @@ final class Admin
             Respuesta::redirigir('/admin/organizadores', 'Ese rol no existe.', 'warn');
         }
 
+        if (!Guardia::esGlobal($objetivo)) {
+            if (Guardia::rolEn($objetivo, $eventoId) === null) {
+                Respuesta::redirigir('/admin/organizadores', 'Esa cuenta no trabaja en este evento.', 'warn');
+            }
+            Usuario::asignarEvento($id, $eventoId, $rol, (int) $yo['id']);
+            \App\Nucleo\Sesion::cerrarTodasDe('admin', $id);
+            Respuesta::redirigir('/admin/organizadores',
+                $objetivo['nombre'] . ' ahora es ' . $rol . ' en este evento. Tendrá que volver a entrar.');
+        }
+
+        if (!Guardia::esAdministradorGlobal($yo)) {
+            Respuesta::error(403, 'No tienes permiso', 'El rol de una cuenta global lo cambia la administración '
+                . 'global de la plataforma.');
+        }
+
         // La misma barrera que en el estado: quedarse sin ningún administrador
-        // activo deja la plataforma sin nadie que pueda configurarla.
+        // global activo deja la plataforma sin nadie que pueda configurarla.
         if ($objetivo['rol'] === 'administrador' && $rol !== 'administrador'
             && $objetivo['estado'] === 'activo'
             && Usuario::administradoresActivos() <= 1) {
             Respuesta::redirigir('/admin/organizadores',
-                'Es el único administrador activo. Nombra otro antes de quitarle el rol.', 'warn');
+                'Es el único administrador global activo. Nombra otro antes de quitarle el rol.', 'warn');
         }
 
         try {
@@ -1284,45 +1368,181 @@ final class Admin
         }
 
         Respuesta::redirigir('/admin/organizadores',
-            $objetivo['nombre'] . ' ahora es ' . $rol . '. Tendrá que volver a entrar.');
+            $objetivo['nombre'] . ' ahora es ' . $rol . ' en todos los eventos. Tendrá que volver a entrar.');
+    }
+
+    /** Saca a una cuenta del equipo de este evento. La cuenta sigue en sus otros eventos. */
+    public function quitarDelEvento(Peticion $peticion): void
+    {
+        $yo = Guardia::usuarioActual();
+        $id = $peticion->entero('usuario');
+        $evento = App::eventoExigido();
+        if ($id === (int) $yo['id']) {
+            Respuesta::redirigir('/admin/organizadores',
+                'No puedes sacarte a ti del equipo. Pídeselo a otro administrador.', 'warn');
+        }
+        $objetivo = Usuario::porId($id);
+        if (!$objetivo || Guardia::esGlobal($objetivo)) {
+            Respuesta::redirigir('/admin/organizadores', 'Esa cuenta es global o no existe.', 'warn');
+        }
+        if (!Usuario::quitarEvento($id, (int) $evento['id'])) {
+            Respuesta::redirigir('/admin/organizadores', 'Esa cuenta no estaba en este evento.', 'warn');
+        }
+        Respuesta::redirigir('/admin/organizadores', $objetivo['nombre'] . ' ya no trabaja en «' . $evento['nombre']
+            . '». Su cuenta sigue en los demás eventos donde esté.');
+    }
+
+    /**
+     * Deja una cuenta global solo en este evento, o la vuelve global (1.17.0).
+     * Solo el administrador global, y nunca sobre la propia: es la forma de
+     * quitarse uno mismo la administración de la plataforma.
+     */
+    public function cambiarAlcanceUsuario(Peticion $peticion): void
+    {
+        $yo = Guardia::usuarioActual();
+        $id = $peticion->entero('usuario');
+        $evento = App::eventoExigido();
+        $alcance = $peticion->campo('alcance');
+        if ($id === (int) $yo['id']) {
+            Respuesta::redirigir('/admin/organizadores',
+                'No puedes cambiar dónde trabaja tu propia cuenta. Pídeselo a otro administrador global.', 'warn');
+        }
+        $objetivo = Usuario::porId($id);
+        if (!$objetivo) {
+            Respuesta::redirigir('/admin/organizadores', 'Esa cuenta no existe.', 'warn');
+        }
+
+        // La misma barrera que al suspender o cambiar el rol: sin ningún
+        // administrador global activo, nadie podría volver a configurar nada.
+        if ($alcance === 'eventos' && Guardia::esAdministradorGlobal($objetivo)
+            && $objetivo['estado'] === 'activo' && Usuario::administradoresActivos() <= 1) {
+            Respuesta::redirigir('/admin/organizadores',
+                'Es el único administrador global activo. Nombra otro antes de dejarlo en un solo evento.', 'warn');
+        }
+
+        try {
+            $rol = Usuario::cambiarAlcance($id, $alcance, (int) $evento['id'], (int) $yo['id']);
+        } catch (\DomainException $e) {
+            Respuesta::redirigir('/admin/organizadores', $e->getMessage(), 'warn');
+        }
+
+        Respuesta::redirigir('/admin/organizadores', $alcance === 'global'
+            ? $objetivo['nombre'] . ' ahora trabaja en todos los eventos, como ' . $rol . '. Tendrá que volver a entrar.'
+            : $objetivo['nombre'] . ' ahora trabaja solo en «' . $evento['nombre'] . '», como ' . $rol
+                . '. Para que trabaje en otro evento, agrega su correo en el equipo de ese evento. Tendrá que volver a entrar.');
     }
 
     /* =====================================================================
        Eventos
        ===================================================================== */
 
-    public function eventos(Peticion $peticion): void
+    /**
+     * Elegir el evento sobre el que se trabaja (1.17.0).
+     *
+     * Cada evento funciona por su cuenta: su identidad, su registro, sus
+     * personas, su equipo. Quien trabaja en más de uno lo elige al entrar —el
+     * guardia lo trae aquí— y lo cambia cuando quiera desde el menú. La
+     * elección vive en la sesión: al volver a entrar se elige otra vez.
+     */
+    public function elegirEvento(Peticion $peticion): void
     {
-        // Lo que se perdería al eliminar cada uno. Se calcula aquí y se enseña
-        // en el diálogo: un «¿seguro?» sin un número al lado no es una
-        // confirmación, es un trámite que se pulsa sin leer.
-        $eventos = Evento::todos();
+        $usuario = Guardia::usuarioActual();
+        $destino = Url::destinoSeguro($peticion->query('destino') ?: $peticion->campo('destino'), '/admin');
+        if (!str_starts_with($destino, '/admin')) {
+            $destino = '/admin';
+        }
+
+        if ($peticion->esPost()) {
+            $id = $peticion->entero('evento');
+            if (!Guardia::elegirEvento($id)) {
+                Respuesta::redirigir('/admin/evento', 'Ese evento no existe o no trabajas en él.', 'warn');
+            }
+            $evento = Evento::porId($id);
+            Respuesta::redirigir($destino, 'Trabajas en «' . $evento['nombre'] . '».');
+        }
+
+        $eventos = Guardia::eventosDe($usuario);
+        if ($eventos === [] && Guardia::esAdministradorGlobal($usuario)) {
+            Respuesta::redirigir('/admin/eventos', 'Crea el primer evento para empezar.', 'warn');
+        }
+        $elegido = Guardia::eventoDelEquipo();
         foreach ($eventos as &$ev) {
-            $ev['contenido'] = Evento::contenido((int) $ev['id']);
+            $ev['direccion'] = Url::absolutaDeEvento($ev, '/');
         }
         unset($ev);
+
+        Respuesta::vista('admin/elegir-evento', [
+            'titulo'   => 'Elegir el evento',
+            'pantalla' => 'admin-evento',
+            'eventos'  => $eventos,
+            'elegido'  => $elegido === null ? 0 : (int) $elegido['id'],
+            'destino'  => $destino,
+            'esGlobal' => Guardia::esAdministradorGlobal($usuario),
+        ]);
+    }
+
+    public function eventos(Peticion $peticion): void
+    {
+        $usuario = Guardia::usuarioActual();
+        $esGlobal = Guardia::esAdministradorGlobal($usuario);
+
+        // El administrador global los ve todos; el de un evento, los que
+        // administra. Lo que se perdería al eliminar cada uno se calcula aquí
+        // y se enseña en el diálogo: un «¿seguro?» sin un número al lado no es
+        // una confirmación, es un trámite que se pulsa sin leer.
+        $eventos = [];
+        foreach (Evento::todos() as $ev) {
+            if (!$esGlobal && Guardia::rolEn($usuario, (int) $ev['id']) !== 'administrador') {
+                continue;
+            }
+            $ev['contenido'] = $esGlobal ? Evento::contenido((int) $ev['id']) : null;
+            $ev['dias'] = (int) Bd::valor('SELECT COUNT(*) FROM {evento_dia} WHERE evento_id = ?', [(int) $ev['id']]);
+            $ev['slug'] = Evento::slugDe($ev);
+            $ev['direccion'] = Url::absolutaDeEvento($ev, '/');
+            $ev['principal'] = Evento::esPrincipal($ev);
+            $ev['publico'] = Evento::esPublico($ev);
+            $eventos[] = $ev;
+        }
 
         Respuesta::vista('admin/eventos', [
             'titulo'   => 'Eventos',
             'pantalla' => 'admin-eventos',
             'eventos'  => $eventos,
             'estados'  => Evento::ESTADOS,
+            'esGlobal' => $esGlobal,
+            'elegido'  => (int) (Guardia::eventoDelEquipo()['id'] ?? 0),
         ]);
     }
 
-    /** Corrige los datos de un evento. Lo que más se usa: un nombre mal escrito. */
+    /**
+     * Corrige los datos de un evento. Lo que más se usa: un nombre mal escrito.
+     *
+     * Lo hace el administrador global y el administrador de ese evento. La
+     * dirección pública (el slug) solo la cambia el global: va en los enlaces
+     * que ya se compartieron.
+     */
     public function editarEvento(Peticion $peticion): void
     {
         $id = $peticion->entero('evento');
+        $usuario = Guardia::usuarioActual();
+        $esGlobal = Guardia::esAdministradorGlobal($usuario);
+        if (!$esGlobal && Guardia::rolEn($usuario, $id) !== 'administrador') {
+            Respuesta::error(403, 'No tienes permiso', 'Solo quien administra este evento puede corregirlo.');
+        }
+
+        $datos = [
+            'nombre'       => $peticion->campo('nombre'),
+            'dependencia'  => $peticion->campo('dependencia'),
+            'sede'         => $peticion->campo('sede'),
+            'fecha_inicio' => $peticion->campo('fecha_inicio'),
+            'estado'       => $peticion->campo('estado'),
+        ];
+        if ($esGlobal && $peticion->campo('slug') !== '') {
+            $datos['slug'] = mb_strtolower($peticion->campo('slug'));
+        }
 
         try {
-            Evento::actualizar($id, [
-                'nombre'       => $peticion->campo('nombre'),
-                'dependencia'  => $peticion->campo('dependencia'),
-                'sede'         => $peticion->campo('sede'),
-                'fecha_inicio' => $peticion->campo('fecha_inicio'),
-                'estado'       => $peticion->campo('estado'),
-            ], $peticion->marcado('mover_jornadas'));
+            Evento::actualizar($id, $datos, $peticion->marcado('mover_jornadas'));
         } catch (\DomainException $e) {
             Respuesta::redirigir('/admin/eventos', $e->getMessage(), 'warn');
         }
@@ -1349,7 +1569,8 @@ final class Admin
         App::olvidarEvento();
 
         Respuesta::redirigir('/admin/eventos',
-            'Evento desactivado. Los asistentes ya no lo ven; actívalo de nuevo cuando quieras.', 'warn');
+            'Ya no es el principal. Sigue en su propia dirección mientras esté abierto; la raíz muestra el más '
+            . 'reciente hasta que elijas otro.', 'warn');
     }
 
     /**
@@ -1400,12 +1621,15 @@ final class Admin
             'fecha_inicio' => $fecha,
             'jornadas'     => $jornadas,
             'estado'       => 'borrador',
-            'activo'       => false,
+            // El primero se vuelve el principal: sin él, la raíz no tendría
+            // nada que mostrar.
+            'activo'       => App::principal() === null,
         ]);
 
         Bitacora::registrar('evento_creado', 'evento', $id);
         Respuesta::redirigir('/admin/eventos',
-            'Evento creado como borrador. Configura su identidad antes de activarlo.');
+            'Evento creado como borrador: nadie lo ve todavía. Pulsa «Administrar» para armar su identidad, '
+            . 'su registro y su equipo, y ábrelo cambiando su estado a «Abierto».');
     }
 
     public function activarEvento(Peticion $peticion): void
@@ -1417,7 +1641,8 @@ final class Admin
 
         Evento::activar($id);
         App::olvidarEvento();
-        Respuesta::redirigir('/admin/eventos', 'Ese es ahora el evento activo.');
+        Respuesta::redirigir('/admin/eventos',
+            'Ese es ahora el evento principal: el que se ve en la dirección de la plataforma, sin /e/.');
     }
 
     /* =====================================================================

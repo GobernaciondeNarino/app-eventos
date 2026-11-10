@@ -237,6 +237,10 @@ corresponde al rol, pero eso es cosmético: lo que decide es el guardia.
 Jerarquía: `administrador` ⊃ `operador` ⊃ `consulta`. El operador puede sellar ingresos pero
 no exportar con caracterización ni tocar la configuración.
 
+Desde la 3.22 el rol es **de cada evento**: el guardia mira el rol de la cuenta en el evento de
+esa petición, y lo que es de toda la plataforma lleva un guardia aparte, `admin:global`. Ver
+«Cada evento por su cuenta» en la sección 3.
+
 ### 2.10 Sin dependencias externas en tiempo de ejecución
 
 Ni framework, ni Composer, ni CDN. Las tipografías están autoalojadas y el generador de QR es
@@ -976,6 +980,52 @@ decisión, los cambios que le hizo el comité y las observaciones.
 - Si el correo no sale, **la decisión se guarda igual** y la pantalla lo dice; la bitácora
   anota si se avisó o no.
 
+### Cada evento por su cuenta
+
+Desde la 3.22 (esquema 1.17.0) la plataforma lleva varios eventos a la vez. La separación se
+decide en el servidor, en cada petición; el menú solo la refleja.
+
+- **El evento de cada petición.** En el panel es el que eligió quien está dentro, guardado en
+  su sesión, y la pantalla que lo cambia comprueba que trabaje en el que pide. En las páginas
+  públicas es el de la dirección —`/e/<nombre>/`— o el principal. En las rutas con token —el QR
+  de la jornada, el carnet, el acceso por QR, el enlace de la contraseña, el de expositores, la
+  verificación de un certificado, la foto y los adjuntos— es el del propio token, resuelto antes
+  del guardia (`App\Nucleo\Contexto`). Ningún campo de un formulario lo cambia.
+- **El rol es del evento.** `Guardia::tieneRol` mira el rol de la cuenta en el evento de la
+  petición: una cuenta de evento (`usuario.alcance = 'eventos'`, con sus roles en
+  `usuario_evento`) no pasa ningún guardia del panel en un evento en el que no trabaja, aunque
+  administre otro. Como el evento de una ruta con token es el del token, un operador de un evento
+  no sella el carnet de otro, ni el equipo de un evento ve la foto o los adjuntos de una persona
+  de otro, y el Staff solo acredita en su evento.
+- **Lo de un evento, por número.** Cada acción del panel sobre una persona, una propuesta o una
+  jornada comprueba que sea del evento elegido; la de otro responde como si no existiera.
+- **Lo de toda la plataforma** —crear y eliminar eventos, elegir el principal, cambiar la
+  dirección de un evento, el correo de salida, las formas de entrar y la actualización del
+  esquema— lleva el guardia `admin:global`: solo lo pasa una cuenta global con rol de
+  administrador. El intento de otra cuenta responde 403 y queda en la bitácora.
+- **El equipo.** El administrador de un evento solo actúa sobre cuentas que trabajan únicamente
+  en el suyo —enviar el enlace de la contraseña, restablecer el segundo factor, suspender,
+  cambiar el rol, quitarla del evento—, nunca sobre una global ni sobre una que trabaja también
+  en otro evento, y nunca sobre la propia: no puede dejar sin acceso a alguien de otro evento ni
+  subirse los permisos. Agregar a su equipo un correo que ya tiene cuenta solo le suma el evento,
+  sin tocar su contraseña ni su segundo factor.
+- **La sesión del asistente** vale solo en su evento. En la dirección de otro, la plataforma lo
+  trata como visitante: no ve su carnet, sus contactos ni sus datos.
+- **Un evento en borrador** que no es el principal responde 404, «Evento no encontrado», a quien
+  no es de su equipo: lo mismo que una dirección que no existe, sin revelar que está ahí.
+- **Los tokens de la API** son de un evento (`api_token.evento_id`) y solo consultan ese: pedir
+  otro con `?evento=` responde 404, y la foto de una persona de otro evento también. Los que ya
+  existían quedaron con el evento principal y siguen viendo exactamente lo mismo.
+- **La bitácora** anota en qué evento pasó cada cosa (`bitacora.evento_id`). El panel de un
+  administrador de evento muestra solo las de su evento; el del administrador global, además,
+  las de toda la plataforma —accesos, correo, esquema—, que no son de ningún evento.
+
+Las cuentas que existían antes de la actualización quedaron globales con su mismo rol, para que
+nadie perdiera acceso al actualizar. Conviene revisarlas una vez en **Organizadores** y dejar
+solo en su evento, con **Solo en este evento**, las que no necesiten ver todos: es mínimo
+privilegio. Ese cambio y su contrario los hace únicamente el administrador global, nunca sobre su
+propia cuenta, cierran las sesiones de la cuenta y quedan en la bitácora.
+
 ### Auditoría
 
 `App\Nucleo\Bitacora` solo inserta. Registra accesos y su resultado, sellado de asistencias,
@@ -1180,7 +1230,7 @@ conviene decirlo con claridad en la pantalla de privacidad.
 ## 6. Verificación
 
 ```bash
-php pruebas/extremo-a-extremo.php      # 1090 comprobaciones sobre un servidor real
+php pruebas/extremo-a-extremo.php      # 1128 comprobaciones sobre un servidor real
 php pruebas/instalacion.php            # el asistente, y qué se ve cuando falla
 php pruebas/actualizacion.php          # subir desde la 1.0.0 por cada camino, sin perder nada
 php pruebas/claves.php                 # parámetros de Argon2id y rehash
@@ -1202,7 +1252,7 @@ Lo que comprueban las de seguridad, concretamente:
 
 - Un anónimo no ve registros ni el panel; un asistente tampoco entra al backoffice.
 - Un envío con testigo falso se rechaza.
-- `app/`, `config/`, `almacen/` y `pruebas/` no se sirven por la web.
+- `app/`, `config/`, `almacen/`, `pruebas/`, `herramientas/` y `.claude/` no se sirven por la web.
 - Las cabeceras de seguridad salen en todas las respuestas.
 - Las cookies son `HttpOnly` y llevan `SameSite`.
 - La cookie de sesión no coincide con el identificador guardado en la base.
@@ -1277,6 +1327,21 @@ Lo que comprueban las de seguridad, concretamente:
   registrados; un navegador con sesión de asistente y del equipo registra a otra persona y deja
   intacta la suya; el rol consulta recibe 403, el Staff y quien no tiene sesión van al acceso del
   equipo; no gasta el tope del público por dirección, y pasado el de su cuenta responde 429.
+- Con dos eventos, quien trabaja en los dos elige al entrar, y cada sesión sigue en el suyo.
+  Un evento en borrador responde 404 al público y su equipo sí lo ve; uno que no existe, 404. El
+  mismo correo y la misma cédula son otra persona en otro evento, y la sesión de un asistente no
+  abre el otro. En el panel de un evento, Registros lista solo a los suyos y la ficha de alguien
+  de otro evento es 404. La administradora de un evento no crea ni elimina eventos, no elige el
+  principal, no corrige otro evento escribiendo su número, no ve «Acceso y correo», no actualiza
+  la base y no suspende una cuenta global; una cuenta que trabaja en dos eventos tiene el rol de
+  cada uno —consulta en uno recibe 403 en los QR del día, operador en el otro, 200—. Un token
+  creado en un evento solo entrega a sus personas, pedirle otro responde 404, y en la API del
+  otro evento no aparece ni se revoca con su número. La bitácora de cada evento es la suya. El
+  global deja una cuenta global solo en un evento y la vuelve global; la administradora de un
+  evento recibe 403 al intentarlo, y nadie cambia la propia. Al eliminar un evento se van sus
+  personas, su equipo y sus tokens, y las cuentas siguen.
+- Sin `config/config.php`, el asistente encuentra el evento que ya tiene la base y no crea otro
+  (el error que encontró la prueba de actualización en la 3.22 antes de publicarla).
 
 ---
 

@@ -40,6 +40,115 @@ final class Evento
         return Bd::fila('SELECT * FROM {evento} WHERE id = ?', [$id]);
     }
 
+    /* =====================================================================
+       La dirección pública de cada evento (1.17.0)
+       -------------------------------------------------------------------------
+       Cada evento se sirve en /e/<slug>/: su portada, su registro, su acceso y
+       todo lo de sus asistentes. El principal —activo = 1— además en la raíz,
+       como siempre, para que los enlaces y los QR que ya circulan sigan
+       funcionando.
+       ===================================================================== */
+
+    /** El formato de un slug: minúsculas, números y guiones, sin guion al principio. */
+    public const PATRON_SLUG = '/^[a-z0-9][a-z0-9-]{0,79}$/';
+
+    public static function porSlug(string $slug): ?array
+    {
+        if (!preg_match(self::PATRON_SLUG, $slug)) {
+            return null;
+        }
+        try {
+            return Bd::fila('SELECT * FROM {evento} WHERE slug = ?', [$slug]);
+        } catch (\Throwable) {
+            return null;   // una base sin la columna todavía
+        }
+    }
+
+    /**
+     * Un slug a partir de un texto: «Cumbre Tecnológica IA Nariño 2026» →
+     * «cumbre-tecnologica-ia-narino-2026». Sin tildes ni eñes, que en una
+     * dirección se ven como %C3%B1.
+     */
+    public static function aSlug(string $texto): string
+    {
+        $texto = mb_strtolower(trim($texto));
+        $texto = strtr($texto, [
+            'á' => 'a', 'à' => 'a', 'ä' => 'a', 'â' => 'a', 'ã' => 'a', 'é' => 'e', 'è' => 'e', 'ë' => 'e', 'ê' => 'e',
+            'í' => 'i', 'ì' => 'i', 'ï' => 'i', 'î' => 'i', 'ó' => 'o', 'ò' => 'o', 'ö' => 'o', 'ô' => 'o', 'õ' => 'o',
+            'ú' => 'u', 'ù' => 'u', 'ü' => 'u', 'û' => 'u', 'ñ' => 'n', 'ç' => 'c',
+        ]);
+        if (function_exists('iconv')) {
+            $ascii = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $texto);
+            if (is_string($ascii) && $ascii !== '') {
+                $texto = $ascii;
+            }
+        }
+        $texto = (string) preg_replace('/[^a-z0-9]+/', '-', strtolower($texto));
+        $texto = trim(substr(trim($texto, '-'), 0, 60), '-');
+        return $texto !== '' ? $texto : 'evento';
+    }
+
+    /** Un slug que ningún otro evento tenga: el del nombre, o con «-2», «-3»… */
+    public static function slugLibre(string $nombre, int $excluirId = 0): string
+    {
+        $base = self::aSlug($nombre);
+        for ($n = 1; $n < 1000; $n++) {
+            $candidato = $n === 1 ? $base : $base . '-' . $n;
+            $ocupado = (int) Bd::valor('SELECT COUNT(*) FROM {evento} WHERE slug = ? AND id <> ?', [$candidato, $excluirId]);
+            if ($ocupado === 0) {
+                return $candidato;
+            }
+        }
+        return $base . '-' . bin2hex(random_bytes(3));
+    }
+
+    /**
+     * El slug de un evento. Si todavía no tiene —la actualización a la 1.17.0
+     * no alcanzó a ponérselo—, se le pone ahora.
+     */
+    public static function slugDe(array $evento): string
+    {
+        $slug = (string) ($evento['slug'] ?? '');
+        if ($slug !== '' || !isset($evento['id'])) {
+            return $slug;
+        }
+        try {
+            $slug = self::slugLibre((string) $evento['nombre'], (int) $evento['id']);
+            Bd::ejecutar("UPDATE {evento} SET slug = ? WHERE id = ? AND (slug IS NULL OR slug = '')", [$slug, (int) $evento['id']]);
+            return (string) (Bd::valor('SELECT slug FROM {evento} WHERE id = ?', [(int) $evento['id']]) ?? $slug);
+        } catch (\Throwable) {
+            return '';
+        }
+    }
+
+    /** ¿Es el que se sirve en la raíz? */
+    public static function esPrincipal(array $evento): bool
+    {
+        return (int) ($evento['activo'] ?? 0) === 1;
+    }
+
+    /**
+     * El que se sirve en la raíz, leído de la base: el marcado como principal;
+     * si no hay ninguno, el más reciente. No depende de la petición, así que
+     * también vale en el asistente de instalación, que corre antes de que la
+     * plataforma termine de arrancar.
+     */
+    public static function principal(): ?array
+    {
+        return Bd::fila('SELECT * FROM {evento} WHERE activo = 1 ORDER BY id DESC LIMIT 1')
+            ?? Bd::fila('SELECT * FROM {evento} ORDER BY id DESC LIMIT 1');
+    }
+
+    /**
+     * ¿Lo puede ver cualquiera? El principal siempre, como hasta ahora; los
+     * demás, en cuanto dejan de ser borrador. Así un evento recién creado no
+     * queda anunciado mientras se le arma la identidad y el formulario.
+     */
+    public static function esPublico(array $evento): bool
+    {
+        return self::esPrincipal($evento) || (string) ($evento['estado'] ?? '') !== 'borrador';
+    }
+
     public static function todos(): array
     {
         return Bd::filas(
@@ -59,15 +168,23 @@ final class Evento
         return Bd::transaccion(static function () use ($datos): int {
             $jornadas = max(1, min(30, (int) ($datos['jornadas'] ?? 1)));
 
-            $id = Bd::insertar('evento', [
-                'nombre'       => mb_substr(trim((string) $datos['nombre']), 0, 160),
+            $nombre = mb_substr(trim((string) $datos['nombre']), 0, 160);
+            $columnas = [
+                'nombre'       => $nombre,
                 'dependencia'  => mb_substr(trim((string) ($datos['dependencia'] ?? '')), 0, 160),
                 'sede'         => mb_substr(trim((string) ($datos['sede'] ?? '')), 0, 160),
                 'fecha_inicio' => $datos['fecha_inicio'],
                 'jornadas'     => $jornadas,
                 'estado'       => $datos['estado'] ?? 'borrador',
                 'activo'       => !empty($datos['activo']) ? 1 : 0,
-            ]);
+            ];
+            // La dirección pública (1.17.0). Mientras la base no tenga la
+            // columna —el instalador de una versión vieja—, el evento se crea
+            // igual y la actualización se la pone después.
+            if (Bd::existeColumna('evento', 'slug')) {
+                $columnas['slug'] = self::slugLibre($nombre);
+            }
+            $id = Bd::insertar('evento', $columnas);
 
             if (!empty($datos['activo'])) {
                 Bd::ejecutar('UPDATE {evento} SET activo = 0 WHERE id <> ?', [$id]);
@@ -532,17 +649,36 @@ final class Evento
             ? (string) $datos['estado']
             : (string) $evento['estado'];
 
+        // La dirección pública, si se pide cambiarla (1.17.0). Va en los
+        // enlaces que ya circulan, así que se valida con cuidado: el formato y
+        // que no la tenga otro evento.
+        $slug = null;
+        if (array_key_exists('slug', $datos)) {
+            $slug = trim((string) $datos['slug']);
+            if (!preg_match(self::PATRON_SLUG, $slug)) {
+                throw new \DomainException('La dirección solo admite minúsculas sin tilde, números y guiones, y '
+                    . 'empieza por una letra o un número: «foro-tic-2027».');
+            }
+            if ((int) Bd::valor('SELECT COUNT(*) FROM {evento} WHERE slug = ? AND id <> ?', [$slug, $id]) > 0) {
+                throw new \DomainException('Otro evento ya usa la dirección «' . $slug . '».');
+            }
+        }
+
         $anterior = (string) $evento['fecha_inicio'];
         $dias = (int) round((strtotime($fecha) - strtotime($anterior)) / 86400);
 
-        Bd::transaccion(static function () use ($id, $nombre, $datos, $fecha, $estado, $moverJornadas, $dias): void {
-            Bd::actualizar('evento', [
+        Bd::transaccion(static function () use ($id, $nombre, $datos, $fecha, $estado, $moverJornadas, $dias, $slug): void {
+            $columnas = [
                 'nombre'       => $nombre,
                 'dependencia'  => mb_substr(trim((string) ($datos['dependencia'] ?? '')), 0, 160),
                 'sede'         => mb_substr(trim((string) ($datos['sede'] ?? '')), 0, 160),
                 'fecha_inicio' => $fecha,
                 'estado'       => $estado,
-            ], 'id = :id', ['id' => $id]);
+            ];
+            if ($slug !== null) {
+                $columnas['slug'] = $slug;
+            }
+            Bd::actualizar('evento', $columnas, 'id = :id', ['id' => $id]);
 
             if ($moverJornadas && $dias !== 0) {
                 Bd::ejecutar(
@@ -555,7 +691,7 @@ final class Evento
         Bitacora::registrar('evento_actualizado', 'evento', $id, [
             'estado'   => $estado,
             'jornadas' => $moverJornadas && $dias !== 0 ? 'movidas ' . $dias . ' días' : 'sin mover',
-        ]);
+        ] + ($slug !== null && $slug !== (string) ($evento['slug'] ?? '') ? ['direccion' => '/e/' . $slug . '/'] : []));
     }
 
     /**
@@ -656,6 +792,13 @@ final class Evento
             [$id]
         );
 
+        // Los tokens de la API de este evento (1.17.0) no tienen llave
+        // foránea: sin el evento no entregan nada, así que se van con él.
+        try {
+            Bd::ejecutar('DELETE FROM {api_token} WHERE evento_id = ?', [$id]);
+        } catch (\Throwable) {
+            // una base sin la columna todavía
+        }
         Bd::ejecutar('DELETE FROM {evento} WHERE id = ?', [$id]);
 
         foreach ($fotos as $f) {

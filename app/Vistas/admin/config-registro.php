@@ -243,7 +243,12 @@ $opcionesRegistro = [
           Siempre se piden <strong>el correo, el nombre completo y la autorización de tratamiento de
           datos</strong>: sin correo no hay forma de entrar, sin nombre no hay carnet, y sin
           autorización la Ley 1581 no deja guardar nada. La contraseña aparece si el acceso con
-          contraseña está encendido en <a href="<?= e(u('/admin/autenticacion')) ?>">Acceso y correo</a>.
+          contraseña está encendido en
+          <?php if ($usuario !== null && \App\Nucleo\Guardia::esAdministradorGlobal($usuario)): ?>
+            <a href="<?= e(u('/admin/autenticacion')) ?>">Acceso y correo</a>.
+          <?php else: ?>
+            «Acceso y correo», que es de toda la plataforma y lo configura la administración global.
+          <?php endif; ?>
         </p>
 
         <?php foreach ($porSeccion as $seccion => $claves): ?>

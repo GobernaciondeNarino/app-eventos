@@ -1,5 +1,11 @@
 <?php
-/** Equipo organizador. @var array $equipo */
+/**
+ * El equipo del evento (1.17.0).
+ *
+ * @var array $equipo   las cuentas globales y las de este evento, con 'rol_evento',
+ *                      'en_eventos' y 'cuidable'
+ * @var bool  $esGlobal
+ */
 defined('EVENTOS_TIC') || exit;
 
 use App\Modelos\Usuario;
@@ -9,8 +15,10 @@ use App\Modelos\Usuario;
 // ancho necesita para que los botones no se partan ni se salgan del cuadro.
 $columnas = 'grid-template-columns:1.3fr 1.3fr .8fr .55fr 1.5fr';
 $permisos = [
-    ['Administrador', ['Configurar el evento y la identidad', 'Aprobar propuestas',
-                       'Exportar con caracterización', 'Gestionar el equipo']],
+    ['Administrador global', ['Crear y eliminar eventos, y elegir el principal', 'Todas las cuentas, en todos los eventos',
+                              'El correo de salida y las formas de entrar', 'La actualización de la base de datos']],
+    ['Administrador del evento', ['Configurar el evento y su identidad', 'Aprobar propuestas',
+                       'Exportar con caracterización', 'Gestionar el equipo del evento']],
     ['Operador de acceso', ['Escanear carnets y sellar ingresos', 'Buscar a un asistente para acreditarlo']],
     ['Consulta', ['Ver indicadores y registros', 'Exportar el listado sin datos sensibles']],
 ];
@@ -19,9 +27,13 @@ $permisos = [
 
   <div class="row row--between" style="align-items:flex-end">
     <div class="stack stack--2">
-      <span class="kicker">Administrador</span>
+      <span class="kicker">Administrador · <?= e((string) ($evento['nombre'] ?? '')) ?></span>
       <h1>Equipo organizador</h1>
-      <p class="help">Quiénes pueden registrar ingresos, consultar registros o cambiar la configuración.</p>
+      <p class="help">
+        Quiénes pueden registrar ingresos, consultar registros o cambiar la configuración de este
+        evento. Las cuentas globales trabajan en todos los eventos; las demás, solo en los que las
+        agregan, con un rol en cada uno.
+      </p>
     </div>
     <button class="btn btn--sm btn--primary" type="button" data-abrir-modal="modal-nuevo">Agregar persona</button>
   </div>
@@ -35,18 +47,34 @@ $permisos = [
             <span>Escaneos hoy</span><span>Estado</span>
           </div>
 
-          <?php foreach ($equipo as $u): ?>
-            <div class="table__row" style="<?= $columnas ?>">
-              <div class="stack" style="gap:2px;min-width:0">
+          <?php foreach ($equipo as $u):
+            $esYo = (int) $u['id'] === (int) $usuario['id'];
+            $estado2fa = Usuario::estadoSegundoFactor($u);
+            // Lo que se le puede hacer a la cuenta va en una línea aparte, debajo
+            // de su fila, como en Eventos: en la última columna los botones no
+            // cabían, y el último quedaba cortado contra el borde de la tabla.
+            $conAcciones = $u['cuidable'] || (!$esYo && ($u['alcance'] === 'eventos' || $esGlobal)); ?>
+            <div class="table__row" style="<?= $columnas ?><?= $conAcciones ? ';border-bottom:0' : '' ?>">
+              <div class="stack" style="gap:2px;min-width:0" data-miembro="<?= (int) $u['id'] ?>" data-alcance="<?= e((string) $u['alcance']) ?>">
                 <strong style="font-weight:500;color:var(--c-title)"><?= e($u['nombre']) ?></strong>
                 <span class="mono muted" style="font-size:11px"><?= e($u['correo']) ?></span>
+                <span>
+                  <?php if ($u['alcance'] === 'global'): ?>
+                    <span class="tag tag--warn" title="Trabaja en todos los eventos">Global</span>
+                  <?php elseif ((int) $u['en_eventos'] > 1): ?>
+                    <span class="tag tag--mute">También en <?= (int) $u['en_eventos'] - 1 ?> evento(s) más</span>
+                  <?php else: ?>
+                    <span class="tag tag--mute">Solo este evento</span>
+                  <?php endif; ?>
+                </span>
               </div>
-              <?php if ((int) $u['id'] === (int) $usuario['id']): ?>
+              <?php if ((int) $u['id'] === (int) $usuario['id'] || ($u['alcance'] === 'global' && !$esGlobal)): ?>
                 <!-- El rol propio no se cambia desde aquí: quitárselo uno mismo
                      es la forma más rápida de quedarse fuera del panel sin
-                     nadie que pueda devolvérselo. -->
-                <span><span class="tag <?= $u['rol'] === 'administrador' ? 'tag--warn' : 'tag--mute' ?>">
-                  <?= e(ucfirst((string) $u['rol'])) ?> · tú
+                     nadie que pueda devolvérselo. El de una cuenta global, solo
+                     lo cambia la administración global. -->
+                <span><span class="tag <?= $u['rol_evento'] === 'administrador' ? 'tag--warn' : 'tag--mute' ?>">
+                  <?= e(ucfirst((string) $u['rol_evento'])) ?><?= (int) $u['id'] === (int) $usuario['id'] ? ' · tú' : '' ?>
                 </span></span>
               <?php else: ?>
                 <form method="post" action="<?= e(u('/admin/organizadores/rol')) ?>"
@@ -61,7 +89,7 @@ $permisos = [
                         'operador'      => 'Operador',
                         'consulta'      => 'Consulta',
                       ] as $clave => $etiqueta): ?>
-                        <option value="<?= e($clave) ?>" <?= $u['rol'] === $clave ? 'selected' : '' ?>><?= e($etiqueta) ?></option>
+                        <option value="<?= e($clave) ?>" <?= $u['rol_evento'] === $clave ? 'selected' : '' ?>><?= e($etiqueta) ?></option>
                       <?php endforeach; ?>
                     </select>
                     <button class="btn btn--sm" type="submit">Cambiar</button>
@@ -74,47 +102,79 @@ $permisos = [
                 <span class="tag <?= $u['estado'] === 'activo' ? 'tag--ok' : 'tag--danger' ?>">
                   <?= $u['estado'] === 'activo' ? 'Activo' : 'Suspendido' ?>
                 </span>
-                <?php $estado2fa = Usuario::estadoSegundoFactor($u); ?>
                 <?php if ($estado2fa === 'ilegible'): ?>
                   <span class="tag tag--danger" title="La configuración guardada no se puede leer con la llave actual">2FA ilegible</span>
                 <?php elseif (!Usuario::tieneSegundoFactor($u) && $u['rol'] === 'administrador'): ?>
                   <span class="tag tag--danger" title="Todavía no ha activado el segundo factor">Sin 2FA</span>
                 <?php endif; ?>
-                <?php if ((int) $u['id'] !== (int) $usuario['id'] && $u['estado'] === 'activo'): ?>
-                  <!-- La contraseña la elige la persona con el enlace, y la
-                       actual sigue sirviendo hasta que la cambie. -->
-                  <form method="post" action="<?= e(u('/admin/organizadores/enlace-clave')) ?>"
-                        data-confirmar="Se enviará a <?= e($u['correo']) ?> un enlace para cambiar su contraseña. Vence en 24 horas y no salta la verificación en dos pasos. ¿Continuar?">
-                    <?= testigo() ?>
-                    <input type="hidden" name="usuario" value="<?= (int) $u['id'] ?>">
-                    <button class="btn btn--sm" type="submit"
-                            title="Enviarle por correo un enlace para cambiar su contraseña"
-                            aria-label="Enviar a <?= e($u['nombre']) ?> un enlace para cambiar su contraseña">Enviar enlace</button>
-                  </form>
-                <?php endif; ?>
-                <?php if ((int) $u['id'] !== (int) $usuario['id'] && $estado2fa !== 'ninguno'): ?>
-                  <form method="post" action="<?= e(u('/admin/organizadores/segundo-factor')) ?>"
-                        data-confirmar="Se quitará la verificación en dos pasos de <?= e($u['nombre']) ?> y se cerrarán sus sesiones. Al entrar con su contraseña escaneará un código QR nuevo. ¿Continuar?">
-                    <?= testigo() ?>
-                    <input type="hidden" name="usuario" value="<?= (int) $u['id'] ?>">
-                    <button class="btn btn--sm" type="submit" title="Para quien perdió el teléfono">Restablecer 2FA</button>
-                  </form>
-                <?php endif; ?>
-                <?php if ((int) $u['id'] !== (int) $usuario['id']): ?>
-                  <form method="post" action="<?= e(u('/admin/organizadores/estado')) ?>">
-                    <?= testigo() ?>
-                    <input type="hidden" name="usuario" value="<?= (int) $u['id'] ?>">
-                    <input type="hidden" name="estado" value="<?= $u['estado'] === 'activo' ? 'suspendido' : 'activo' ?>">
-                    <button class="btn btn--sm" type="submit"><?= $u['estado'] === 'activo' ? 'Suspender' : 'Reactivar' ?></button>
-                  </form>
-                <?php endif; ?>
               </div>
             </div>
+            <?php if ($conAcciones): ?>
+              <div class="table__row" style="grid-template-columns:1fr;padding-top:0" data-acciones-miembro="<?= (int) $u['id'] ?>">
+                <div class="row" style="gap:6px">
+                  <?php if ($u['cuidable'] && $u['estado'] === 'activo'): ?>
+                    <!-- La contraseña la elige la persona con el enlace, y la
+                         actual sigue sirviendo hasta que la cambie. -->
+                    <form method="post" action="<?= e(u('/admin/organizadores/enlace-clave')) ?>"
+                          data-confirmar="Se enviará a <?= e($u['correo']) ?> un enlace para cambiar su contraseña. Vence en 24 horas y no salta la verificación en dos pasos. ¿Continuar?">
+                      <?= testigo() ?>
+                      <input type="hidden" name="usuario" value="<?= (int) $u['id'] ?>">
+                      <button class="btn btn--sm" type="submit"
+                              title="Enviarle por correo un enlace para cambiar su contraseña"
+                              aria-label="Enviar a <?= e($u['nombre']) ?> un enlace para cambiar su contraseña">Enviar enlace</button>
+                    </form>
+                  <?php endif; ?>
+                  <?php if ($u['cuidable'] && $estado2fa !== 'ninguno'): ?>
+                    <form method="post" action="<?= e(u('/admin/organizadores/segundo-factor')) ?>"
+                          data-confirmar="Se quitará la verificación en dos pasos de <?= e($u['nombre']) ?> y se cerrarán sus sesiones. Al entrar con su contraseña escaneará un código QR nuevo. ¿Continuar?">
+                      <?= testigo() ?>
+                      <input type="hidden" name="usuario" value="<?= (int) $u['id'] ?>">
+                      <button class="btn btn--sm" type="submit" title="Para quien perdió el teléfono">Restablecer 2FA</button>
+                    </form>
+                  <?php endif; ?>
+                  <?php if ($u['cuidable']): ?>
+                    <form method="post" action="<?= e(u('/admin/organizadores/estado')) ?>">
+                      <?= testigo() ?>
+                      <input type="hidden" name="usuario" value="<?= (int) $u['id'] ?>">
+                      <input type="hidden" name="estado" value="<?= $u['estado'] === 'activo' ? 'suspendido' : 'activo' ?>">
+                      <button class="btn btn--sm" type="submit"><?= $u['estado'] === 'activo' ? 'Suspender' : 'Reactivar' ?></button>
+                    </form>
+                  <?php endif; ?>
+                  <?php if ($u['alcance'] === 'eventos' && !$esYo): ?>
+                    <form method="post" action="<?= e(u('/admin/organizadores/quitar')) ?>"
+                          data-confirmar="<?= e($u['nombre']) ?> dejará de trabajar en este evento. Su cuenta sigue en los demás eventos donde esté. ¿Continuar?">
+                      <?= testigo() ?>
+                      <input type="hidden" name="usuario" value="<?= (int) $u['id'] ?>">
+                      <button class="btn btn--sm" type="submit" data-quitar-del-evento="<?= (int) $u['id'] ?>">Quitar del evento</button>
+                    </form>
+                  <?php endif; ?>
+                  <?php if ($esGlobal && !$esYo): ?>
+                    <!-- Global o de un solo evento: las cuentas de antes de la
+                         3.22 quedaron globales, y esto es lo que deja a cada quien
+                         solo en su evento. -->
+                    <form method="post" action="<?= e(u('/admin/organizadores/alcance')) ?>"
+                          data-confirmar="<?= e($u['alcance'] === 'global'
+                              ? $u['nombre'] . ' dejará de trabajar en los demás eventos: quedará como ' . $u['rol_evento']
+                                . ' solo en «' . ($evento['nombre'] ?? '') . '». Tendrá que volver a entrar. ¿Continuar?'
+                              : $u['nombre'] . ' trabajará en todos los eventos, como ' . $u['rol_evento']
+                                . '. Tendrá que volver a entrar. ¿Continuar?') ?>">
+                      <?= testigo() ?>
+                      <input type="hidden" name="usuario" value="<?= (int) $u['id'] ?>">
+                      <input type="hidden" name="alcance" value="<?= $u['alcance'] === 'global' ? 'eventos' : 'global' ?>">
+                      <button class="btn btn--sm" type="submit" data-cambiar-alcance="<?= (int) $u['id'] ?>"
+                              title="<?= $u['alcance'] === 'global' ? 'Que trabaje solo en este evento' : 'Que trabaje en todos los eventos' ?>">
+                        <?= $u['alcance'] === 'global' ? 'Solo en este evento' : 'Hacer global' ?>
+                      </button>
+                    </form>
+                  <?php endif; ?>
+                </div>
+              </div>
+            <?php endif; ?>
           <?php endforeach; ?>
         </div>
       </div>
       <div class="table__foot">
-        <span><?= e((string) count($equipo)) ?> personas en el equipo</span>
+        <span><?= e((string) count($equipo)) ?> personas en el equipo de este evento</span>
         <span>El carnet de organizador lleva rótulo verde</span>
       </div>
     </div>
@@ -184,11 +244,25 @@ $permisos = [
             <input class="input" id="n-puesto" name="puesto" maxlength="80" placeholder="Ej. Puerta principal">
           </div>
         </div>
+        <?php if ($esGlobal): ?>
+          <div class="field">
+            <label class="label" for="n-alcance">Dónde trabaja</label>
+            <select class="select" id="n-alcance" name="alcance">
+              <option value="eventos">Solo en este evento</option>
+              <option value="global">En todos los eventos (cuenta global)</option>
+            </select>
+            <span class="help">Una cuenta global con rol de administrador es administradora global.</span>
+          </div>
+        <?php endif; ?>
         <div class="field">
           <label class="label" for="n-clave">Contraseña inicial</label>
-          <input class="input" id="n-clave" name="clave" type="password" minlength="12" required
+          <input class="input" id="n-clave" name="clave" type="password" minlength="12"
                  autocomplete="new-password">
-          <span class="help">Mínimo 12 caracteres. La persona deberá cambiarla al entrar.</span>
+          <span class="help">
+            Mínimo 12 caracteres; la persona deberá cambiarla al entrar. Si el correo ya tiene cuenta
+            —trabaja en otro evento—, no hace falta: se la agrega a este con el rol elegido y entra con
+            la contraseña de siempre.
+          </span>
         </div>
 
         <div class="notice">

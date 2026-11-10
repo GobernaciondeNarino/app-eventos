@@ -4,13 +4,16 @@ Qué se puede cambiar una vez creado, quién puede tocar qué, y qué no tiene v
 eventos y jornadas, las propuestas de los expositores, el perfil Staff, la impresión de
 carnets, la acreditación en la puerta, la verificación en dos pasos del equipo, la
 recuperación de contraseñas, el formulario de registro, cómo se recorren los listados largos,
-los tokens de la API con que otros sistemas consultan los registros y los certificados.
+los tokens de la API con que otros sistemas consultan los registros, los certificados y cómo
+funcionan varios eventos a la vez, cada uno con su equipo (14).
 
 Todo lo de aquí está en **Administración → Eventos**, **QR por día**, **Expositores**,
 **Registros** y **Configuración**, y exige el rol **administrador** salvo donde se diga otra
-cosa. Imprimir carnets y acreditar lo comparten el equipo y el Staff. Registrar a quien llega
-sin registro, también con el registro cerrado, lo hacen el operador de acceso y el
-administrador (9.10).
+cosa. Desde la 3.22 ese rol es de cada evento: lo de aquí lo hace el administrador del evento
+elegido, y lo que es de toda la plataforma —crear y eliminar eventos, el correo de salida— lo
+hace solo el administrador global (14.4). Imprimir carnets y acreditar lo comparten el equipo y
+el Staff. Registrar a quien llega sin registro, también con el registro cerrado, lo hacen el
+operador de acceso y el administrador (9.10).
 
 ---
 
@@ -58,23 +61,24 @@ aparte desde *QR por día*.
 | **En curso** | El evento está pasando |
 | **Cerrado** | Terminó |
 
-El estado es informativo: lo que de verdad decide qué ven los asistentes es cuál está
-**activo**. Tampoco cierra el registro: para dejar de recibir inscripciones nuevas está
-*Configuración → Registro* (9.9).
+En el evento **principal** el estado es informativo: se ve siempre. En los demás,
+**Borrador** además lo oculta: su dirección le responde «Evento no encontrado» a quien no es de
+su equipo, para que se pueda armar sin que nadie lo vea (14.3). Ningún estado cierra el
+registro: para dejar de recibir inscripciones nuevas está *Configuración → Registro* (9.9).
 
-### 2.3 Activar y desactivar
+### 2.3 El evento principal
 
-Solo hay un evento activo a la vez: es el que ven los asistentes en la portada, el que usan
-los códigos QR y al que se suman los registros nuevos. Activar uno desactiva el anterior.
+Hasta la 3.21 había un solo evento *activo* y los demás quedaban guardados. Desde la 3.22 pueden
+funcionar varios a la vez, cada uno en su propia dirección (14.2), y uno de ellos es el
+**principal**: el que se ve en la dirección de siempre de la plataforma, sin `/e/`. Los demás
+siguen funcionando en la suya: sus códigos QR, sus carnets y sus registros no dependen de cuál
+sea el principal.
 
-**Desactivar no borra nada** y se deshace con un clic. Mientras no haya ninguno activo:
-
-- los asistentes ven la pantalla de «todavía no hay nada publicado»;
-- el equipo organizador ve la invitación a crear o activar uno;
-- nada de lo guardado se toca.
-
-Es lo que conviene hacer con un evento que terminó y con uno de prueba que se quiere conservar
-por si acaso.
+**Hacer principal** (administrador global) lo cambia, y el anterior sigue en su dirección
+propia. **Quitar como principal** no borra nada: mientras no haya ninguno marcado, la dirección
+de siempre muestra el más reciente. Ningún evento se apaga por dejar de ser el principal: para
+que el público deje de ver uno que terminó o uno de prueba que se quiere conservar, quítalo como
+principal y pásalo a **Borrador** (2.2).
 
 ### 2.4 Eliminar
 
@@ -111,8 +115,14 @@ exposiciones** que adjuntaron los expositores, y el **logo** del evento. Sin eso
 prueba dejaría sus archivos ocupando espacio para siempre sin que nadie supiera de quién eran
 —y una hoja de vida trae teléfono, dirección y trayectoria laboral.
 
-Lo que **no** se toca: el equipo organizador y sus roles, la bitácora de auditoría y la
-configuración del servidor. Son de la instalación, no del evento.
+También se van su identidad, sus formularios, la configuración de sus certificados y los
+**tokens de la API** que se crearon en él: un sistema que lo consultaba recibe desde ese momento
+que el token no es válido.
+
+Lo que **no** se toca: las cuentas del equipo, la bitácora de auditoría y la configuración del
+servidor. Son de la instalación, no del evento. Quien trabajaba en ese evento pierde su rol en
+él y conserva los de los demás; una cuenta que trabajaba solo ahí sigue existiendo, sin ningún
+evento, hasta que la agreguen a otro equipo.
 
 La eliminación queda anotada en la bitácora con el nombre del evento y las cuentas de lo que
 se llevó.
@@ -564,7 +574,8 @@ Desde ahí mismo se cambia la contraseña.
 ### 8.4 Si alguien del equipo no puede entrar
 
 Si perdió el teléfono y el código por correo no le llega, una cuenta administradora puede
-quitarle la verificación desde **Organizadores → Restablecer 2FA**. Se le cierran las sesiones
+quitarle la verificación desde **Organizadores → Restablecer 2FA** —el administrador de un
+evento, a quien trabaja solo en el suyo; el global, a cualquiera (14.5)—. Se le cierran las sesiones
 y, al entrar con su contraseña, escanea un QR nuevo. La tuya propia se restablece en
 Configuración → Mi cuenta, no desde ahí. Queda en la bitácora.
 
@@ -617,13 +628,18 @@ entrada del menú, **Administración → Configuración**, con seis pestañas:
 | **Registro** | El formulario de registro del evento activo: campos, listas y banner, y si el registro está abierto, oculto o cerrado (9.9) | Administrador |
 | **Registro de expositores** | El formulario privado de los expositores (9.8): su enlace, y sus propios campos, listas y banner | Administrador |
 | **Identidad** | Colores, tipografía y logo del evento, con la revisión de contraste | Administrador |
-| **Acceso y correo** | Las formas de entrar de los asistentes y el envío de correo | Administrador |
-| **API** | Los tokens con que otros sistemas consultan los registros en JSON (12) | Administrador |
+| **Acceso y correo** | Las formas de entrar de los asistentes y el envío de correo. Son de toda la plataforma, no de un evento | Administrador global |
+| **API** | Los tokens con que otros sistemas consultan los registros del evento en JSON (12) | Administrador |
+| **Certificados** | Abrirlos, sus textos, horas, firma y diseño (13) | Administrador |
 | **Mi cuenta** | La verificación en dos pasos y la contraseña de quien está dentro | Todo el equipo |
 
 Las direcciones de antes —`/admin/identidad`, `/admin/autenticacion`, `/admin/cuenta`— siguen
 funcionando: un enlace guardado o un correo viejo no se rompen. Quien no es administrador entra
 directo a *Mi cuenta*, que es lo único de aquí que le corresponde.
+
+Todo, salvo *Acceso y correo* y *Mi cuenta*, es **del evento elegido** (14.1): la identidad, el
+registro o los certificados de un evento no tocan los de otro, y uno nuevo empieza con los de
+fábrica.
 
 ### 9.1 Registro: qué campos se piden
 
@@ -1013,6 +1029,10 @@ Si después se pierde, **Ver el token** lo muestra otra vez (12.2).
 Uno por sistema: así la lista dice quién consulta, cuándo fue la última vez y cuántas consultas
 lleva, y se le corta a uno sin dejar sin servicio a los demás.
 
+Desde la 3.22 cada token es **del evento** en el que se crea, y solo consulta ese: la lista de
+**Configuración → API** muestra los del evento elegido. Los que ya existían quedaron con el
+evento principal. Para que un sistema consulte dos eventos, crea un token en cada uno.
+
 ### 12.2 Volver a copiarlo, revocarlo o eliminarlo
 
 Debajo de cada token de la lista están sus botones:
@@ -1182,3 +1202,121 @@ quedan en la bitácora con quién las hizo.
 Desde su ficha, el operador de acceso y el administrador descargan su certificado con el botón
 **PDF** de la tarjeta **Certificados** y se lo envían por otro medio. Queda en la bitácora que lo
 descargó el equipo.
+
+---
+
+## 14. Varios eventos, cada uno por su cuenta
+
+Desde la 3.22 la plataforma lleva varios eventos a la vez, y cada uno funciona por su cuenta: su
+identidad —colores, logo, tipografía—, su formulario de registro y el de expositores, sus
+jornadas y códigos QR, sus personas registradas, sus certificados, sus tokens de la API y su
+equipo. Lo que se configura en uno no toca a los demás.
+
+### 14.1 Elegir el evento en el que se trabaja
+
+Al entrar al panel, quien trabaja en un solo evento entra directo a él. Quien trabaja en varios
+—el administrador global los ve todos— elige primero: la pantalla «¿En qué evento vas a
+trabajar?» muestra cada uno con su estado, el rol que tiene en él, sus registros y su dirección.
+
+Desde ese momento todo el panel es de ese evento: indicadores, Registros, Escanear carnet, QR por
+día, Expositores, Carnets, Organizadores y Configuración. Su nombre va arriba del menú y, debajo,
+**Cambiar de evento**, para pasar a otro sin salir. En **Eventos**, el botón **Administrar** de
+cada fila hace lo mismo. La elección es de cada sesión: dos personas pueden trabajar al mismo
+tiempo en eventos distintos, y al volver a entrar se pregunta otra vez.
+
+### 14.2 La dirección de cada evento
+
+| Evento | Dirección |
+|---|---|
+| El **principal** (2.3) | La de siempre, por ejemplo `https://tic.narino.gov.co/cumbreAI/` |
+| Cualquier otro | La misma con `/e/<nombre corto>/`, por ejemplo `…/cumbreAI/e/foro-de-gobierno-abierto-2027/` |
+
+El nombre corto se arma solo con el nombre del evento al crearlo, y la dirección completa aparece
+en **Eventos**, debajo de cada uno. El administrador global la puede cambiar en el lápiz del
+evento —minúsculas, números y guiones—. Si se cambia con el evento ya anunciado, los enlaces
+que se compartieron con la anterior dejan de servir.
+
+Lo que va impreso o en un correo **no** lleva la dirección del evento, y por eso sigue sirviendo
+aunque esta cambie o el evento deje de ser el principal: el QR de cada jornada, el carnet, el QR
+personal de acceso, el enlace para poner una contraseña nueva, el enlace privado del formulario
+de expositores y el código de verificación de un certificado. Cada uno ya sabe de qué evento es.
+
+### 14.3 Quién ve un evento
+
+- El **principal** se ve siempre, como hasta ahora.
+- Los demás se ven en su dirección en cuanto dejan de estar en **Borrador**. Un evento recién
+  creado queda en borrador: se le arma la identidad, el formulario y el equipo sin que nadie lo
+  vea, y se anuncia cambiando su estado a **Abierto**. Mientras tanto su dirección le responde
+  «Evento no encontrado» al público; su equipo sí lo ve, para revisarlo.
+- La sesión de un asistente vale solo en su evento. Si alguien registrado en la Cumbre abre la
+  dirección del Foro, la ve como visitante y, para asistir al Foro, se registra aparte. Si abre
+  su carnet o sus datos desde la dirección de siempre, la plataforma lo lleva a los de su
+  evento.
+
+### 14.4 El administrador global y el de cada evento
+
+| | Administrador global | Administrador del evento |
+|---|---|---|
+| En qué eventos trabaja | En todos | En los que lo agregan |
+| Configurar el evento: identidad, registros, certificados, API | ✓ | ✓, en el suyo |
+| Aprobar propuestas, exportar, imprimir carnets, QR por día | ✓ | ✓, en el suyo |
+| El equipo | Todas las cuentas | Las que trabajan solo en su evento |
+| Crear y eliminar eventos, elegir el principal, cambiar la dirección | ✓ | — |
+| *Acceso y correo*: las formas de entrar y el correo de salida | ✓ | — |
+| Actualizar la base de datos | ✓ | — |
+
+Con el operador de acceso y la consulta pasa lo mismo: una cuenta **global** tiene ese rol en
+todos los eventos; una **del evento**, en los que la agregan, y puede tener un rol distinto en
+cada uno —administradora del Foro y operadora en la Cumbre, por ejemplo—.
+
+Las cuentas que ya existían antes de la 3.22 quedaron **globales**, con su mismo rol: nadie
+perdió lo que veía al actualizar. Para dejar una de ellas solo en su evento, el administrador
+global pulsa **Solo en este evento**, debajo de ella en **Organizadores** (14.5). Las que se crean
+desde Organizadores quedan, salvo que el administrador global elija otra cosa, solo en el evento
+en el que se crean.
+
+### 14.5 El equipo de cada evento
+
+**Organizadores** muestra el equipo del evento elegido: las cuentas globales, marcadas como
+*Global*, y las de ese evento, con su rol en él. Debajo de cada cuenta van los botones de lo que
+se le puede hacer.
+
+- **Agregar persona** con un correo nuevo crea la cuenta para este evento, con una contraseña
+  inicial que deberá cambiar al entrar. Con el correo de una cuenta que ya existe —alguien que
+  trabaja en otro evento— no se crea otra: se le agrega este evento con el rol elegido, y entra
+  con la contraseña de siempre.
+- El administrador global elige además **Dónde trabaja**: solo en este evento, o en todos
+  (cuenta global). Una cuenta global con rol de administrador es administradora global.
+- **Cambiar el rol** en este evento no cambia el que tenga en los demás.
+- **Solo en este evento** y **Hacer global** (administrador global). El primero deja una cuenta
+  global solo en el evento elegido, con el mismo rol; para que trabaje además en otro, se agrega
+  su correo en el equipo de ese evento. El segundo vuelve global una cuenta de evento, con el rol
+  que tiene en este. En los dos casos tiene que volver a entrar, y nadie cambia así su propia
+  cuenta.
+- **Quitar del evento** le quita el acceso a este evento y nada más: la cuenta sigue, con los
+  otros eventos en los que trabaje. Si no le queda ninguno, al entrar se le dice que pida que la
+  agreguen a un equipo.
+- Enviar el enlace de la contraseña, restablecer la verificación en dos pasos o suspender: el
+  administrador de un evento lo hace con las cuentas que trabajan solo en el suyo. Las globales,
+  y las que trabajan también en otro evento, solo las toca el administrador global: así el
+  administrador de un evento no puede dejar sin acceso a alguien de otro.
+
+### 14.6 Crear un evento nuevo
+
+1. En **Eventos** (administrador global), **Crear evento**: nombre, fecha de inicio y número de
+   jornadas. Queda en **Borrador** y con su propia dirección. En una instalación sin eventos, el
+   primero que se crea queda como principal.
+2. Pulsa **Administrar** en su fila: el panel pasa a ese evento.
+3. En **Configuración**, arma su **Identidad** —colores, logo—, su **Registro**, el **Registro de
+   expositores** y, cuando llegue el momento, sus **Certificados**. Empiezan como los de
+   fábrica: no se copian de otro evento.
+4. En **QR por día** revisa sus jornadas y en **Organizadores** agrega a su equipo.
+5. Cuando esté listo, en el lápiz de su fila cambia el estado a **Abierto** y comparte su
+   dirección.
+
+### 14.7 El panel, la bitácora y la API
+
+- El panel muestra los indicadores y la bitácora del evento elegido. El administrador global ve
+  además lo que es de toda la plataforma: una actualización de la base, un cambio en el correo
+  de salida.
+- Cada token de la API es del evento en el que se crea y solo consulta ese (12.1).

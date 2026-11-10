@@ -472,6 +472,13 @@ restauró no es una copia.
    visita. Los certificados quedan **cerrados** hasta que un administrador los abra en
    **Configuración → Certificados**: nadie ve nada nuevo antes. Ver 7.15.
 
+   La 3.22 agrega **una tabla** —el rol de cada cuenta en cada evento (`evt_usuario_evento`)—,
+   **cuatro columnas** —la dirección corta de cada evento, si una cuenta es global o de eventos
+   sueltos, y el evento de cada token de la API y de cada entrada de la bitácora— y sus índices.
+   Después completa lo que ya está sin cambiarle nada: le arma su dirección a cada evento, deja
+   las cuentas que existen como globales con su mismo rol y les asigna al evento principal los
+   tokens de la API. Mientras no se cree un segundo evento, nadie nota ningún cambio. Ver 7.16.
+
    Si el usuario de la base de datos no tiene permiso de `ALTER` —pasa en algunos
    alojamientos—, la actualización automática no puede hacerse: lo anota en el registro,
    vuelve a intentarlo cada cinco minutos y la plataforma sigue funcionando. Para hacerlo a
@@ -1369,6 +1376,133 @@ ingresos que se hayan registrado a mano. Si prefieres quitar las tablas, `DROP T
 evt_certificado, evt_evento_certificado;` en phpMyAdmin, después de volver a los archivos
 anteriores; las imágenes que se hayan subido quedan en `almacen/logos` con nombres que empiezan
 por `certificado-`, y se pueden borrar a mano.
+
+### 7.16 La 3.22: varios eventos, cada uno con su equipo, sin tocar registros ni configuración
+
+**Qué agrega.**
+
+- **Eventos independientes.** Cada evento tiene su identidad, sus formularios de registro, sus
+  jornadas, sus personas, sus certificados, sus tokens de la API y su equipo, y funciona en su
+  propia dirección: el principal en la de siempre, los demás en `…/cumbreAI/e/<nombre>/`. Un
+  evento nuevo nace en borrador y nadie lo ve hasta que se abre. Ver `ADMINISTRAR-EVENTOS.md`,
+  sección 14.
+- **Elegir el evento.** Quien trabaja en varios elige al entrar al panel en cuál va a trabajar,
+  y lo cambia desde el menú con **Cambiar de evento**. Con un solo evento no se pregunta nada.
+- **Administrador global y del evento.** El global crea y elimina eventos, elige el principal y
+  maneja el correo de salida y la base; el de un evento administra el suyo y su equipo. Una
+  cuenta puede tener un rol distinto en cada evento.
+- **El visto de la firma en el certificado.** La imagen de la firma —el visto de quien firma—
+  queda encima del nombre, con una pequeña parte sobre él. Al subirla, la plataforma le quita el
+  fondo blanco, las motas sueltas y el margen sobrante.
+- **La revisión de seguridad con la skill de Cloudflare**, en `.claude/skills/security-audit/`.
+  Es para revisar el código desde el repositorio: **no se sube al servidor**. El `.htaccess`
+  bloquea además `.claude/` por si se sube por error.
+
+**Qué cambia en la base de datos** (esquema 1.17.0). Lo hace sola la primera visita, como en las
+versiones anteriores, y solo agrega:
+
+| Cambio | Para qué |
+|---|---|
+| Tabla nueva `evt_usuario_evento` | El rol de cada cuenta de evento en cada evento |
+| `evt_evento.slug`, con el índice único `uq_evento_slug` | La dirección `/e/<nombre>/` de cada evento |
+| `evt_usuario.alcance` (`global` para todas las que ya existen) | Si la cuenta trabaja en todos los eventos o solo en los que la agregan |
+| `evt_api_token.evento_id`, con su índice | El evento de cada token |
+| `evt_bitacora.evento_id`, con su índice | En qué evento pasó cada cosa |
+
+Después completa lo que ya está, sin cambiar ningún dato: le arma la dirección a cada evento con
+su nombre y les asigna al evento principal los tokens de la API que existen. Las cuentas quedan
+globales con el mismo rol. Las entradas viejas de la bitácora quedan sin evento: las ve el
+administrador global.
+
+Necesita los mismos permisos del usuario de la base que las actualizaciones anteriores: crear
+tablas y cambiar columnas e índices. En Plesk el usuario de cada base los tiene todos sobre ella.
+Si alguno falta, el panel muestra el aviso de «base de datos atrasada» con el botón **Actualizar
+la base de datos** (punto 3 de arriba): no sigas con la comprobación hasta que el aviso
+desaparezca.
+
+**Qué no cambia.** `config/config.php`, `almacen/`, los registros, la asistencia, las
+propuestas, los certificados emitidos, la identidad y los formularios del evento. Con un solo
+evento nadie nota nada: los asistentes siguen en la misma dirección, el equipo entra directo al
+panel y los QR impresos, los carnets, los enlaces de los correos y los códigos de los
+certificados siguen sirviendo. Los tokens de la API que ya existen responden exactamente lo
+mismo.
+
+**Qué archivos cambian.** Muchos, y dos nuevos, así que lo más seguro es **subir la versión
+completa**: todo menos `config/`, `almacen/` y `.claude/`. Para quien prefiera revisar uno por
+uno:
+
+| Archivo | Para qué |
+|---|---|
+| `app/Esquema.php` | La tabla, las columnas y los índices nuevos, y el esquema 1.17.0 |
+| `app/Nucleo/Contexto.php` *(nuevo)* | El evento de las rutas con token: el QR del día, el carnet, el acceso, la verificación |
+| `app/Nucleo/App.php`, `app/Nucleo/Peticion.php`, `app/Nucleo/Url.php`, `app/Nucleo/Enrutador.php` | El evento de cada petición y las direcciones `/e/<nombre>/` |
+| `app/Nucleo/Guardia.php` | Elegir el evento, el rol de cada evento y el guardia del administrador global |
+| `app/Nucleo/Bitacora.php` | El evento de cada entrada, y textos legibles para las acciones que no los tenían |
+| `app/Nucleo/Imagen.php`, `app/Nucleo/Pdf.php`, `app/Nucleo/CertificadoPdf.php` | El visto de la firma sobre el nombre |
+| `app/Controladores/Admin.php`, `Configuracion.php`, `Api.php`, `Medios.php`, `Certificados.php`, `Instalador.php` | Eventos, equipo, tokens por evento, el banner, la verificación y el asistente |
+| `app/Modelos/Evento.php`, `app/Modelos/Usuario.php`, `app/Modelos/TokenApi.php` | La dirección de cada evento, el equipo por evento y los tokens |
+| `app/Vistas/admin/elegir-evento.php` *(nuevo)*, `eventos.php`, `organizadores.php`, `panel.php`, `config-registro.php`, `config-certificados.php` | Las pantallas |
+| `app/Vistas/plantilla.php`, `app/Vistas/parciales/navegacion.php`, `barra-lateral.php`, `pestanas-configuracion.php` | «Cambiar de evento» y el menú de cada rol |
+| `app/rutas.php` | Las rutas nuevas y sus guardias |
+| `index.php`, `herramientas/instalar.php`, `herramientas/correo.php`, `herramientas/generar-doc-esquema.php` | El número de versión y el diagrama del esquema |
+| `.htaccess` | **Opcional**, ver abajo |
+
+**El `.htaccess`, aparte.** Solo agrega `.claude` a la lista de carpetas bloqueadas, y no hace
+falta si esa carpeta no se sube. Si en producción nunca tocaste el `.htaccess`, puedes subir el
+nuevo. Si lo cambiaste —la redirección a HTTPS o el HSTS—, no lo reemplaces: en la línea que
+empieza por `RedirectMatch 404`, agrega `|\.claude` justo después de `\.github`. Guarda antes una
+copia, y abre la portada en el acto: si responde «Error 500», vuelve a subir la copia.
+
+**Cómo subirla:**
+
+1. Copia de seguridad: **la base de datos completa** —en Plesk, *Bases de datos → Exportar
+   volcado*— y `config/`. Descarga además, tal como están en el servidor, `app/`, `assets/`,
+   `herramientas/`, `index.php` y `.htaccess`.
+2. Sube la versión completa **sin tocar `config/` ni `almacen/`**, y sin la carpeta `.claude/`.
+   Por FTP, en modo binario.
+3. Abre cualquier página. En `/admin` no debe quedar ningún aviso de «base de datos atrasada»; si
+   queda, pulsa **Actualizar la base de datos**. La bitácora del panel dice «La base de datos se
+   puso al día sola tras la actualización (versión 1.17.0)».
+4. Compruébalo con el evento de siempre:
+   - la portada, el registro y el carnet de una persona se ven en la misma dirección de siempre,
+     con su identidad, y el QR del carnet se escanea en **Escanear carnet**;
+   - al entrar al panel no se pide elegir evento —hay uno solo— y el menú no tiene «Cambiar de
+     evento»;
+   - en **Eventos**, el evento dice «Principal» y, debajo, su dirección propia (`…/e/<nombre>/`);
+   - en **Organizadores**, las cuentas de siempre están, marcadas *Global*, con su mismo rol;
+   - si otros sistemas consultan la API, siguen respondiendo igual, y sus tokens están en
+     **Configuración → API**;
+   - en **Configuración → Certificados**, **Ver un ejemplo** muestra el visto de la firma con una
+     pequeña parte encima del nombre. Si la firma se subió antes de esta versión, súbela otra vez
+     para que se le quiten el fondo, las motas y el margen.
+5. Revisa el equipo. En **Organizadores**, deja solo en su evento, con **Solo en este evento**, las
+   cuentas que no necesiten ver todos los eventos —por ejemplo los operadores de la puerta—, y
+   deja globales únicamente a quienes administran toda la plataforma.
+
+Para el segundo evento, ver `ADMINISTRAR-EVENTOS.md`, 14.6: se crea en **Eventos**, nace en
+borrador y se abre cuando esté armado. El evento de siempre no se toca.
+
+**Volver atrás:** sube otra vez lo que descargaste en el paso 1. Lo que agregó la base puede
+quedarse: la 3.21 no lo usa ni lo mira, y una base más nueva que el código no dispara ninguna
+actualización. Dos cuidados antes de hacerlo:
+
+- **Las cuentas de un solo evento.** La 3.21 no conoce los eventos sueltos y le da a cada cuenta
+  su rol en el evento principal. Si ya creaste cuentas de un solo evento —o dejaste alguna con
+  **Solo en este evento**—, suspéndelas en **Organizadores** o bájalas a *Consulta* antes de
+  volver atrás.
+- **Un segundo evento.** Con la 3.21 solo se ve el principal, o el más reciente si ninguno lo es.
+  Si creaste otro, sus registros siguen en la base, pero no se ven hasta volver a la 3.22.
+
+Si aun así prefieres quitar de la base lo nuevo, en phpMyAdmin, después de volver a los archivos
+anteriores:
+
+```sql
+DROP TABLE evt_usuario_evento;
+ALTER TABLE evt_evento    DROP INDEX uq_evento_slug, DROP COLUMN slug;
+ALTER TABLE evt_usuario   DROP COLUMN alcance;
+ALTER TABLE evt_api_token DROP INDEX idx_api_token_evento, DROP COLUMN evento_id;
+ALTER TABLE evt_bitacora  DROP INDEX idx_bitacora_evento, DROP COLUMN evento_id;
+```
 
 ---
 

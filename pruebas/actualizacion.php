@@ -308,6 +308,14 @@ function verificar(string $camino, array $s, string $llave): void
     comprobar("[$camino] y la caracterización guardada no cambió", $caracterizacion === $s['caracterizacion'],
         json_encode($caracterizacion, JSON_UNESCAPED_UNICODE));
 
+    // 1.17.0: cada evento funciona por su cuenta, y lo de antes queda como se
+    // veía: la cuenta, con todos los eventos; el evento, con su dirección.
+    comprobar("[$camino] la cuenta de antes queda global: sigue trabajando en todos los eventos",
+        Bd::valor('SELECT alcance FROM {usuario} WHERE id = ?', [$s['admin']]) === 'global');
+    comprobar("[$camino] y el evento de antes tiene su propia dirección, a partir del nombre",
+        Bd::valor('SELECT slug FROM {evento} WHERE id = ?', [$s['evento']]) === 'cumbre-en-produccion',
+        (string) Bd::valor('SELECT slug FROM {evento} WHERE id = ?', [$s['evento']]));
+
     // Nada se perdió.
     comprobar("[$camino] no se perdió ningún registro", cuentas() === $s['conteos'],
         json_encode(cuentas()) . ' frente a ' . json_encode($s['conteos']));

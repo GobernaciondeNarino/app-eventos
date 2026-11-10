@@ -1115,7 +1115,8 @@ En **Configuración → Certificados**:
 1. **Quién certifica.** Por omisión, «La Gobernación de Nariño, a través de la Secretaría TIC,
    Innovación y Gobierno Abierto,»; la plataforma le agrega «certifica que» y, debajo, el nombre.
 2. **El evento, como se nombra en el texto**, con su artículo: «la Cumbre Tecnológica IA Nariño
-   2026». Vacío, el texto dice «el evento Cumbre…», que vale para cualquier nombre.
+   2026». Vacío, el texto dice «el evento Cumbre…», que vale para cualquier nombre. Ese mismo
+   nombre, sin el artículo, es el que muestra la página de verificación.
 3. **La ciudad**: «…que se realizó en San Juan de Pasto…» y «Se expide en San Juan de Pasto el…».
 4. **Las horas de cada jornada.** Vacías, el certificado no habla de horas.
 5. **Quién firma**: nombre, cargo y, si quieres, la imagen de su firma. Mejor en PNG con fondo

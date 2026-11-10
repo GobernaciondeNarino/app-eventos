@@ -131,7 +131,10 @@ final class Certificados
                     'resumen' => $texto['resumen'],
                     'completa' => $texto['completa'],
                     'cuerpo'  => implode('', array_column($texto['cuerpo'], 'texto')),
-                    'evento'  => (string) $evento['nombre'],
+                    // El nombre como lo dice el certificado —el que se puso en
+                    // Configuración → Certificados, sin el artículo—, no el del
+                    // registro del evento: quien verifica lo compara con el papel.
+                    'evento'  => Certificado::nombreDelEvento($config, $evento)[1],
                     'emitido' => Certificado::fechaLarga((string) $derecho['emision']['emitido_en']),
                     'horas'   => $derecho['tipo'] === 'asistencia' && $derecho['asistencia']['horas'] > 0
                         ? Certificado::horas((float) $derecho['asistencia']['horas']) : '',

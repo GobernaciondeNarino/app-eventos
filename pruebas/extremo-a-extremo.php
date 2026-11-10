@@ -6416,6 +6416,8 @@ comprobar('el QR lleva a una página pública que dice que es auténtico, con el
     && str_contains($html, mb_strtoupper((string) $maria['nombre'])) && str_contains($html, 'Asistencia completa: '
     . $cuantasJornadas . ' de ' . $cuantasJornadas . ' jornadas') && !str_contains($html, '1.085.234.567')
     && !str_contains($html, '1085234567') && !str_contains($html, (string) $maria['correo']));
+comprobar('el evento se nombra como en el certificado, no como en el registro del evento',
+    str_contains($html, '<span class="kv__k">Evento</span><strong class="kv__v">Cumbre Tecnológica IA Nariño 2026</strong>'));
 comprobar('y no se deja indexar', str_contains($html, '<meta name="robots" content="noindex, nofollow">'));
 $html = $verificador->get('/v?codigo=' . urlencode(strtolower(implode(' ', str_split($codigoMaria, 4)))));
 comprobar('escrito a mano —en minúsculas, con espacios— también se verifica', str_contains($html, 'data-verificacion="valido"'));

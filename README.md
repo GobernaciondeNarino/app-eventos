@@ -26,7 +26,7 @@ registra gente, se sella asistencia, se aprueban exposiciones y se exportan repo
 | **Códigos QR** | Generador **y lector** propios, verificados uno contra otro y contra una librería de referencia |
 | **Certificados** | En PDF, para cada quien asistió y para los expositores, en **Mi certificado**. Quien estuvo en todas las jornadas recibe el de asistencia completa, con un sello dorado y el total de horas. Cada uno lleva un código y un QR que lo verifican en una página pública. El PDF lo escribe la propia plataforma, sin bibliotecas |
 | **API** | Consulta en JSON de expositores, participantes y demás perfiles, con filtros en la dirección y un token por cada sistema que consulta, que se crea, se vuelve a copiar, se revoca y se elimina en Configuración → API. Solo lee, y nunca entrega la identificación; la fotografía, como enlace, y la caracterización, solo a un token con cada permiso |
-| **Pruebas** | 1086 comprobaciones de extremo a extremo, 160 de actualización desde la 1.0.0, 170 en navegador, y 703 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy, formulario de registro y el PDF de los certificados |
+| **Pruebas** | 1087 comprobaciones de extremo a extremo, 160 de actualización desde la 1.0.0, 170 en navegador, y 703 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy, formulario de registro y el PDF de los certificados |
 
 ---
 
@@ -394,7 +394,7 @@ el enrutado, las cookies, los testigos y los guardias, que es donde suelen estar
 Incluye 19 comprobaciones en el bloque específico de seguridad y otras tantas repartidas por
 los guardias de cada pantalla.
 
-Estado actual: **1086 de 1086** de extremo a extremo, **78** del asistente de instalación,
+Estado actual: **1087 de 1087** de extremo a extremo, **78** del asistente de instalación,
 **160** de actualización de una instalación en producción por siete caminos, **46** del
 segundo factor —los vectores del RFC 6238 y el reloj del servidor corrido—, **64** de la
 configuración de los formularios de registro, **22** del hash de contraseñas,

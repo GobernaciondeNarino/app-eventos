@@ -1180,7 +1180,7 @@ conviene decirlo con claridad en la pantalla de privacidad.
 ## 6. Verificación
 
 ```bash
-php pruebas/extremo-a-extremo.php      # 1086 comprobaciones sobre un servidor real
+php pruebas/extremo-a-extremo.php      # 1087 comprobaciones sobre un servidor real
 php pruebas/instalacion.php            # el asistente, y qué se ve cuando falla
 php pruebas/actualizacion.php          # subir desde la 1.0.0 por cada camino, sin perder nada
 php pruebas/claves.php                 # parámetros de Argon2id y rehash

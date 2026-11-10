@@ -54,7 +54,9 @@ DirectoryIndex index.php
 # -------------------------------------------------------------------------
 # .git incluido: es habitual preparar el servidor con «git clone» dentro de
 # httpdocs, y sin esto se puede descargar el código y todo el historial.
-RedirectMatch 404 (?i)^/?(.*/)?(app|config|almacen|docs|herramientas|pruebas|\.git|\.github)/
+# .claude son las herramientas del asistente de programación —la skill de
+# auditoría de seguridad—: no son de la aplicación y no tienen por qué verse.
+RedirectMatch 404 (?i)^/?(.*/)?(app|config|almacen|docs|herramientas|pruebas|\.git|\.github|\.claude)/
 
 # Archivos sueltos que tampoco deben verse
 <FilesMatch "(?i)(^\.|\.(sql|log|md|json|lock|ini|bak|old|swp|dist|yml|yaml)$|~$|^(composer|package)\.)">

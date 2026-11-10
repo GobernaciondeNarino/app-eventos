@@ -20,6 +20,10 @@
 # Salidas de las pruebas
 /pruebas/capturas/
 
+# Informes de la auditoría de seguridad (skill security-audit). Describen cómo
+# vulnerar la plataforma: nunca van al repositorio. Ver docs/SEGURIDAD.md.
+/auditorias/
+
 # Volcados y respaldos de base de datos
 *.sql.gz
 *.dump

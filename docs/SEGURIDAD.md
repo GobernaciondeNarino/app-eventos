@@ -1180,7 +1180,7 @@ conviene decirlo con claridad en la pantalla de privacidad.
 ## 6. Verificación
 
 ```bash
-php pruebas/extremo-a-extremo.php      # 1088 comprobaciones sobre un servidor real
+php pruebas/extremo-a-extremo.php      # 1090 comprobaciones sobre un servidor real
 php pruebas/instalacion.php            # el asistente, y qué se ve cuando falla
 php pruebas/actualizacion.php          # subir desde la 1.0.0 por cada camino, sin perder nada
 php pruebas/claves.php                 # parámetros de Argon2id y rehash
@@ -1293,3 +1293,68 @@ Lo que comprueban las de seguridad, concretamente:
    vea la IP real.
 9. Política de retención definida.
 10. Contraste del tema revisado con el logo definitivo.
+
+---
+
+## 8. La auditoría con la skill `security-audit` de Cloudflare
+
+Para auditar el código de la plataforma con el asistente de programación (Claude Code) está
+instalada en el repositorio la skill `security-audit` de Cloudflare, en
+`.claude/skills/security-audit/`. Cualquier sesión del asistente abierta sobre este repositorio la
+encuentra sola: no hay que instalar nada más.
+
+### 8.1 Qué se revisó antes de instalarla
+
+Una skill recibe la misma autoridad que las instrucciones del asistente, así que se revisó como
+software de terceros, el 10 de noviembre de 2026:
+
+| Punto | Resultado |
+|---|---|
+| **Procedencia** | Repositorio `github.com/cloudflare/security-audit-skill`, de la organización de Cloudflare; licencia MIT, *Copyright (c) 2025-2026 Cloudflare, Inc.*; 14 commits de 5 autores entre junio y septiembre de 2026. Es la base del sistema que Cloudflare describe en su blog (*Build your own vulnerability harness*). |
+| **Versión instalada** | El commit `c1c8a8c1471069fb0e188eeaff69b8e8db6564a8` (14 de septiembre de 2026), copiado sin cambios. Se agregó solo el `LICENSE`, que la licencia MIT pide conservar con las copias. |
+| **Contenido** | 15 documentos de metodología, un esquema JSON y dos validadores en Node con sus pruebas. Se leyó `SKILL.md` completo y se revisaron los scripts: los validadores solo **leen** el JSON que se les pasa —sin seguir enlaces, con límite de tamaño y exigiendo UTF-8—, no escriben, no salen a la red ni lanzan procesos. |
+| **Análisis automático** | El revisor de skills de terceros marcó 6 coincidencias, todas falsas: «silently» aparece siempre en sentido contrario («do not silently omit», «no unit may be silently unassigned»: pide declarar los huecos, no esconderlos), y «eval()» es un punto de la lista de lo que el auditor debe buscar en el código revisado. Ninguna dirección externa en las instrucciones ni en los scripts, ningún carácter invisible, nada codificado. |
+| **Prueba aislada** | Las 65 pruebas de los validadores pasan sin red (`unshare -n`), sin variables de entorno y en una copia aparte; limpian sus temporales. |
+| **Veredicto** | **Instalar**, con los controles de abajo. |
+
+Lo que la skill exige por su cuenta va en la misma dirección que esta revisión: por omisión
+solo orienta y no crea archivos; la auditoría completa corre solo cuando se pide de forma
+explícita; el código auditado se ejecuta únicamente dentro de un entorno aislado sin red —y si no
+lo hay, no se ejecuta—; no instala dependencias, no prueba sistemas desplegados ni datos de otras
+personas, y escribe sus resultados fuera del repositorio.
+
+### 8.2 Cómo usarla
+
+- **Una pregunta o una revisión puntual** — «¿es seguro este controlador?», «revisa el acceso de
+  los expositores»: se usa en modo orientación, sin crear archivos.
+- **La auditoría completa** — «haz una auditoría de seguridad de este repositorio»: recorre seis
+  fases con varios agentes (reconocimiento, búsqueda por cobertura, validación independiente de
+  cada hallazgo, salida estructurada, verificación y el informe). Lanza muchos agentes: conviene
+  acotarla —«solo `app/Controladores`», «perfil quick»— o fijarle un presupuesto.
+
+### 8.3 Reglas para los informes
+
+1. **El informe describe cómo vulnerar la plataforma: es TLP:AMBER.** Por omisión la skill lo
+   escribe fuera del repositorio (`~/security-audit-skill/<repo>/run-N`). Si se le pide dentro, que
+   sea en `auditorias/`, que `.gitignore` deja fuera del repositorio. No se sube a ningún servicio
+   externo ni se pega en chats.
+2. **Solo el código, nunca producción.** Lo que la skill no puede comprobar en el código queda como
+   «necesita validación». Probar contra `tic.narino.gov.co` cualquier cosa activa —escaneos,
+   fuerza bruta, explotación— exige autorización escrita del responsable del servidor y una
+   ventana acordada: la Ley 1273 de 2009 tipifica el acceso abusivo aunque no haya daño.
+3. **Cada hallazgo pasa por una persona** antes de corregirse o de entrar al plan de tratamiento de
+   riesgos. El agente propone; el equipo decide.
+
+### 8.4 Actualizarla
+
+No se actualiza sola, a propósito: un componente limpio hoy puede cambiar mañana. Para traer una
+versión nueva, se repite la revisión de 8.1 sobre el commit nuevo —leer los cambios de `SKILL.md`
+y de los scripts, el análisis automático y las pruebas sin red— y se anota aquí el commit y la
+fecha. Si no se puede revisar, se queda la versión actual.
+
+### 8.5 En el servidor
+
+`.claude/` es una herramienta de desarrollo, no parte de la aplicación: **no hace falta subirla a
+producción**. Si se sube con la versión completa, el `.htaccess` la bloquea igual que `app/` o
+`.git/` (responde 404), y la regla de nginx del punto 4 de `DESPLIEGUE-PLESK.md` la incluye para
+cuando los estáticos los sirve nginx.

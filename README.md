@@ -26,7 +26,7 @@ registra gente, se sella asistencia, se aprueban exposiciones y se exportan repo
 | **Códigos QR** | Generador **y lector** propios, verificados uno contra otro y contra una librería de referencia |
 | **Certificados** | En PDF, para cada quien asistió y para los expositores, en **Mi certificado**. Quien estuvo en todas las jornadas recibe el de asistencia completa, con un sello dorado y el total de horas. Cada uno lleva un código y un QR que lo verifican en una página pública. El PDF lo escribe la propia plataforma, sin bibliotecas |
 | **API** | Consulta en JSON de expositores, participantes y demás perfiles, con filtros en la dirección y un token por cada sistema que consulta, que se crea, se vuelve a copiar, se revoca y se elimina en Configuración → API. Solo lee, y nunca entrega la identificación; la fotografía, como enlace, y la caracterización, solo a un token con cada permiso |
-| **Pruebas** | 1088 comprobaciones de extremo a extremo, 160 de actualización desde la 1.0.0, 170 en navegador, y 713 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy, formulario de registro y el PDF de los certificados |
+| **Pruebas** | 1090 comprobaciones de extremo a extremo, 160 de actualización desde la 1.0.0, 170 en navegador, y 713 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy, formulario de registro y el PDF de los certificados |
 
 ---
 
@@ -295,7 +295,8 @@ eventos/                        ← esto es lo que se sube al servidor
 ├── almacen/                    logos, fotos, documentos, respaldos, registro de errores
 ├── docs/                       despliegue, seguridad, esquema de datos
 ├── herramientas/               cuenta.php, tipografías, documentación
-└── pruebas/
+├── pruebas/
+└── .claude/skills/             la skill de auditoría de seguridad, revisada; no va al servidor
 ```
 
 ### Sin dependencias en tiempo de ejecución
@@ -394,7 +395,7 @@ el enrutado, las cookies, los testigos y los guardias, que es donde suelen estar
 Incluye 19 comprobaciones en el bloque específico de seguridad y otras tantas repartidas por
 los guardias de cada pantalla.
 
-Estado actual: **1088 de 1088** de extremo a extremo, **78** del asistente de instalación,
+Estado actual: **1090 de 1090** de extremo a extremo, **78** del asistente de instalación,
 **160** de actualización de una instalación en producción por siete caminos, **46** del
 segundo factor —los vectores del RFC 6238 y el reloj del servidor corrido—, **64** de la
 configuración de los formularios de registro, **22** del hash de contraseñas,
@@ -417,7 +418,8 @@ viendo fallar la prueba.
 - [`docs/DESPLIEGUE-PLESK.md`](docs/DESPLIEGUE-PLESK.md) — instalación paso a paso, nginx por
   delante, copias de seguridad, actualizaciones y problemas frecuentes.
 - [`docs/SEGURIDAD.md`](docs/SEGURIDAD.md) — revisión de seguridad: qué reduce riesgo, qué
-  controles hay, hallazgos abiertos y cumplimiento de la Ley 1581 de 2012.
+  controles hay, hallazgos abiertos y cumplimiento de la Ley 1581 de 2012. En su punto 8, la skill
+  de auditoría `security-audit` de Cloudflare: cómo se revisó antes de instalarla y cómo usarla.
 - [`docs/ESQUEMA-DATOS.md`](docs/ESQUEMA-DATOS.md) — las 23 tablas con sus columnas y llaves,
   generado desde `app/Esquema.php`.
 - [`docs/ADMINISTRAR-EVENTOS.md`](docs/ADMINISTRAR-EVENTOS.md) — crear, corregir, desactivar y

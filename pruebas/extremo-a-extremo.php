@@ -1207,6 +1207,9 @@ foreach ([
     '/pruebas/flujos.js',
     '/herramientas/instalar.php',
     '/herramientas/cuenta.php',
+    // Las herramientas del asistente de programación: la skill de auditoría.
+    '/.claude/skills/security-audit/validate-findings.cjs',
+    '/.claude/skills/security-audit/SKILL.md',
 ] as $ruta) {
     $c = new Cliente($BASE);
     $c->get($ruta, false);

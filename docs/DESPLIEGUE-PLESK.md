@@ -324,7 +324,7 @@ queden bloqueadas también en nginx, agrega en **Dominio → Configuración de A
 Directivas adicionales de nginx**:
 
 ```nginx
-location ~ ^/cumbreAI/(app|config|almacen|docs|herramientas|pruebas|\.git)/ { deny all; }
+location ~ ^/cumbreAI/(app|config|almacen|docs|herramientas|pruebas|\.git|\.github|\.claude)/ { deny all; }
 location ~ ^/cumbreAI/.*\.(sql|log|md|bak|old)$ { deny all; }
 ```
 

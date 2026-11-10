@@ -37,8 +37,8 @@ $relativa = '/' . ltrim($relativa, '/');
    Bloqueos del .htaccess
    ------------------------------------------------------------------------- */
 
-// RedirectMatch 404 (?i)^/?(.*/)?(app|config|almacen|docs|herramientas|pruebas)/
-if (preg_match('#(?i)^/?(.*/)?(app|config|almacen|docs|herramientas|pruebas)/#', $relativa)) {
+// RedirectMatch 404 (?i)^/?(.*/)?(app|config|almacen|docs|herramientas|pruebas|\.git|\.github|\.claude)/
+if (preg_match('#(?i)^/?(.*/)?(app|config|almacen|docs|herramientas|pruebas|\.git|\.github|\.claude)/#', $relativa)) {
     http_response_code(404);
     return true;
 }

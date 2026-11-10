@@ -29,7 +29,7 @@ final class Pdf
     private array $objetos = [];
     /** @var array<string, array{fuente: Fuente, recurso: string, usada: bool}> */
     private array $fuentes = [];
-    /** @var array<string, array{id: int, recurso: string, ancho: int, alto: int}> */
+    /** @var array<string, array{id: int, recurso: string, ancho: int, alto: int, perfil: ?array<int, int>}> */
     private array $imagenes = [];
     /** @var array<string, string> opacidad => recurso */
     private array $estados = [];
@@ -84,6 +84,7 @@ final class Pdf
             throw new \RuntimeException('No se pudo leer la imagen ' . basename($ruta) . '.');
         }
 
+        $perfil = null;
         if (str_starts_with($datos, "\xFF\xD8")) {
             $info = @getimagesizefromstring($datos);
             if ($info === false) {
@@ -103,6 +104,7 @@ final class Pdf
         } elseif (str_starts_with($datos, "\x89PNG\r\n\x1A\n")) {
             $png = self::pngPreparado($datos, $ruta, $cache);
             [$ancho, $alto] = [$png['ancho'], $png['alto']];
+            $perfil = $png['perfil'];
             $mascara = '';
             if ($png['alfa'] !== null) {
                 $idMascara = $this->agregar('<< /Type /XObject /Subtype /Image /Width ' . $ancho . ' /Height ' . $alto
@@ -119,8 +121,27 @@ final class Pdf
 
         $this->imagenes[$clave] = [
             'id' => $id, 'recurso' => 'Im' . (count($this->imagenes) + 1), 'ancho' => $ancho, 'alto' => $alto,
+            'perfil' => $perfil,
         ];
         return [$ancho, $alto];
+    }
+
+    /**
+     * Hasta dónde baja lo visible de una imagen, columna por columna: la fila
+     * más baja con al menos media opacidad, o -1 si en esa columna no hay
+     * nada. Null si la imagen no tiene transparencia (todo se ve).
+     *
+     * Es lo que deja poner la firma con su trazo justo sobre el nombre de
+     * quien firma (3.22): el borde de la imagen no dice dónde termina la tinta.
+     *
+     * @return array<int, int>|null
+     */
+    public function perfilInferior(string $clave): ?array
+    {
+        if (!isset($this->imagenes[$clave])) {
+            throw new \LogicException('Imagen no registrada: ' . $clave);
+        }
+        return $this->imagenes[$clave]['perfil'];
     }
 
     /* =====================================================================
@@ -594,14 +615,15 @@ final class Pdf
      * El PNG separado en color y transparencia, comprimidos, listos para el
      * PDF. De la caché si está y es del mismo archivo.
      *
-     * @return array{ancho: int, alto: int, color: string, pixeles: string, alfa: ?string}
+     * @return array{ancho: int, alto: int, color: string, pixeles: string, alfa: ?string, perfil: ?array<int, int>}
      */
     private static function pngPreparado(string $datos, string $ruta, ?string $cache): array
     {
         $huella = md5($datos);
         if ($cache !== null && is_file($cache)) {
             $guardado = @unserialize((string) @file_get_contents($cache), ['allowed_classes' => false]);
-            if (is_array($guardado) && ($guardado['huella'] ?? '') === $huella) {
+            // Las de la 3.21 no traen el perfil: se rehacen.
+            if (is_array($guardado) && ($guardado['huella'] ?? '') === $huella && array_key_exists('perfil', $guardado)) {
                 return $guardado;
             }
         }
@@ -614,6 +636,7 @@ final class Pdf
             'color'   => $png['color'],
             'pixeles' => (string) gzcompress($png['pixeles'], 6),
             'alfa'    => $png['alfa'] !== null ? (string) gzcompress($png['alfa'], 6) : null,
+            'perfil'  => $png['alfa'] !== null ? self::perfilDeAlfa($png['alfa'], $png['ancho'], $png['alto']) : null,
         ];
         if ($cache !== null) {
             $temporal = $cache . '.' . bin2hex(random_bytes(4)) . '.tmp';
@@ -624,6 +647,32 @@ final class Pdf
             @unlink($temporal);
         }
         return $preparado;
+    }
+
+    /**
+     * La fila más baja con al menos media opacidad de cada columna (-1 si no
+     * hay ninguna), recorriendo la máscara de abajo arriba. Solo se miran los
+     * bytes opacos de cada fila, que en una firma son pocos.
+     *
+     * @return array<int, int>
+     */
+    private static function perfilDeAlfa(string $alfa, int $ancho, int $alto): array
+    {
+        $perfil = array_fill(0, $ancho, -1);
+        $faltan = $ancho;
+        for ($y = $alto - 1; $y >= 0 && $faltan > 0; $y--) {
+            $fila = substr($alfa, $y * $ancho, $ancho);
+            if (!preg_match_all('/[\x80-\xFF]/', $fila, $opacos, PREG_OFFSET_CAPTURE)) {
+                continue;
+            }
+            foreach ($opacos[0] as [, $x]) {
+                if ($perfil[$x] === -1) {
+                    $perfil[$x] = $y;
+                    $faltan--;
+                }
+            }
+        }
+        return $perfil;
     }
 
     /**

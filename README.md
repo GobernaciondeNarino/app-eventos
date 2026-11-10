@@ -26,7 +26,7 @@ registra gente, se sella asistencia, se aprueban exposiciones y se exportan repo
 | **Códigos QR** | Generador **y lector** propios, verificados uno contra otro y contra una librería de referencia |
 | **Certificados** | En PDF, para cada quien asistió y para los expositores, en **Mi certificado**. Quien estuvo en todas las jornadas recibe el de asistencia completa, con un sello dorado y el total de horas. Cada uno lleva un código y un QR que lo verifican en una página pública. El PDF lo escribe la propia plataforma, sin bibliotecas |
 | **API** | Consulta en JSON de expositores, participantes y demás perfiles, con filtros en la dirección y un token por cada sistema que consulta, que se crea, se vuelve a copiar, se revoca y se elimina en Configuración → API. Solo lee, y nunca entrega la identificación; la fotografía, como enlace, y la caracterización, solo a un token con cada permiso |
-| **Pruebas** | 1087 comprobaciones de extremo a extremo, 160 de actualización desde la 1.0.0, 170 en navegador, y 703 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy, formulario de registro y el PDF de los certificados |
+| **Pruebas** | 1088 comprobaciones de extremo a extremo, 160 de actualización desde la 1.0.0, 170 en navegador, y 713 más de QR, foto, adjuntos, correo, TOTP, SVG, proxy, formulario de registro y el PDF de los certificados |
 
 ---
 
@@ -394,14 +394,14 @@ el enrutado, las cookies, los testigos y los guardias, que es donde suelen estar
 Incluye 19 comprobaciones en el bloque específico de seguridad y otras tantas repartidas por
 los guardias de cada pantalla.
 
-Estado actual: **1087 de 1087** de extremo a extremo, **78** del asistente de instalación,
+Estado actual: **1088 de 1088** de extremo a extremo, **78** del asistente de instalación,
 **160** de actualización de una instalación en producción por siete caminos, **46** del
 segundo factor —los vectores del RFC 6238 y el reloj del servidor corrido—, **64** de la
 configuración de los formularios de registro, **22** del hash de contraseñas,
 **19** del correo saliente, **19** de la dirección del visitante detrás del proxy, **21** de la
 fotografía del carnet, **61** de los adjuntos del expositor, **17** del saneado de logos SVG,
 **198** casos de QR idénticos entre PHP y JavaScript, **161** entre JavaScript y la referencia,
-**13** del lector de QR, **62** del PDF de los certificados, **170** de interacción en navegador, y las 34 pantallas limpias en
+**13** del lector de QR, **72** del PDF de los certificados, **170** de interacción en navegador, y las 34 pantallas limpias en
 escritorio, tableta y móvil.
 
 Las pruebas nacieron de errores reales, y por eso cubren lo que cubren: una instalación que se

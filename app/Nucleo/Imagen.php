@@ -273,8 +273,23 @@ final class Imagen
         imagecopyresampled($destino, $imagen, 0, 0, 0, 0, $nuevoAncho, $nuevoAlto, $ancho, $alto);
         imagedestroy($imagen);
 
-        if ($ranura === 'firma' && !self::tieneTransparencia($destino)) {
+        if ($ranura === 'firma') {
+            // Con o sin transparencia: un PNG «transparente» sacado de un
+            // escaneo trae el papel a medias —motas grises, un halo blanco
+            // alrededor del trazo— y la firma va encima del nombre de quien
+            // firma (3.22), donde eso taparía las letras.
             self::blancoATransparente($destino);
+            self::quitarMotas($destino);
+            $recortada = self::recortarAlTrazo($destino);
+            if ($recortada === null) {
+                imagedestroy($destino);
+                throw new \DomainException('En la imagen de la firma no se ve ningún trazo: sube la firma sobre fondo '
+                    . 'blanco o transparente, en tinta oscura.');
+            }
+            if ($recortada !== $destino) {
+                imagedestroy($destino);
+                $destino = $recortada;
+            }
         }
 
         $directorio = RAIZ . '/almacen/logos';
@@ -303,26 +318,14 @@ final class Imagen
         }
     }
 
-    /** ¿Hay algún píxel que no sea opaco? Se mira una muestra, no la imagen entera. */
-    private static function tieneTransparencia(\GdImage $imagen): bool
-    {
-        $ancho = imagesx($imagen);
-        $alto = imagesy($imagen);
-        $paso = max(1, (int) floor(min($ancho, $alto) / 60));
-        for ($y = 0; $y < $alto; $y += $paso) {
-            for ($x = 0; $x < $ancho; $x += $paso) {
-                if (((imagecolorat($imagen, $x, $y) >> 24) & 0x7F) > 0) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
     /**
      * El papel de una firma escaneada, transparente. Lo muy claro desaparece,
      * lo oscuro queda, y en medio un degradado para que el trazo no quede con
      * el borde aserrado.
+     *
+     * Si la imagen ya traía transparencia, la de cada píxel se conserva y se
+     * le suma esta: así se van también las motas y el halo claro que deja un
+     * escaneo al que se le quitó el fondo con una herramienta.
      */
     private static function blancoATransparente(\GdImage $imagen): void
     {
@@ -333,17 +336,160 @@ final class Imagen
         for ($y = 0; $y < $alto; $y++) {
             for ($x = 0; $x < $ancho; $x++) {
                 $c = imagecolorat($imagen, $x, $y);
+                $alfaAntes = ($c >> 24) & 0x7F;
+                if ($alfaAntes === 127) {
+                    continue;
+                }
                 $r = ($c >> 16) & 0xFF;
                 $g = ($c >> 8) & 0xFF;
                 $b = $c & 0xFF;
                 $luz = 0.299 * $r + 0.587 * $g + 0.114 * $b;
-                // 0 (opaco) por debajo de 150; 127 (transparente) por encima de 225.
-                $alfa = (int) round(max(0.0, min(1.0, ($luz - 150) / 75)) * 127);
-                if ($alfa > 0) {
+                // Opaco por debajo de 150; transparente por encima de 225.
+                $queda = 1.0 - max(0.0, min(1.0, ($luz - 150) / 75));
+                $alfa = 127 - (int) round((127 - $alfaAntes) * $queda);
+                if ($alfa !== $alfaAntes) {
                     imagesetpixel($imagen, $x, $y, imagecolorallocatealpha($imagen, $r, $g, $b, $alfa));
                 }
             }
         }
+    }
+
+    /**
+     * Las motas del escaneo, fuera. Se buscan las manchas sueltas de lo que se
+     * ve y se quedan las que tienen tinta: una mota es gris claro de punta a
+     * punta, y el trazo —o el punto de una «i»— tiene partes oscuras. También
+     * se va lo oscuro diminuto (polvo del escáner) y lo casi transparente que
+     * no está pegado a un trazo.
+     */
+    private static function quitarMotas(\GdImage $imagen): void
+    {
+        $ancho = imagesx($imagen);
+        $alto = imagesy($imagen);
+        $visible = [];   // índice => ¿es tinta oscura?
+        $tenue = [];
+        for ($y = 0; $y < $alto; $y++) {
+            for ($x = 0; $x < $ancho; $x++) {
+                $c = imagecolorat($imagen, $x, $y);
+                $alfa = ($c >> 24) & 0x7F;
+                if ($alfa === 127) {
+                    continue;
+                }
+                if ($alfa > 95) {
+                    $tenue[$y * $ancho + $x] = true;
+                    continue;
+                }
+                $luz = 0.299 * (($c >> 16) & 0xFF) + 0.587 * (($c >> 8) & 0xFF) + 0.114 * ($c & 0xFF);
+                $visible[$y * $ancho + $x] = $luz < 110 && $alfa <= 63;
+            }
+        }
+
+        // Las manchas conectadas, con los ocho vecinos.
+        $manchas = [];
+        $vista = [];
+        foreach ($visible as $inicio => $_) {
+            if (isset($vista[$inicio])) {
+                continue;
+            }
+            $vista[$inicio] = true;
+            $pila = [$inicio];
+            $pixeles = [];
+            $conTinta = false;
+            while ($pila) {
+                $p = array_pop($pila);
+                $pixeles[] = $p;
+                $conTinta = $conTinta || $visible[$p];
+                $px = $p % $ancho;
+                $py = intdiv($p, $ancho);
+                for ($dy = -1; $dy <= 1; $dy++) {
+                    for ($dx = -1; $dx <= 1; $dx++) {
+                        $qx = $px + $dx;
+                        $qy = $py + $dy;
+                        if ($qx < 0 || $qy < 0 || $qx >= $ancho || $qy >= $alto) {
+                            continue;
+                        }
+                        $q = $qy * $ancho + $qx;
+                        if (isset($visible[$q]) && !isset($vista[$q])) {
+                            $vista[$q] = true;
+                            $pila[] = $q;
+                        }
+                    }
+                }
+            }
+            $manchas[] = [$pixeles, $conTinta];
+        }
+        if ($manchas === []) {
+            return;
+        }
+        $mayor = max(array_map(static fn(array $m): int => count($m[0]), $manchas));
+        $minimo = max(8, (int) ceil($mayor * 0.002));
+
+        imagealphablending($imagen, false);
+        $transparente = imagecolorallocatealpha($imagen, 0, 0, 0, 127);
+        $queda = [];
+        foreach ($manchas as [$pixeles, $conTinta]) {
+            $seVa = !$conTinta || count($pixeles) < $minimo;
+            foreach ($pixeles as $p) {
+                if ($seVa) {
+                    imagesetpixel($imagen, $p % $ancho, intdiv($p, $ancho), $transparente);
+                } else {
+                    $queda[$p] = true;
+                }
+            }
+        }
+        foreach ($tenue as $p => $_) {
+            $px = $p % $ancho;
+            $py = intdiv($p, $ancho);
+            $pegado = false;
+            for ($dy = -1; $dy <= 1 && !$pegado; $dy++) {
+                for ($dx = -1; $dx <= 1 && !$pegado; $dx++) {
+                    $qx = $px + $dx;
+                    $pegado = $qx >= 0 && $qx < $ancho && isset($queda[($py + $dy) * $ancho + $qx]);
+                }
+            }
+            if (!$pegado) {
+                imagesetpixel($imagen, $px, $py, $transparente);
+            }
+        }
+    }
+
+    /**
+     * La firma sin el margen vacío alrededor: el certificado la coloca por
+     * donde va el trazo, y un margen transparente la correría. Se dejan unos
+     * píxeles para el borde suavizado. Null si no queda nada visible.
+     */
+    private static function recortarAlTrazo(\GdImage $imagen): ?\GdImage
+    {
+        $ancho = imagesx($imagen);
+        $alto = imagesy($imagen);
+        [$x0, $y0, $x1, $y1] = [$ancho, $alto, -1, -1];
+        for ($y = 0; $y < $alto; $y++) {
+            for ($x = 0; $x < $ancho; $x++) {
+                // Lo que se ve de verdad: al menos un cuarto de opaco.
+                if (((imagecolorat($imagen, $x, $y) >> 24) & 0x7F) <= 95) {
+                    $x0 = min($x0, $x);
+                    $x1 = max($x1, $x);
+                    $y0 = min($y0, $y);
+                    $y1 = max($y1, $y);
+                }
+            }
+        }
+        if ($x1 < 0) {
+            return null;
+        }
+        $margen = 3;
+        $x0 = max(0, $x0 - $margen);
+        $y0 = max(0, $y0 - $margen);
+        $x1 = min($ancho - 1, $x1 + $margen);
+        $y1 = min($alto - 1, $y1 + $margen);
+        if ($x0 === 0 && $y0 === 0 && $x1 === $ancho - 1 && $y1 === $alto - 1) {
+            return $imagen;
+        }
+        $recorte = imagecreatetruecolor($x1 - $x0 + 1, $y1 - $y0 + 1);
+        imagealphablending($recorte, false);
+        imagesavealpha($recorte, true);
+        imagefill($recorte, 0, 0, imagecolorallocatealpha($recorte, 0, 0, 0, 127));
+        imagecopy($recorte, $imagen, 0, 0, $x0, $y0, $x1 - $x0 + 1, $y1 - $y0 + 1);
+        return $recorte;
     }
 
     /* =====================================================================

@@ -39,7 +39,11 @@ final class CertificadoPdf
     private const BASE_EXPEDICION = 392.0;
 
     /** La firma, el QR y el sello comparten la franja de abajo. */
-    private const ARRIBA_FIRMA = 404.0;
+    private const LINEA_FIRMA = 446.0;
+    private const TAM_NOMBRE_FIRMA = 8.5;
+    /** El tamaño más grande de la imagen de la firma, si no hay que achicarla. */
+    private const ALTO_FIRMA = 58.0;
+    private const ANCHO_FIRMA = 180.0;
     private const QR_X = 664.0;
     private const QR_Y = 386.0;
     private const QR_LADO = 64.0;
@@ -231,30 +235,110 @@ final class CertificadoPdf
         return $mejor;
     }
 
-    /** La firma: la imagen, si hay, sobre la línea; debajo el nombre y el cargo. */
+    /**
+     * La firma: la línea, el nombre y el cargo de quien firma, y encima —en la
+     * capa de arriba, como la tinta sobre el papel— la imagen de su firma.
+     *
+     * La firma se apoya sobre el nombre (3.22): donde está el nombre, el trazo
+     * más bajo llega hasta la mitad de sus letras, así que una pequeña parte
+     * queda encima del nombre y el resto sobre la línea. Lo que decide es la
+     * tinta, no el borde de la imagen: Pdf::perfilInferior() dice hasta dónde
+     * baja en cada columna. Si así algún trazo bajara hasta el cargo, o la
+     * firma tocara la línea de expedición, se achica un poco hasta que no.
+     */
     private static function firma(Pdf $pdf, array $firma, string $color): void
     {
-        $linea = self::ARRIBA_FIRMA + 42;
-        $imagen = (string) ($firma['imagen'] ?? '');
-        if ($imagen !== '' && is_file($imagen)) {
-            [$px, $py] = $pdf->imagen('firma', $imagen, $firma['cache'] ?? null);
-            $alto = 40.0;
-            $ancho = $alto * $px / max(1, $py);
-            if ($ancho > 170) {
-                $ancho = 170.0;
-                $alto = $ancho * $py / max(1, $px);
-            }
-            // Un poco por debajo de la línea, como una firma de verdad.
-            $pdf->dibujarImagen('firma', self::CENTRO - $ancho / 2, $linea - $alto + 6, $ancho, $alto);
-        }
+        $linea = self::LINEA_FIRMA;
+        $nombre = (string) $firma['nombre'];
         $pdf->linea(self::CENTRO - 95, $linea, self::CENTRO + 95, $linea, Tema::aclarar($color, 0.3), 0.7);
-        $pdf->texto('semi', 8.5, self::CENTRO, $linea + 11, (string) $firma['nombre'],
+        $pdf->texto('semi', self::TAM_NOMBRE_FIRMA, self::CENTRO, $linea + 11, $nombre,
             ['alinear' => 'centro', 'color' => $color]);
         $cargo = trim((string) ($firma['cargo'] ?? ''));
+        $tamCargo = 0.0;
         if ($cargo !== '') {
-            $tam = $pdf->tamanoQueCabe('regular', $cargo, 240, 7.5, 6);
-            $pdf->texto('regular', $tam, self::CENTRO, $linea + 21, $cargo, ['alinear' => 'centro', 'color' => self::SUAVE]);
+            $tamCargo = $pdf->tamanoQueCabe('regular', $cargo, 240, 7.5, 6);
+            $pdf->texto('regular', $tamCargo, self::CENTRO, $linea + 21, $cargo, ['alinear' => 'centro', 'color' => self::SUAVE]);
         }
+
+        $imagen = (string) ($firma['imagen'] ?? '');
+        if ($imagen === '' || !is_file($imagen)) {
+            return;
+        }
+        [$px, $py] = $pdf->imagen('firma', $imagen, $firma['cache'] ?? null);
+        $lugar = self::lugarDeLaFirma($px, $py, $pdf->perfilInferior('firma'),
+            $pdf->ancho('semi', self::TAM_NOMBRE_FIRMA, $nombre),
+            $cargo !== '' ? $pdf->ancho('regular', $tamCargo, $cargo) : 0.0, $tamCargo);
+        $pdf->dibujarImagen('firma', $lugar['x'], $lugar['y'], $lugar['ancho'], $lugar['alto']);
+    }
+
+    /**
+     * Dónde y de qué tamaño va la firma. Público para las pruebas.
+     *
+     * @param array<int, int>|null $perfil la fila más baja de tinta de cada columna (null: todo es tinta)
+     * @return array{x: float, y: float, ancho: float, alto: float, escala: float}
+     */
+    public static function lugarDeLaFirma(int $px, int $py, ?array $perfil, float $anchoNombre, float $anchoCargo,
+                                          float $tamCargo): array
+    {
+        $px = max(1, $px);
+        $py = max(1, $py);
+        if ($perfil === null || count($perfil) !== $px) {
+            $perfil = array_fill(0, $px, $py - 1);
+        }
+        $linea = self::LINEA_FIRMA;
+        $mayuscula = 0.7 * self::TAM_NOMBRE_FIRMA;
+        $arribaNombre = $linea + 11 - $mayuscula;
+        // Hasta donde baja el trazo sobre el nombre: la mitad de sus letras.
+        $hondo = $arribaNombre + $mayuscula / 2;
+        $limiteCargo = $anchoCargo > 0 ? $linea + 21 - 0.7 * $tamCargo - 1.5 : PHP_FLOAT_MAX;
+        $limiteAbajo = $linea + 30;
+        $limiteArriba = self::BASE_EXPEDICION + 5;
+
+        // Lo más bajo de la tinta entre dos bordes horizontales (en puntos).
+        $masBajo = static function (float $x0, float $escala, float $desde, float $hasta) use ($perfil, $px): int {
+            $primera = max(0, (int) floor(($desde - $x0) / $escala));
+            $ultima = min($px - 1, (int) ceil(($hasta - $x0) / $escala));
+            $fila = -1;
+            for ($c = $primera; $c <= $ultima; $c++) {
+                $fila = max($fila, $perfil[$c]);
+            }
+            return $fila;
+        };
+
+        $todo = max($perfil);
+        $lugar = null;
+        for ($tamano = 1.0; $tamano >= 0.6 - 1e-9; $tamano -= 0.04) {
+            $escala = min(self::ALTO_FIRMA * $tamano / $py, self::ANCHO_FIRMA * $tamano / $px);
+            $ancho = $px * $escala;
+            $alto = $py * $escala;
+            $x = self::CENTRO - $ancho / 2;
+            $sobreNombre = $masBajo($x, $escala, self::CENTRO - $anchoNombre / 2, self::CENTRO + $anchoNombre / 2);
+            // Sin tinta sobre el nombre (uno muy corto bajo una firma con un
+            // hueco en medio), se apoya lo más bajo de la firma.
+            $y = $hondo - ($sobreNombre >= 0 ? $sobreNombre + 1 : $todo + 1) * $escala;
+            $sobreCargo = $anchoCargo > 0
+                ? $masBajo($x, $escala, self::CENTRO - $anchoCargo / 2, self::CENTRO + $anchoCargo / 2) : -1;
+            $lugar = ['x' => $x, 'y' => $y, 'ancho' => $ancho, 'alto' => $alto, 'escala' => $escala];
+            $bien = $y >= $limiteArriba
+                && ($sobreCargo < 0 || $y + ($sobreCargo + 1) * $escala <= $limiteCargo)
+                && $y + ($todo + 1) * $escala <= $limiteAbajo;
+            if ($bien) {
+                return $lugar;
+            }
+        }
+
+        // No cupo ni con la más chica: se sube lo justo para no pisar el
+        // cargo, aunque pase menos sobre el nombre, y nunca sobre la expedición.
+        $escala = $lugar['escala'];
+        $sobreCargo = $anchoCargo > 0
+            ? $masBajo($lugar['x'], $escala, self::CENTRO - $anchoCargo / 2, self::CENTRO + $anchoCargo / 2) : -1;
+        $y = $lugar['y'];
+        if ($sobreCargo >= 0) {
+            $y = min($y, $limiteCargo - ($sobreCargo + 1) * $escala);
+        }
+        $y = min($y, $limiteAbajo - ($todo + 1) * $escala);
+        $lugar['y'] = max($y, $limiteArriba);
+        return $lugar;
     }
 
     /**

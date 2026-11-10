@@ -28,8 +28,9 @@ $imagenes = [
         . 'que se imprima nítido. Una imagen de otra proporción se recorta un poco por los bordes.'],
     'texto' => ['Fondo del nombre', 'El recuadro donde va el nombre de la persona: una imagen ancha, en PNG con '
         . 'fondo transparente. Sin imagen, se dibuja un recuadro del color principal.'],
-    'firma' => ['Imagen de la firma', 'PNG con fondo transparente o JPG con fondo blanco: el blanco se vuelve '
-        . 'transparente. Solo sale si escribes el nombre de quien firma.'],
+    'firma' => ['Imagen de la firma', 'El visto o la firma escaneada: PNG con fondo transparente o JPG con fondo '
+        . 'blanco. El papel, las motas del escaneo y el margen se quitan solos. Va encima del nombre de quien '
+        . 'firma, con una pequeña parte del trazo sobre el nombre. Solo sale si escribes ese nombre.'],
 ];
 ?>
 <div class="view view--wide stack stack--4">

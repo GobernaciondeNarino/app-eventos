@@ -6214,6 +6214,42 @@ comprobar('la firma la ve el administrador, y nadie más', $codigoFirmaJefa === 
     && $telMaria->codigo !== 200 && $curioso->codigo !== 200 && $operadorCert->codigo === 403,
     $codigoFirmaJefa . ' / ' . $telMaria->codigo . ' / ' . $curioso->codigo . ' / ' . $operadorCert->codigo);
 
+// El visto en PNG «transparente» sacado de un escaneo (3.22): el trazo, un
+// margen ancho y motas grises sueltas debajo. Va encima del nombre de quien
+// firma, así que tiene que llegar limpio y recortado al trazo.
+$vistoEscaneado = (static function (): string {
+    $im = imagecreatetruecolor(600, 260);
+    imagealphablending($im, false);
+    imagesavealpha($im, true);
+    imagefill($im, 0, 0, imagecolorallocatealpha($im, 0, 0, 0, 127));
+    imagealphablending($im, true);
+    imagesetthickness($im, 7);
+    imageline($im, 120, 190, 480, 70, imagecolorallocate($im, 35, 35, 40));
+    $gris = imagecolorallocate($im, 210, 210, 210);
+    for ($i = 0; $i < 60; $i++) {
+        [$x, $y] = [40 + ($i * 41) % 520, 215 + ($i * 7) % 40];
+        imagefilledrectangle($im, $x, $y, $x + 2, $y + 2, $gris);
+    }
+    ob_start();
+    imagepng($im);
+    imagedestroy($im);
+    return (string) ob_get_clean();
+})();
+$firmaAnterior = (string) ($conf['firma_imagen'] ?? '');
+$jefa->get('/admin/configuracion/certificados');
+$jefa->subir('/admin/configuracion/certificados', $datosCert, [
+    'firma_imagen' => ['nombre' => 'visto.png', 'tipo' => 'image/png', 'contenido' => $vistoEscaneado],
+]);
+$conf = $pdo->query("SELECT * FROM {$P}evento_certificado WHERE evento_id = $idEventoCert")->fetch(PDO::FETCH_ASSOC) ?: [];
+$rutaFirma = $RAIZ . '/almacen/logos/' . ($conf['firma_imagen'] ?? '-');
+clearstatcache();
+$medidaVisto = is_file($rutaFirma) ? getimagesize($rutaFirma) : [0, 0];
+comprobar('un visto en PNG con motas y margen queda limpio y recortado al trazo, y reemplaza al anterior',
+    $firmaAnterior !== '' && ($conf['firma_imagen'] ?? '') !== $firmaAnterior
+    && !is_file($RAIZ . '/almacen/logos/' . $firmaAnterior)
+    && $medidaVisto[0] > 360 && $medidaVisto[0] < 400 && $medidaVisto[1] > 120 && $medidaVisto[1] < 150,
+    json_encode([$medidaVisto[0], $medidaVisto[1]]));
+
 // Lo que no sirve, con el resto guardado.
 $jefa->get('/admin/configuracion/certificados');
 $html = $jefa->subir('/admin/configuracion/certificados', ['horas[' . $jornadasCert[0]['id'] . ']' => '30'] + $datosCert, [

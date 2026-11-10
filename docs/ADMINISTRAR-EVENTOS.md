@@ -1119,9 +1119,13 @@ En **Configuración → Certificados**:
    nombre, sin el artículo, es el que muestra la página de verificación.
 3. **La ciudad**: «…que se realizó en San Juan de Pasto…» y «Se expide en San Juan de Pasto el…».
 4. **Las horas de cada jornada.** Vacías, el certificado no habla de horas.
-5. **Quién firma**: nombre, cargo y, si quieres, la imagen de su firma. Mejor en PNG con fondo
-   transparente; si es una firma escaneada en JPG con fondo blanco, el blanco se vuelve
-   transparente solo. Sin nombre, el certificado sale sin firma.
+5. **Quién firma**: nombre, cargo y, si quieres, la imagen de su firma o su visto. Mejor en PNG
+   con fondo transparente; si es una firma escaneada en JPG con fondo blanco, el blanco se vuelve
+   transparente solo, y en los dos casos se quitan las motas del escaneo y el margen vacío. La
+   firma va **encima del nombre de quien firma**, como en un papel firmado a mano: el trazo
+   queda sobre la línea y una pequeña parte pasa sobre el nombre, hasta la mitad de sus letras,
+   sin llegar al cargo. Si hace falta, la plataforma la achica un poco para que así sea. Sin
+   nombre, el certificado sale sin firma.
 6. **El diseño**: el color del título y del nombre, el **fondo de la hoja** —carta horizontal,
    lo ideal 3300 × 2550 px; con menos de 2400 px de ancho se ve bien en pantalla pero impreso
    pierde nitidez— y el **fondo del nombre**, la imagen ancha del recuadro donde va el nombre, en

@@ -506,6 +506,145 @@ $muestra = CertificadoPdf::generar(['muestra' => true] + $base);
 comprobar('el ejemplo lleva la marca de agua', str_contains(textoDe($muestra), 'EJEMPLO · SIN VALIDEZ'));
 comprobar('un color que no es hexadecimal de seis cifras se ignora', bienArmado(CertificadoPdf::generar(['color' => 'red; } x'] + $base)));
 
+/* =========================================================================
+   La firma encima del nombre (3.22)
+   ========================================================================= */
+titulo('La firma encima del nombre');
+
+// La firma tal como la deja un escaneo al que se le quitó el fondo: el trazo,
+// el punto de una «i», motas grises sueltas y polvo oscuro de un píxel.
+$escaneo = imagecreatetruecolor(300, 120);
+imagealphablending($escaneo, false);
+imagesavealpha($escaneo, true);
+imagefill($escaneo, 0, 0, imagecolorallocatealpha($escaneo, 0, 0, 0, 127));
+imagealphablending($escaneo, true);
+imagesetthickness($escaneo, 6);
+imageline($escaneo, 30, 95, 270, 25, imagecolorallocate($escaneo, 40, 40, 48));
+imagefilledellipse($escaneo, 200, 100, 12, 12, imagecolorallocate($escaneo, 40, 40, 48));
+$gris = imagecolorallocate($escaneo, 205, 205, 205);
+$motas = [];
+// Lejos del trazo —que a la derecha va por arriba— y del punto: una mota que
+// toca el trazo es parte de él, en el papel y aquí.
+for ($i = 0; $i < 40; $i++) {
+    [$mx, $my] = [150 + ($i * 29) % 110, 80 + ($i * 11) % 34];
+    if (hypot($mx - 200, $my - 100) < 12) {
+        continue;
+    }
+    imagefilledrectangle($escaneo, $mx, $my, $mx + 1, $my + 1, $gris);
+    $motas[] = [$mx, $my];
+}
+imagesetpixel($escaneo, 285, 112, imagecolorallocate($escaneo, 20, 20, 20));
+imagealphablending($escaneo, false);
+$limpieza = new ReflectionClass(\App\Nucleo\Imagen::class);
+$visibleEn = static fn(\GdImage $im, int $x, int $y): bool => (((imagecolorat($im, $x, $y) >> 24) & 0x7F) < 100);
+$motasAntes = count(array_filter($motas, static fn(array $m): bool => $visibleEn($escaneo, $m[0], $m[1])));
+$limpieza->getMethod('blancoATransparente')->invoke(null, $escaneo);
+$limpieza->getMethod('quitarMotas')->invoke(null, $escaneo);
+$motasDespues = count(array_filter($motas, static fn(array $m): bool => $visibleEn($escaneo, $m[0], $m[1])));
+comprobar('las motas grises y el polvo de un píxel se van; el trazo y el punto de la «i» quedan',
+    $motasAntes > 20 && $motasDespues === 0 && !$visibleEn($escaneo, 285, 112)
+    && $visibleEn($escaneo, 150, 60) && $visibleEn($escaneo, 200, 100), $motasAntes . ' → ' . $motasDespues);
+$recorte = $limpieza->getMethod('recortarAlTrazo')->invoke(null, $escaneo);
+comprobar('y se recorta al trazo, con un margen de tres píxeles',
+    $recorte instanceof \GdImage && imagesx($recorte) < 260 && imagesy($recorte) < 95
+    && !$visibleEn($recorte, 0, 0) && $visibleEn($recorte, imagesx($recorte) - 6, 6), imagesx($recorte) . '×' . imagesy($recorte));
+$vacia = imagecreatetruecolor(50, 20);
+imagefill($vacia, 0, 0, imagecolorallocate($vacia, 255, 255, 255));
+$limpieza->getMethod('blancoATransparente')->invoke(null, $vacia);
+comprobar('una hoja en blanco no deja nada que recortar', $limpieza->getMethod('recortarAlTrazo')->invoke(null, $vacia) === null);
+
+// Hasta dónde baja la tinta en cada columna.
+$perfilPng = imagecreatetruecolor(60, 40);
+imagealphablending($perfilPng, false);
+imagesavealpha($perfilPng, true);
+imagefill($perfilPng, 0, 0, imagecolorallocatealpha($perfilPng, 0, 0, 0, 127));
+imagefilledrectangle($perfilPng, 10, 5, 19, 29, imagecolorallocatealpha($perfilPng, 30, 30, 30, 0));
+imagefilledrectangle($perfilPng, 30, 5, 39, 14, imagecolorallocatealpha($perfilPng, 30, 30, 30, 0));
+imagefilledrectangle($perfilPng, 30, 15, 39, 35, imagecolorallocatealpha($perfilPng, 30, 30, 30, 100));
+imagepng($perfilPng, $tmp . '/perfil.png');
+$hoja = new Pdf(200, 200);
+$hoja->imagen('p', $tmp . '/perfil.png');
+$hoja->imagen('j', $jpg);
+$perfil = $hoja->perfilInferior('p');
+comprobar('el perfil de la tinta: la fila más baja con al menos media opacidad, columna por columna',
+    is_array($perfil) && count($perfil) === 60 && $perfil[0] === -1 && $perfil[10] === 29 && $perfil[19] === 29
+    && $perfil[30] === 14 && $perfil[39] === 14 && $perfil[45] === -1 && $hoja->perfilInferior('j') === null,
+    json_encode([$perfil[10] ?? null, $perfil[30] ?? null]));
+
+// Dónde va: una firma como el visto de la Cumbre —una curva larga que baja por
+// la izquierda y los trazos del medio más arriba—, sobre el nombre de quien firma.
+$linea = 446.0;
+$arribaNombre = $linea + 11 - 0.7 * 8.5;
+$baseNombre = $linea + 11;
+$arribaCargo = $linea + 21 - 0.7 * 7.5;
+$visto = array_fill(0, 890, 300);
+for ($c = 0; $c <= 100; $c++) {
+    $visto[$c] = 468;
+}
+for ($c = 300; $c <= 500; $c++) {
+    $visto[$c] = 400;
+}
+$abajoEntre = static function (array $lugar, array $perfil, float $desde, float $hasta): float {
+    $mas = -1;
+    foreach ($perfil as $c => $fila) {
+        $x = $lugar['x'] + ($c + 0.5) * $lugar['escala'];
+        if ($x >= $desde && $x <= $hasta) {
+            $mas = max($mas, $fila);
+        }
+    }
+    return $mas < 0 ? -1.0 : $lugar['y'] + ($mas + 1) * $lugar['escala'];
+};
+$lugar = CertificadoPdf::lugarDeLaFirma(890, 472, $visto, 95.0, 150.0, 7.5);
+$sobreNombre = $abajoEntre($lugar, $visto, 396 - 47.5, 396 + 47.5);
+$sobreCargo = $abajoEntre($lugar, $visto, 396 - 75, 396 + 75);
+comprobar('donde está el nombre, el trazo más bajo llega a la mitad de sus letras: una pequeña parte encima',
+    $sobreNombre > $arribaNombre + 1 && $sobreNombre < $baseNombre - 1, round($sobreNombre, 2) . ' entre '
+    . round($arribaNombre, 2) . ' y ' . $baseNombre);
+comprobar('sin bajar hasta el cargo ni subir a la línea de expedición, y centrada',
+    $sobreCargo <= $arribaCargo - 1.4 && $lugar['y'] >= 397 && abs($lugar['x'] + $lugar['ancho'] / 2 - 396) < 0.01
+    && $lugar['ancho'] > 90, json_encode(array_map(static fn($v) => round($v, 2), $lugar)));
+// Un nombre corto queda bajo los trazos del medio: apoyarlos ahí haría bajar
+// la curva de la izquierda hasta el cargo, así que la firma se achica.
+$corto = CertificadoPdf::lugarDeLaFirma(890, 472, $visto, 30.0, 150.0, 7.5);
+$cortoNombre = $abajoEntre($corto, $visto, 396 - 15, 396 + 15);
+$cortoCargo = $abajoEntre($corto, $visto, 396 - 75, 396 + 75);
+comprobar('con un nombre corto también pasa sobre él, y se achica para no pisar el cargo',
+    $cortoNombre > $arribaNombre + 1 && $cortoNombre < $baseNombre && $cortoCargo <= $arribaCargo - 1.4
+    && $corto['escala'] < $lugar['escala'], round($cortoNombre, 2) . ' / ' . round($cortoCargo, 2));
+$sinCargo = CertificadoPdf::lugarDeLaFirma(890, 472, $visto, 30.0, 0.0, 0.0);
+comprobar('sin cargo debajo, no hace falta achicarla', $sinCargo['escala'] > $corto['escala']);
+$opaca = CertificadoPdf::lugarDeLaFirma(400, 100, null, 95.0, 150.0, 7.5);
+comprobar('una imagen sin transparencia se apoya por su borde de abajo',
+    abs($opaca['y'] + $opaca['alto'] - ($arribaNombre + 0.35 * 8.5)) < 0.01 && $opaca['ancho'] <= 180.01);
+
+// En el PDF, la firma va después del nombre: encima, en la capa de arriba.
+$conFirma = CertificadoPdf::generar(['firma' => ['nombre' => 'Nombre de Quien Firma', 'cargo' => 'Secretario TIC',
+    'imagen' => $tmp . '/perfil.png']] + $base);
+$orden = [];
+$desde = 0;
+while (preg_match('/<<([^<>]*)>>\nstream\n/', $conFirma, $m, PREG_OFFSET_CAPTURE, $desde)) {
+    $inicio = $m[0][1] + strlen($m[0][0]);
+    $largoFlujo = preg_match('/\/Length (\d+)/', $m[1][0], $l) ? (int) $l[1] : 0;
+    $desde = $inicio + $largoFlujo;
+    $contenido = str_contains($m[1][0], '/FlateDecode') && !str_contains($m[1][0], '/Subtype')
+        && !str_contains($m[1][0], '/Length1') ? (string) @gzuncompress(substr($conFirma, $inicio, $largoFlujo)) : '';
+    if (str_contains($contenido, ' Do')) {
+        preg_match_all('/\[((?:<[0-9a-f]*>\s*-?\d*\s*)*)\]\s*TJ|\/(Im\d+) Do/', $contenido, $piezas, PREG_SET_ORDER);
+        foreach ($piezas as $p) {
+            if (!empty($p[2])) {
+                $orden[] = 'imagen:' . $p[2];
+            } else {
+                preg_match_all('/<([0-9a-f]*)>/', $p[1], $hex);
+                $orden[] = (string) mb_convert_encoding(implode('', array_map('hex2bin', $hex[1])), 'UTF-8', 'Windows-1252');
+            }
+        }
+    }
+}
+$posNombre = array_search('Nombre de Quien Firma', $orden, true);
+$posFirma = array_search('imagen:Im3', $orden, true);
+comprobar('en el PDF, la imagen de la firma se dibuja después del nombre de quien firma, encima',
+    $posNombre !== false && $posFirma !== false && $posFirma > $posNombre, json_encode([$posNombre, $posFirma]));
+
 array_map('unlink', glob($tmp . '/*') ?: []);
 @rmdir($tmp);
 
